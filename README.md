@@ -22,6 +22,7 @@ This repository includes:
 3. Stereo cameras: dual IMX219, baseline ~60 mm.
 4. Detection backend: TensorRT engine (primary), Norfair for track management.
 5. Spotlight control: Jetson GPIO/PWM.
+6. Optional camera backend: Intel RealSense (`source_mode:=realsense`).
 
 ## Quick Start (Jetson Runtime)
 
@@ -47,6 +48,11 @@ ros2 run mavros install_geographiclib_datasets.sh
 ```bash
 cd /path/to/cdrone_control
 pip3 install -r requirements-jetson.txt
+```
+
+If using Intel RealSense, also install:
+```bash
+pip3 install pyrealsense2
 ```
 
 4. Build the ROS2 workspace.
@@ -89,6 +95,11 @@ ros2 launch drone_bringup autonomy_stack.launch.py source_mode:=rtsp
 4. Explicit scenario file id:
 ```bash
 ros2 launch drone_bringup autonomy_stack.launch.py scenario:=intercept_illuminate_v1
+```
+
+5. Intel RealSense mode:
+```bash
+ros2 launch drone_bringup autonomy_stack.launch.py source_mode:=realsense
 ```
 
 ## Safety Control Topics

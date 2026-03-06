@@ -25,6 +25,11 @@ try:
 except Exception:  # pragma: no cover - platform specific
     YOLO = None
 
+try:
+    import pyrealsense2 as rs
+except Exception:  # pragma: no cover - platform specific
+    rs = None
+
 from drone_vision_pkg.stereo_utils import (
     StereoDetection,
     build_csi_pipeline,
@@ -67,6 +72,11 @@ class StereoTrackerNode(Node):
         self.declare_parameter("camera_body_rpy_rad", [0.0, 0.0, 0.0])
         self.declare_parameter("norfair_distance_threshold", 1.25)
         self.declare_parameter("rtsp_transport", "udp")
+        self.declare_parameter("realsense_serial", "")
+        self.declare_parameter("realsense_width", 640)
+        self.declare_parameter("realsense_height", 480)
+        self.declare_parameter("realsense_fps", 30)
+        self.declare_parameter("realsense_depth_sample_radius", 2)
 
         self.source_mode = str(self.get_parameter("source_mode").value).strip().lower()
         self.left_sensor_id = int(self.get_parameter("left_sensor_id").value)
@@ -95,8 +105,15 @@ class StereoTrackerNode(Node):
         self.norfair_distance_threshold = float(
             self.get_parameter("norfair_distance_threshold").value
         )
+        self.realsense_serial = str(self.get_parameter("realsense_serial").value).strip()
+        self.realsense_width = int(self.get_parameter("realsense_width").value)
+        self.realsense_height = int(self.get_parameter("realsense_height").value)
+        self.realsense_fps = int(self.get_parameter("realsense_fps").value)
+        self.realsense_depth_sample_radius = int(
+            self.get_parameter("realsense_depth_sample_radius").value
+        )
 
-        if self.source_mode not in ("csi", "rtsp"):
+        if self.source_mode not in ("csi", "rtsp", "realsense"):
             self.get_logger().warn(
                 f"Unsupported source_mode='{self.source_mode}', defaulting to csi."
             )
@@ -106,12 +123,24 @@ class StereoTrackerNode(Node):
             transport = str(self.get_parameter("rtsp_transport").value).strip().lower()
             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = f"rtsp_transport;{transport}"
 
-        self._load_calibration(self.calibration_path)
         self.model = YOLO(self.model_path)
         self.tracker = self._build_tracker()
 
-        self.left_cap = self._open_capture(self.left_sensor_id, self.left_url)
-        self.right_cap = self._open_capture(self.right_sensor_id, self.right_url)
+        self.left_cap = None
+        self.right_cap = None
+        self.rs_pipeline = None
+        self.rs_align = None
+        self.rs_color_intrinsics = None
+
+        if self.source_mode == "realsense":
+            self._init_realsense()
+            self.get_logger().info(
+                f"RealSense mode enabled: {self.realsense_width}x{self.realsense_height}@{self.realsense_fps}"
+            )
+        else:
+            self._load_calibration(self.calibration_path)
+            self.left_cap = self._open_capture(self.left_sensor_id, self.left_url)
+            self.right_cap = self._open_capture(self.right_sensor_id, self.right_url)
 
         self.prev_positions: Dict[int, Tuple[np.ndarray, float]] = {}
         self.tracks_pub = self.create_publisher(
@@ -123,6 +152,85 @@ class StereoTrackerNode(Node):
         self.get_logger().info(
             f"Stereo tracker started. source_mode={self.source_mode}, model={self.model_path}"
         )
+
+    def _init_realsense(self) -> None:
+        if rs is None:
+            raise RuntimeError(
+                "pyrealsense2 is required for source_mode=realsense but is not installed."
+            )
+
+        pipeline = rs.pipeline()
+        config = rs.config()
+
+        if self.realsense_serial:
+            config.enable_device(self.realsense_serial)
+
+        config.enable_stream(
+            rs.stream.color,
+            self.realsense_width,
+            self.realsense_height,
+            rs.format.bgr8,
+            self.realsense_fps,
+        )
+        config.enable_stream(
+            rs.stream.depth,
+            self.realsense_width,
+            self.realsense_height,
+            rs.format.z16,
+            self.realsense_fps,
+        )
+
+        profile = pipeline.start(config)
+        align = rs.align(rs.stream.color)
+        color_profile = profile.get_stream(rs.stream.color).as_video_stream_profile()
+        self.rs_color_intrinsics = color_profile.get_intrinsics()
+        self.rs_pipeline = pipeline
+        self.rs_align = align
+
+    def _realsense_to_frd(self, rs_point: List[float]) -> np.ndarray:
+        # RealSense deprojection axes: x=right, y=down, z=forward.
+        # Internal FRD convention: x=forward, y=right, z=down.
+        return np.array([rs_point[2], rs_point[0], rs_point[1]], dtype=float)
+
+    def _sample_depth_meters(self, depth_image: np.ndarray, u: int, v: int) -> float:
+        if depth_image.ndim != 2:
+            return 0.0
+
+        h, w = depth_image.shape
+        if u < 0 or u >= w or v < 0 or v >= h:
+            return 0.0
+
+        radius = max(0, self.realsense_depth_sample_radius)
+        x0 = max(0, u - radius)
+        x1 = min(w - 1, u + radius)
+        y0 = max(0, v - radius)
+        y1 = min(h - 1, v + radius)
+        patch = depth_image[y0 : y1 + 1, x0 : x1 + 1]
+        valid = patch[np.isfinite(patch) & (patch > 0.0)]
+        if valid.size == 0:
+            return 0.0
+        return float(np.median(valid))
+
+    def _read_realsense(self):
+        if self.rs_pipeline is None or self.rs_align is None:
+            return None, None
+
+        try:
+            frames = self.rs_pipeline.wait_for_frames(timeout_ms=1000)
+            aligned = self.rs_align.process(frames)
+            color_frame = aligned.get_color_frame()
+            depth_frame = aligned.get_depth_frame()
+            if not color_frame or not depth_frame:
+                return None, None
+
+            color_img = np.asanyarray(color_frame.get_data())
+            depth_scale = depth_frame.get_units()
+            depth_img_m = np.asanyarray(depth_frame.get_data()).astype(np.float32) * float(
+                depth_scale
+            )
+            return color_img, depth_img_m
+        except Exception:
+            return None, None
 
     def _build_tracker(self):
         try:
@@ -263,6 +371,10 @@ class StereoTrackerNode(Node):
         self.tracks_pub.publish(msg)
 
     def process_frame(self) -> None:
+        if self.source_mode == "realsense":
+            self._process_realsense_frame()
+            return
+
         ok_left, left = self.left_cap.read()
         ok_right, right = self.right_cap.read()
         if not ok_left or not ok_right:
@@ -313,6 +425,41 @@ class StereoTrackerNode(Node):
         tracked = self.tracker.update(detections_3d)
         self._publish_tracks(tracked)
 
+    def _process_realsense_frame(self) -> None:
+        color_img, depth_img_m = self._read_realsense()
+        if color_img is None or depth_img_m is None:
+            self.get_logger().warn("RealSense frame read failed.")
+            return
+
+        detections = self._extract_detections(color_img)
+        detections_3d = []
+        for det in detections:
+            u = int(round(det.center_x))
+            v = int(round(det.center_y))
+            depth_m = self._sample_depth_meters(depth_img_m, u, v)
+            if depth_m <= 0.0:
+                continue
+
+            rs_point = rs.rs2_deproject_pixel_to_point(
+                self.rs_color_intrinsics, [float(u), float(v)], float(depth_m)
+            )
+            point_frd = self._realsense_to_frd(rs_point)
+            body_point = camera_to_body(point_frd, self.rotation, self.translation)
+
+            detections_3d.append(
+                Detection(
+                    points=np.array(body_point, dtype=float),
+                    scores=np.array([det.confidence], dtype=float),
+                    data={
+                        "confidence": float(det.confidence),
+                        "bbox_area_px": float(det.bbox_area_px),
+                    },
+                )
+            )
+
+        tracked = self.tracker.update(detections_3d)
+        self._publish_tracks(tracked)
+
 
 def main(args=None) -> None:
     rclpy.init(args=args)
@@ -323,8 +470,12 @@ def main(args=None) -> None:
         pass
     finally:
         try:
-            node.left_cap.release()
-            node.right_cap.release()
+            if node.left_cap is not None:
+                node.left_cap.release()
+            if node.right_cap is not None:
+                node.right_cap.release()
+            if node.rs_pipeline is not None:
+                node.rs_pipeline.stop()
         except Exception:
             pass
         node.destroy_node()
