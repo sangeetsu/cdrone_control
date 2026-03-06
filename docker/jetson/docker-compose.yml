@@ -1,0 +1,27 @@
+services:
+  mavros_container:
+    image: dev:mavros2
+    privileged: true
+    ipc: host
+    pid: host
+    volumes:
+      - /dev:/dev
+      - ./mavros_entrypoint.sh:/mavros_entrypoint.sh
+    entrypoint: [ "/bin/bash", "-c", "/mavros_entrypoint.sh" ]
+
+  autonomy_container:
+    image: xtrana:ros2
+    runtime: nvidia
+    privileged: true
+    ipc: host
+    pid: host
+    depends_on:
+      - mavros_container
+    environment:
+      - NVIDIA_DRIVER_CAPABILITIES=all
+      - SOURCE_MODE=csi
+      - SCENARIO=intercept_illuminate_v1
+    volumes:
+      - /dev:/dev
+      - ./entrypoint.sh:/entrypoint.sh
+    entrypoint: [ "/bin/bash", "-c", "/entrypoint.sh" ]

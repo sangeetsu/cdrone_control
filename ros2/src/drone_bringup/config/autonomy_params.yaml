@@ -1,0 +1,66 @@
+stereo_tracker_node:
+  ros__parameters:
+    source_mode: csi
+    left_sensor_id: 0
+    right_sensor_id: 1
+    left_url: "rtsp://127.0.0.1:5600/camera1"
+    right_url: "rtsp://127.0.0.1:5600/camera2"
+    capture_width: 1920
+    capture_height: 1080
+    display_width: 640
+    display_height: 640
+    framerate: 30
+    flip_method: 0
+    model_path: "/home/jetson/cdrone_yolo/non_xai_best.engine"
+    device_id: 0
+    model_input_size: 640
+    detection_conf_threshold: 0.35
+    epipolar_tolerance_px: 10.0
+    tracker_rate_hz: 20.0
+    calibration_path: "/home/jetson/cdrone_yolo/stereo_calibration.npz"
+    camera_body_translation_m: [0.0, 0.0, 0.0]
+    camera_body_rpy_rad: [0.0, 0.0, 0.0]
+    norfair_distance_threshold: 1.25
+    rtsp_transport: udp
+
+engagement_manager_node:
+  ros__parameters:
+    control_rate_hz: 20.0
+    follow_distance_m: 3.0
+    engage_distance_m: 1.2
+    dwell_time_s: 2.0
+    stability_time_s: 0.5
+    target_cooldown_s: 15.0
+    min_safe_distance_m: 0.8
+    lost_target_timeout_s: 0.75
+    reacquire_timeout_s: 2.0
+    track_gc_s: 2.5
+    kp_xy: 0.45
+    kp_z: 0.3
+    kp_yaw: 0.8
+    max_vel_xy_mps: 1.5
+    max_vel_z_mps: 0.8
+    max_yaw_rate_rps: 0.6
+    light_default_intensity: 0.9
+
+health_monitor_node:
+  ros__parameters:
+    check_rate_hz: 5.0
+    tracks_timeout_s: 1.0
+    engagement_timeout_s: 2.0
+    startup_grace_s: 5.0
+
+mavros_velocity_node:
+  ros__parameters:
+    publish_rate_hz: 20.0
+    watchdog_timeout_s: 0.5
+    max_vel_xy_mps: 1.5
+    max_vel_z_mps: 0.8
+    max_yaw_rate_rps: 0.6
+    require_guided_mode: true
+
+light_controller_node:
+  ros__parameters:
+    light_gpio_pin: 33
+    light_pwm_hz: 200
+    light_default_intensity: 0.9

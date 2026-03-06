@@ -1,0 +1,12 @@
+builtin_interfaces/Time stamp
+int32 track_id
+float32 x_b_m
+float32 y_b_m
+float32 z_b_m
+float32 vx_b_mps
+float32 vy_b_mps
+float32 vz_b_mps
+float32 distance_m
+float32 confidence
+float32 bbox_area_px
+bool inbound

@@ -1,0 +1,6 @@
+builtin_interfaces/Time stamp
+string scenario_id
+string state
+int32 active_track_id
+float32 active_distance_m
+float32 dwell_remaining_s

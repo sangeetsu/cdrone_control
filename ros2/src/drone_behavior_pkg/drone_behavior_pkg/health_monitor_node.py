@@ -1,0 +1,95 @@
+from __future__ import annotations
+
+from typing import Optional
+
+import rclpy
+from rclpy.node import Node
+from std_msgs.msg import Bool
+
+from drone_msgs.msg import EngagementState, TargetTrackArray
+
+
+class HealthMonitorNode(Node):
+    def __init__(self) -> None:
+        super().__init__("health_monitor_node")
+
+        self.declare_parameter("check_rate_hz", 5.0)
+        self.declare_parameter("tracks_timeout_s", 1.0)
+        self.declare_parameter("engagement_timeout_s", 2.0)
+        self.declare_parameter("startup_grace_s", 5.0)
+
+        self.check_rate_hz = float(self.get_parameter("check_rate_hz").value)
+        self.tracks_timeout_s = float(self.get_parameter("tracks_timeout_s").value)
+        self.engagement_timeout_s = float(self.get_parameter("engagement_timeout_s").value)
+        self.startup_grace_s = float(self.get_parameter("startup_grace_s").value)
+
+        self.last_tracks_time_s: Optional[float] = None
+        self.last_engagement_time_s: Optional[float] = None
+        self.last_estop_state = False
+        self.start_time_s = self.now_s()
+
+        self.tracks_sub = self.create_subscription(
+            TargetTrackArray, "/cdrone/perception/tracks", self.tracks_callback, 10
+        )
+        self.engagement_sub = self.create_subscription(
+            EngagementState, "/cdrone/engagement/state", self.engagement_callback, 10
+        )
+        self.estop_pub = self.create_publisher(Bool, "/cdrone/safety/estop", 10)
+
+        self.timer = self.create_timer(
+            1.0 / max(self.check_rate_hz, 1.0), self.check_health
+        )
+        self.get_logger().info("Health monitor started.")
+
+    def now_s(self) -> float:
+        return self.get_clock().now().nanoseconds / 1e9
+
+    def tracks_callback(self, _msg: TargetTrackArray) -> None:
+        self.last_tracks_time_s = self.now_s()
+
+    def engagement_callback(self, _msg: EngagementState) -> None:
+        self.last_engagement_time_s = self.now_s()
+
+    def check_health(self) -> None:
+        now_s = self.now_s()
+        if now_s - self.start_time_s < self.startup_grace_s:
+            return
+        track_stale = (
+            self.last_tracks_time_s is None
+            or now_s - self.last_tracks_time_s > self.tracks_timeout_s
+        )
+        engagement_stale = (
+            self.last_engagement_time_s is None
+            or now_s - self.last_engagement_time_s > self.engagement_timeout_s
+        )
+        estop = bool(track_stale or engagement_stale)
+        if estop == self.last_estop_state:
+            return
+
+        self.last_estop_state = estop
+        msg = Bool()
+        msg.data = estop
+        self.estop_pub.publish(msg)
+
+        if estop:
+            self.get_logger().error(
+                "Health timeout detected, asserting /cdrone/safety/estop."
+            )
+        else:
+            self.get_logger().warn("Health recovered, clearing /cdrone/safety/estop.")
+
+
+def main(args=None) -> None:
+    rclpy.init(args=args)
+    node = HealthMonitorNode()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == "__main__":
+    main()

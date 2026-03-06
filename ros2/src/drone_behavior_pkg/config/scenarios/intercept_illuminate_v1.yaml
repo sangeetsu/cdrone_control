@@ -1,0 +1,14 @@
+scenario_id: intercept_illuminate_v1
+states:
+  - SEARCH
+  - APPROACH
+  - ILLUMINATE
+  - ADVANCE_QUEUE
+  - FAILSAFE_HOLD
+
+policy:
+  ranking: inbound_nearest_hybrid
+  engage_distance_m: 1.2
+  stability_time_s: 0.5
+  dwell_time_s: 2.0
+  target_cooldown_s: 15.0
