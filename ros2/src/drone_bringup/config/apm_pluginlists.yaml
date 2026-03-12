@@ -13,6 +13,7 @@
       #- vibration
       #- vision_speed_estimate
       - wheel_odometry
+      - odometry        # suppress map_frd TF lookup errors (no external odometry source)
 
     # plugin_allowlist:
     #   - 'sys_*'

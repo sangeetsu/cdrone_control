@@ -6,6 +6,7 @@ import rclpy
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from mavros_msgs.msg import State
 from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from std_msgs.msg import Bool
 
 
@@ -49,8 +50,15 @@ class MavrosVelocityNode(Node):
         self.state_sub = self.create_subscription(
             State, "/mavros/state", self.state_callback, 10
         )
+        # MAVROS publishes local_position/pose with BEST_EFFORT reliability
+        _best_effort_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+        )
         self.local_pose_sub = self.create_subscription(
-            PoseStamped, "/mavros/local_position/pose", self.local_pose_callback, 10
+            PoseStamped, "/mavros/local_position/pose", self.local_pose_callback,
+            _best_effort_qos,
         )
         self.velocity_pub = self.create_publisher(
             TwistStamped, "/mavros/setpoint_velocity/cmd_vel", 10
@@ -85,7 +93,14 @@ class MavrosVelocityNode(Node):
         self.estop = bool(msg.data)
 
     def state_callback(self, msg: State) -> None:
+        old_mode = self.state.mode
+        old_armed = self.state.armed
         self.state = msg
+        # Log meaningful state changes
+        if msg.mode != old_mode:
+            self.get_logger().info(f'Mode changed: {old_mode} → {msg.mode}')
+        if msg.armed != old_armed:
+            self.get_logger().info(f'Armed: {msg.armed}')
 
     def local_pose_callback(self, msg: PoseStamped) -> None:
         self.local_pose = msg
@@ -104,7 +119,24 @@ class MavrosVelocityNode(Node):
         now_s = self.now_s()
         stale = now_s - self.latest_cmd_time_s > self.watchdog_timeout_s
 
-        if self.estop or stale or not self._guided_gate_open():
+        if self.estop:
+            self.velocity_pub.publish(self._zero_cmd())
+            return
+
+        if not self._guided_gate_open():
+            self.velocity_pub.publish(self._zero_cmd())
+            # Warn periodically (once every 5s) if commands are being received but blocked
+            if not stale and not hasattr(self, '_last_gate_warn'):
+                self._last_gate_warn = 0.0
+            if not stale and (now_s - getattr(self, '_last_gate_warn', 0.0)) > 5.0:
+                self.get_logger().warn(
+                    f'Commands blocked: armed={self.state.armed}, '
+                    f'mode={self.state.mode} (need OFFBOARD). Press 3 in teleop terminal.'
+                )
+                self._last_gate_warn = now_s
+            return
+
+        if stale:
             self.velocity_pub.publish(self._zero_cmd())
             return
 

@@ -1,3 +1,5 @@
 mavros_node:
   ros__parameters:
-    fcu_url: "/dev/ttyACM0:921600"
+    # Connect to mavlink-router UDP endpoint (allows QGC + MAVROS simultaneously)
+    fcu_url: "udp://:14540@127.0.0.1:14550"
+    # Original direct serial (conflicts with mavlink-router): "/dev/ttyACM0:921600"
