@@ -131,7 +131,7 @@ class MavrosVelocityNode(Node):
             if not stale and (now_s - getattr(self, '_last_gate_warn', 0.0)) > 5.0:
                 self.get_logger().warn(
                     f'Commands blocked: armed={self.state.armed}, '
-                    f'mode={self.state.mode} (need OFFBOARD). Press 3 in teleop terminal.'
+                    f'mode={self.state.mode} (need OFFBOARD). Press 6 in velocity teleop.'
                 )
                 self._last_gate_warn = now_s
             return
@@ -154,7 +154,8 @@ def main(args=None) -> None:
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

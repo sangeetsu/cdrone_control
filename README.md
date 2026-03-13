@@ -1,213 +1,201 @@
 # cdrone_control
 
-ROS2-based control and autonomy stack for a Jetson Orin Nano drone platform (ARK PAB carrier), with stereo tracking, multi-target engagement, MAVROS velocity control, and spotlight actuation.
+ROS 2 control and autonomy stack for a Jetson Orin Nano multicopter running PX4 via MAVROS.
 
-## What This Repo Contains
-This repository includes:
+## Current Status
 
-1. Core MAVROS bringup and control packages.
-2. A modular autonomy stack for:
-   - Stereo multi-object perception (`stereo_tracker_node`).
-   - Target selection and engagement state machine (`engagement_manager_node`).
-   - MAVROS-safe velocity forwarding (`mavros_velocity_node`).
-   - Jetson GPIO/PWM spotlight control (`light_controller_node`).
-   - Safety health monitoring (`health_monitor_node`).
-3. Shared message definitions in `drone_msgs`.
-4. Launch/config files for full autonomous execution.
+This repo now has two distinct control paths:
 
-## Runtime Assumptions
+- `ALTCTL` / `STABILIZED` manual teleop from the Jetson keyboard through MAVROS `ManualControl`
+- velocity-based `OFFBOARD` plumbing for autonomy and bench experiments
 
-1. Runtime target: Jetson Orin Nano 8GB (Linux, ROS2 Humble), ARK custom kernel.
-2. Flight stack bridge: MAVROS with ArduPilot GUIDED workflow.
-3. Stereo cameras: dual IMX219, baseline ~60 mm.
-4. Detection backend: TensorRT engine (primary), Norfair for track management.
-5. Spotlight control: Jetson GPIO/PWM.
+What is currently proven:
 
-## Quick Start (Jetson Runtime)
+- `ros2 launch drone_bringup drone.launch.py` brings up MAVROS against PX4 over `mavlink-router`
+- `ros2 run drone_control_pkg keyboard_teleop_node` works for indoor and outdoor manual teleop in `ALTCTL`
+- keyboard arm/disarm now forces throttle low first
+- keyboard axes now combine correctly, so throttle and pitch/roll can be commanded together
+- normal bench `OFFBOARD` mode can be reached with the dummy vision publisher in `bench_offboard.launch.py`
 
-1. Install ROS2 + MAVROS dependencies.
+What is not ready yet:
+
+- no real no-GPS `OFFBOARD` autonomy without external vision / VIO or optical flow
+- the current autonomy path still depends on `mavros_velocity_node` and `OFFBOARD`
+- the dummy external-vision node is bench-only and not flightworthy
+
+## Important Learnings
+
+1. This is a PX4 stack, not an ArduPilot GUIDED stack.
+2. Indoor teleop is currently best done in `ALTCTL`, not `OFFBOARD`.
+3. `keyboard_teleop_node` now publishes to `/mavros/manual_control/send` by default.
+4. `SPACE` means "center sticks", not emergency stop.
+5. QGC can coexist with MAVROS through `mavlink-router`, but if QGC shows transfer timeouts or MAVROS becomes unstable, close QGC and disable QGC virtual joystick.
+6. `OFFBOARD` without GPS is not the real issue. The actual requirement is a trusted aiding source such as VIO / external vision or optical flow + rangefinder.
+
+## Key Docs
+
+- [props_off_test.md](./props_off_test.md): current indoor / bench procedure
+- [props_on_test.md](./props_on_test.md): first low-altitude outdoor flight procedure
+- [problem.md](./problem.md): current `OFFBOARD` diagnosis and status
+- [vio_todo.md](./vio_todo.md): stereo-to-VIO follow-up work
+
+## Platform Assumptions
+
+- Jetson Orin Nano 8 GB
+- ROS 2 Humble
+- PX4 1.16 on ARKV6X
+- MAVROS over UDP through `mavlink-router`
+- FCU URL: `udp://:14540@127.0.0.1:14550`
+- QGC, if used, talks to `127.0.0.1:14550`
+
+## Build
+
 ```bash
-sudo apt update
-sudo apt install -y \
-  ros-humble-desktop \
-  ros-humble-mavros \
-  ros-humble-mavros-extras \
-  python3-colcon-common-extensions \
-  python3-pip \
-  python3-opencv
-```
-
-2. Install GeographicLib datasets (required by MAVROS).
-```bash
-source /opt/ros/humble/setup.bash
-ros2 run mavros install_geographiclib_datasets.sh
-```
-
-3. Install Python dependencies for Jetson runtime.
-```bash
-cd /path/to/cdrone_control
-pip3 install -r requirements-jetson.txt
-```
-
-4. Build the ROS2 workspace.
-```bash
-cd /path/to/cdrone_control/ros2
+cd /home/jetson/ros_ws/cdrone_control/ros2
 source /opt/ros/humble/setup.bash
 colcon build --symlink-install
-source install/local_setup.bash
+source install/setup.bash
 ```
 
-5. Configure runtime paths in:
-`ros2/src/drone_bringup/config/autonomy_params.yaml`
-Set at least:
-   - `model_path` (TensorRT engine path)
-   - `calibration_path` (`stereo_calibration.npz`)
-   - Camera source parameters (`source_mode`, sensor IDs or RTSP URLs)
+## Current Manual Teleop Path
 
-6. Run full autonomy stack.
-```bash
-ros2 launch drone_bringup autonomy_stack.launch.py source_mode:=csi scenario:=intercept_illuminate_v1
-```
+Launch MAVROS:
 
-## Common Launch Modes
-
-1. Full stack (MAVROS + autonomy):
-```bash
-ros2 launch drone_bringup autonomy_stack.launch.py
-```
-
-2. MAVROS only:
 ```bash
 ros2 launch drone_bringup drone.launch.py
 ```
 
-3. RTSP stereo input mode:
+Run keyboard teleop:
+
 ```bash
-ros2 launch drone_bringup autonomy_stack.launch.py source_mode:=rtsp
+ros2 run drone_control_pkg keyboard_teleop_node
 ```
 
-4. Explicit scenario file id:
+Current manual backend behavior:
+
+- key `2`: `ALTCTL`
+- key `3`: `STABILIZED`
+- key `1`: arm with throttle forced low first
+- key `4`: disarm after a short low-throttle delay
+- `W/A/S/D/Q/E/R/F` latch and combine across axes until changed or `SPACE`
+- `SPACE` recenters all sticks
+
+Recommended first mode:
+
+- use `ALTCTL` for manual flight tests
+- use `STABILIZED` only if you specifically want more raw throttle behavior
+
+## Current OFFBOARD Bench Path
+
+Bench-only `OFFBOARD` launch:
+
 ```bash
-ros2 launch drone_bringup autonomy_stack.launch.py scenario:=intercept_illuminate_v1
+ros2 launch drone_bringup bench_offboard.launch.py
 ```
 
-## Safety Control Topics
+This path starts:
 
-1. E-stop assert:
+- MAVROS
+- the dummy external-vision pose publisher
+- the velocity bridge for `OFFBOARD` setpoints
+
+Use this only to validate control-path plumbing. It is not the flight-ready no-GPS autonomy solution.
+
+## Full Autonomy Stack
+
+The autonomy stack still uses the velocity-`OFFBOARD` path:
+
 ```bash
-ros2 topic pub /cdrone/safety/estop std_msgs/msg/Bool "{data: true}" --once
+ros2 launch drone_bringup autonomy_stack.launch.py
 ```
 
-2. E-stop clear sequence:
-```bash
-ros2 topic pub /cdrone/safety/estop std_msgs/msg/Bool "{data: false}" --once
-ros2 topic pub /cdrone/safety/estop_reset std_msgs/msg/Bool "{data: true}" --once
-```
+At a high level:
 
-## File Hierarchy and Architecture
+- `stereo_tracker_node` publishes perception tracks
+- `engagement_manager_node` publishes `/cdrone/control/cmd_vel_body`
+- `mavros_velocity_node` gates and forwards velocity commands to `/mavros/setpoint_velocity/cmd_vel`
 
-### Top-Level Layout
+Do not rely on this path for no-GPS indoor flight until a real VIO / external-vision estimator is integrated.
+
+## QGC and MAVROS
+
+This repo expects `mavlink-router` to split traffic between MAVROS and QGC.
+
+Expected pattern:
+
+- FC -> `mavlink-router`
+- `mavlink-router` -> `127.0.0.1:14550` for QGC
+- `mavlink-router` -> `127.0.0.1:14540` for MAVROS
+
+Notes:
+
+- QGC is useful for health and arming diagnostics
+- QGC virtual joystick must stay disabled when using Jetson keyboard teleop
+- if QGC reports transfer timeouts or MAVROS becomes unstable, close QGC before flight testing
+
+## Safety Guidance
+
+- Props-off testing first, always
+- First props-on flights should be manual `ALTCTL`, outdoors, low altitude, and not `OFFBOARD`
+- Do not attempt no-GPS autonomous flight until a real aiding source exists
+- Keep a spotter and a clear landing plan for first props-on tests
+
+## Repository Layout
+
 ```text
 cdrone_control/
-|- docs/
-|  |- ark_orin_multi_drone_plan.md
+|- problem.md
+|- props_off_test.md
+|- props_on_test.md
+|- vio_todo.md
 |- ros2/
 |  |- src/
-|     |- drone_bringup/
-|     |- drone_msgs/
-|     |- drone_vision_pkg/
-|     |- drone_behavior_pkg/
-|     |- drone_control_pkg/
-|     |- drone_light_pkg/
-|     |- ros2_poselib/
-|- docker/
+|  |  |- drone_bringup/
+|  |  |- drone_msgs/
+|  |  |- drone_vision_pkg/
+|  |  |- drone_behavior_pkg/
+|  |  |- drone_control_pkg/
+|  |  |- drone_light_pkg/
+|  |  |- ros2_poselib/
 |- requirements-jetson.txt
 |- requirements-dev.txt
 ```
 
-### Package Roles
+## Main Package Roles
 
-1. `drone_bringup`
-   - Launch and global config.
-   - Key files:
-     - `launch/autonomy_stack.launch.py`
-     - `launch/drone.launch.py`
-     - `config/autonomy_params.yaml`
-     - `config/apm_config.yaml`
+- `drone_bringup`: launch files and MAVROS config
+- `drone_control_pkg`: keyboard teleop, MAVROS adapters, bench vision publisher
+- `drone_behavior_pkg`: autonomy state machine and health monitoring
+- `drone_vision_pkg`: stereo perception and tracking
+- `drone_light_pkg`: spotlight hardware control
+- `drone_msgs`: shared ROS message types
 
-2. `drone_msgs`
-   - Message interfaces:
-     - `TargetTrack.msg`
-     - `TargetTrackArray.msg`
-     - `EngagementState.msg`
-     - `LightCommand.msg`
+## Useful Commands
 
-3. `drone_vision_pkg`
-   - Perception and stereo tracking:
-     - `drone_vision_pkg/stereo_tracker_node.py`
-     - `drone_vision_pkg/stereo_utils.py`
+Check MAVROS state:
 
-4. `drone_behavior_pkg`
-   - Engagement state machine and policy:
-     - `drone_behavior_pkg/engagement_manager_node.py`
-     - `drone_behavior_pkg/health_monitor_node.py`
-     - `drone_behavior_pkg/behavior_registry.py`
-     - `drone_behavior_pkg/behaviors/*`
-     - `config/scenarios/intercept_illuminate_v1.yaml`
+```bash
+ros2 topic echo /mavros/state --once
+```
 
-5. `drone_control_pkg`
-   - MAVROS control adapters:
-     - `drone_control_pkg/mavros_velocity_node.py`
-     - Optional setup/control helpers (`drone_setup_node.py`, `drone_control_node.py`) remain available.
+Check manual-control messages:
 
-6. `drone_light_pkg`
-   - Spotlight hardware output:
-     - `drone_light_pkg/light_controller_node.py`
-     - `drone_light_pkg/light_utils.py`
+```bash
+ros2 topic echo /mavros/manual_control/send --once
+```
 
-### Node Graph (Conceptual)
+Check velocity setpoints for the autonomy path:
 
-1. `stereo_tracker_node` publishes `/cdrone/perception/tracks`.
-2. `engagement_manager_node` consumes tracks, runs scenario policy, publishes:
-   - `/cdrone/control/cmd_vel_body`
-   - `/cdrone/light/cmd`
-   - `/cdrone/engagement/state`
-3. `mavros_velocity_node` gates/sanitizes commands, forwards to:
-   - `/mavros/setpoint_velocity/cmd_vel`
-4. `light_controller_node` converts light commands to GPIO/PWM.
-5. `health_monitor_node` supervises heartbeat freshness and asserts `/cdrone/safety/estop` on timeout.
+```bash
+ros2 topic hz /mavros/setpoint_velocity/cmd_vel
+```
 
-## Important Config Files
+Syntax check Python nodes:
 
-1. `ros2/src/drone_bringup/config/autonomy_params.yaml`
-   - Main autonomy tuning and hardware map.
-2. `ros2/src/drone_behavior_pkg/config/scenarios/intercept_illuminate_v1.yaml`
-   - Scenario state ordering and policy defaults.
-3. `ros2/src/drone_bringup/config/apm_config.yaml`
-   - MAVROS plugin config (`setpoint_velocity` frame set to `BODY_NED`).
-4. `ros2/src/drone_control_pkg/config/apm_config.yaml`
-   - Matching MAVROS settings for control package launch path.
-
-## Development Notes (Windows + Jetson)
-
-1. You can edit code on Windows.
-2. Build and hardware-run on Jetson Linux.
-3. Keep model engine and stereo calibration files on Jetson and point to them via `autonomy_params.yaml`.
-4. Use `requirements-dev.txt` for local tooling and unit-test dependencies.
-
-## Basic Verification
-
-1. Syntax check:
 ```bash
 python3 -m py_compile \
   ros2/src/drone_behavior_pkg/drone_behavior_pkg/*.py \
   ros2/src/drone_light_pkg/drone_light_pkg/*.py \
   ros2/src/drone_vision_pkg/drone_vision_pkg/*.py \
   ros2/src/drone_control_pkg/drone_control_pkg/*.py
-```
-
-2. Run lightweight math/unit tests (after installing `pytest`):
-```bash
-pip3 install -r requirements-dev.txt
-python3 -m pytest -q
 ```

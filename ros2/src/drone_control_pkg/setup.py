@@ -36,6 +36,7 @@ setup(
             "drone_setup_node = drone_control_pkg.drone_setup_node:main",
             "mavros_velocity_node = drone_control_pkg.mavros_velocity_node:main",
             "keyboard_teleop_node = drone_control_pkg.keyboard_teleop_node:main",
+            "bench_vision_pose_node = drone_control_pkg.bench_vision_pose_node:main",
         ],
     },
 )
