@@ -14,6 +14,10 @@ rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TargetTrackArray.msg"
   "msg/EngagementState.msg"
   "msg/LightCommand.msg"
+  "msg/FlightStatus.msg"
+  "msg/SystemAlert.msg"
+  "msg/PerceptionStatus.msg"
+  "msg/PeerState.msg"
   DEPENDENCIES builtin_interfaces
 )
 

@@ -21,6 +21,8 @@ from mavros_msgs.srv import CommandBool, CommandLong, SetMode
 from rclpy.node import Node
 from std_msgs.msg import Bool
 
+from drone_control_pkg.topic_utils import cdrone_topic, join_topic
+
 
 MOVE_BINDINGS: Dict[str, Tuple[str, float]] = {
     # key: (axis, value)
@@ -58,6 +60,11 @@ class KeyboardTeleopNode(Node):
         self.declare_parameter('throttle_step', 200.0)
         self.declare_parameter('arm_throttle_hold_sec', 1.5)
         self.declare_parameter('disarm_request_delay_sec', 1.0)
+        self.declare_parameter('drone_id', 'drone01')
+        self.declare_parameter('mavros_namespace', '/mavros')
+        self.declare_parameter('cmd_vel_topic', '')
+        self.declare_parameter('estop_topic', '')
+        self.declare_parameter('manual_control_topic', '')
 
         self.command_interface = str(
             self.get_parameter('command_interface').value
@@ -82,26 +89,43 @@ class KeyboardTeleopNode(Node):
         self.disarm_request_delay_sec = float(
             self.get_parameter('disarm_request_delay_sec').value
         )
+        self.drone_id = str(self.get_parameter('drone_id').value)
+        self.mavros_namespace = str(self.get_parameter('mavros_namespace').value)
+        self.cmd_vel_topic = (
+            str(self.get_parameter('cmd_vel_topic').value).strip()
+            or cdrone_topic(self.drone_id, 'control/cmd_vel_body')
+        )
+        self.estop_topic = (
+            str(self.get_parameter('estop_topic').value).strip()
+            or cdrone_topic(self.drone_id, 'safety/estop')
+        )
+        self.manual_control_topic = (
+            str(self.get_parameter('manual_control_topic').value).strip()
+            or join_topic(self.mavros_namespace, 'manual_control/send')
+        )
+        self.arm_service = join_topic(self.mavros_namespace, 'cmd/arming')
+        self.mode_service = join_topic(self.mavros_namespace, 'set_mode')
+        self.command_service = join_topic(self.mavros_namespace, 'cmd/command')
 
         self.velocity_pub = self.create_publisher(
             TwistStamped,
-            '/cdrone/control/cmd_vel_body',
+            self.cmd_vel_topic,
             10
         )
         self.manual_pub = self.create_publisher(
             ManualControl,
-            '/mavros/manual_control/send',
+            self.manual_control_topic,
             10,
         )
         self.estop_pub = self.create_publisher(
             Bool,
-            '/cdrone/safety/estop',
+            self.estop_topic,
             10
         )
 
-        self.arm_client = self.create_client(CommandBool, '/mavros/cmd/arming')
-        self.mode_client = self.create_client(SetMode, '/mavros/set_mode')
-        self.cmd_client = self.create_client(CommandLong, '/mavros/cmd/command')
+        self.arm_client = self.create_client(CommandBool, self.arm_service)
+        self.mode_client = self.create_client(SetMode, self.mode_service)
+        self.cmd_client = self.create_client(CommandLong, self.command_service)
 
         self.x = 0.0
         self.y = 0.0

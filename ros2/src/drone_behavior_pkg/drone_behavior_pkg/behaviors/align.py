@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class ApproachBehavior:
-    name: str = "APPROACH"
+class AlignBehavior:
+    name: str = "ALIGN"
 
     def step(self, manager: "EngagementManagerNode", now_s: float) -> str:
         target = manager.get_active_target(now_s)
@@ -21,11 +21,8 @@ class ApproachBehavior:
             manager.publish_light(False, 0.0, 0.0)
             return self.name
 
-        manager.publish_velocity_for_target(
-            target, desired_distance_m=manager.follow_distance_m
-        )
+        yaw_error = manager.publish_align_for_target(target)
         manager.publish_light(False, 0.0, 0.0)
-
-        if target.distance_m <= manager.follow_distance_m + manager.follow_distance_tolerance_m:
-            return "FOLLOW_STANDOFF"
+        if abs(yaw_error) <= manager.align_yaw_tolerance_rad:
+            return "APPROACH"
         return self.name

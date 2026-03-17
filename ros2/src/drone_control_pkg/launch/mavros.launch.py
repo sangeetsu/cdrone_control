@@ -18,10 +18,12 @@ def launch_setup(context, *args, **kwargs):
     pth_param1 = pth_mavros_launcher + "/config/apm_config.yaml"
     pth_param2 = pth_mavros_launcher + "/config/apm_pluginlists.yaml"
     log_level = LaunchConfiguration("log_level")
+    mavros_namespace = LaunchConfiguration("mavros_namespace")
 
     mavros_node = Node(
         package="mavros",
         executable="mavros_node",
+        namespace=mavros_namespace,
         output="screen",
         parameters=[pth_param0, pth_param1, pth_param2],
         arguments=["--ros-args", "--log-level", log_level],
@@ -34,6 +36,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("log_level", default_value="info"),
+            DeclareLaunchArgument("mavros_namespace", default_value="mavros"),
             DeclareLaunchArgument("setup_drone", default_value="true"),
             OpaqueFunction(function=launch_setup),
         ]

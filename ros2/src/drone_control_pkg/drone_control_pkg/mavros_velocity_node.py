@@ -9,6 +9,8 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from std_msgs.msg import Bool
 
+from drone_control_pkg.topic_utils import cdrone_topic, join_topic
+
 
 def clamp(value: float, min_v: float, max_v: float) -> float:
     return max(min(value, max_v), min_v)
@@ -24,6 +26,13 @@ class MavrosVelocityNode(Node):
         self.declare_parameter("max_vel_z_mps", 0.8)
         self.declare_parameter("max_yaw_rate_rps", 0.6)
         self.declare_parameter("require_guided_mode", True)
+        self.declare_parameter("drone_id", "drone01")
+        self.declare_parameter("mavros_namespace", "/mavros")
+        self.declare_parameter("cmd_vel_topic", "")
+        self.declare_parameter("estop_topic", "")
+        self.declare_parameter("state_topic", "")
+        self.declare_parameter("local_pose_topic", "")
+        self.declare_parameter("output_topic", "")
 
         self.publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
         self.watchdog_timeout_s = float(self.get_parameter("watchdog_timeout_s").value)
@@ -31,6 +40,28 @@ class MavrosVelocityNode(Node):
         self.max_vel_z_mps = float(self.get_parameter("max_vel_z_mps").value)
         self.max_yaw_rate_rps = float(self.get_parameter("max_yaw_rate_rps").value)
         self.require_guided_mode = bool(self.get_parameter("require_guided_mode").value)
+        self.drone_id = str(self.get_parameter("drone_id").value)
+        self.mavros_namespace = str(self.get_parameter("mavros_namespace").value)
+        self.cmd_vel_topic = (
+            str(self.get_parameter("cmd_vel_topic").value).strip()
+            or cdrone_topic(self.drone_id, "control/cmd_vel_body")
+        )
+        self.estop_topic = (
+            str(self.get_parameter("estop_topic").value).strip()
+            or cdrone_topic(self.drone_id, "safety/estop")
+        )
+        self.state_topic = (
+            str(self.get_parameter("state_topic").value).strip()
+            or join_topic(self.mavros_namespace, "state")
+        )
+        self.local_pose_topic = (
+            str(self.get_parameter("local_pose_topic").value).strip()
+            or join_topic(self.mavros_namespace, "local_position/pose")
+        )
+        self.output_topic = (
+            str(self.get_parameter("output_topic").value).strip()
+            or join_topic(self.mavros_namespace, "setpoint_velocity/cmd_vel")
+        )
 
         self.latest_cmd = TwistStamped()
         self.latest_cmd_time_s = 0.0
@@ -40,15 +71,15 @@ class MavrosVelocityNode(Node):
 
         self.cmd_sub = self.create_subscription(
             TwistStamped,
-            "/cdrone/control/cmd_vel_body",
+            self.cmd_vel_topic,
             self.cmd_callback,
             10,
         )
         self.estop_sub = self.create_subscription(
-            Bool, "/cdrone/safety/estop", self.estop_callback, 10
+            Bool, self.estop_topic, self.estop_callback, 10
         )
         self.state_sub = self.create_subscription(
-            State, "/mavros/state", self.state_callback, 10
+            State, self.state_topic, self.state_callback, 10
         )
         # MAVROS publishes local_position/pose with BEST_EFFORT reliability
         _best_effort_qos = QoSProfile(
@@ -57,11 +88,11 @@ class MavrosVelocityNode(Node):
             depth=10,
         )
         self.local_pose_sub = self.create_subscription(
-            PoseStamped, "/mavros/local_position/pose", self.local_pose_callback,
+            PoseStamped, self.local_pose_topic, self.local_pose_callback,
             _best_effort_qos,
         )
         self.velocity_pub = self.create_publisher(
-            TwistStamped, "/mavros/setpoint_velocity/cmd_vel", 10
+            TwistStamped, self.output_topic, 10
         )
 
         self.timer = self.create_timer(
@@ -108,7 +139,9 @@ class MavrosVelocityNode(Node):
     def _guided_gate_open(self) -> bool:
         if not self.require_guided_mode:
             return True
-        return bool(self.state.armed and self.state.guided)
+        return bool(
+            self.state.armed and (self.state.mode == "OFFBOARD" or self.state.guided)
+        )
 
     def _zero_cmd(self) -> TwistStamped:
         msg = TwistStamped()

@@ -14,4 +14,4 @@ class SearchBehavior:
         if candidate is None:
             return self.name
         manager.set_active_target(candidate.track_id, now_s)
-        return "APPROACH"
+        return "ALIGN"

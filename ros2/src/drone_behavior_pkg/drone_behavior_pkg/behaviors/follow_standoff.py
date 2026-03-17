@@ -4,8 +4,8 @@ from dataclasses import dataclass
 
 
 @dataclass(frozen=True)
-class ApproachBehavior:
-    name: str = "APPROACH"
+class FollowStandoffBehavior:
+    name: str = "FOLLOW_STANDOFF"
 
     def step(self, manager: "EngagementManagerNode", now_s: float) -> str:
         target = manager.get_active_target(now_s)
@@ -25,7 +25,4 @@ class ApproachBehavior:
             target, desired_distance_m=manager.follow_distance_m
         )
         manager.publish_light(False, 0.0, 0.0)
-
-        if target.distance_m <= manager.follow_distance_m + manager.follow_distance_tolerance_m:
-            return "FOLLOW_STANDOFF"
         return self.name

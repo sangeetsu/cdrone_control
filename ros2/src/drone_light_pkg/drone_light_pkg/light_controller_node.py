@@ -15,6 +15,12 @@ try:
 except Exception:  # pragma: no cover - hardware specific import
     GPIO = None
 
+
+def cdrone_topic(drone_id: str, leaf: str) -> str:
+    drone_id = str(drone_id or "").strip().strip("/")
+    base = "/cdrone" if not drone_id else f"/cdrone/{drone_id}"
+    return f"{base}/{leaf.lstrip('/')}"
+
 @dataclass
 class LightState:
     enabled: bool = False
@@ -29,10 +35,22 @@ class LightControllerNode(Node):
         self.declare_parameter("light_gpio_pin", 33)
         self.declare_parameter("light_pwm_hz", 200)
         self.declare_parameter("light_default_intensity", 0.9)
+        self.declare_parameter("drone_id", "drone01")
+        self.declare_parameter("light_cmd_topic", "")
+        self.declare_parameter("estop_topic", "")
 
         self.pin = int(self.get_parameter("light_gpio_pin").value)
         self.pwm_hz = int(self.get_parameter("light_pwm_hz").value)
         self.default_intensity = float(self.get_parameter("light_default_intensity").value)
+        self.drone_id = str(self.get_parameter("drone_id").value)
+        self.light_cmd_topic = (
+            str(self.get_parameter("light_cmd_topic").value).strip()
+            or cdrone_topic(self.drone_id, "light/cmd")
+        )
+        self.estop_topic = (
+            str(self.get_parameter("estop_topic").value).strip()
+            or cdrone_topic(self.drone_id, "safety/estop")
+        )
 
         self.estop = False
         self.state = LightState(enabled=False, intensity=self.default_intensity, strobe_hz=0.0)
@@ -42,10 +60,10 @@ class LightControllerNode(Node):
         self._init_hardware()
 
         self.light_sub = self.create_subscription(
-            LightCommand, "/cdrone/light/cmd", self.light_cmd_callback, 10
+            LightCommand, self.light_cmd_topic, self.light_cmd_callback, 10
         )
         self.estop_sub = self.create_subscription(
-            Bool, "/cdrone/safety/estop", self.estop_callback, 10
+            Bool, self.estop_topic, self.estop_callback, 10
         )
         self.timer = self.create_timer(0.02, self.apply_output)
         self.get_logger().info("Light controller started.")

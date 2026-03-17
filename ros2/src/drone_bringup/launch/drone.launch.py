@@ -20,10 +20,12 @@ def launch_setup(context, *args, **kwargs):
 
     # Launch arguments
     log_level = LaunchConfiguration("log_level")
+    mavros_namespace = LaunchConfiguration("mavros_namespace")
 
     mavros_node = Node(
         package="mavros",
         executable="mavros_node",
+        namespace=mavros_namespace,
         output="screen",
         parameters=[mavros_params, mavros_config, mavros_plugins],
         arguments=["--ros-args", "--log-level", log_level],
@@ -36,6 +38,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("log_level", default_value="info"),
+            DeclareLaunchArgument("mavros_namespace", default_value="mavros"),
             OpaqueFunction(function=launch_setup),
         ]
     )

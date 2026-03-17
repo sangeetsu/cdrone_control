@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 
 import os
+import time
 
 import numpy as np
 import rclpy
@@ -33,7 +34,13 @@ from drone_vision_pkg.stereo_utils import (
     rpy_to_rotation_matrix,
     triangulate_point,
 )
-from drone_msgs.msg import TargetTrack, TargetTrackArray
+from drone_msgs.msg import PerceptionStatus, TargetTrack, TargetTrackArray
+
+
+def cdrone_topic(drone_id: str, leaf: str) -> str:
+    drone_id = str(drone_id or "").strip().strip("/")
+    base = "/cdrone" if not drone_id else f"/cdrone/{drone_id}"
+    return f"{base}/{leaf.lstrip('/')}"
 
 
 class StereoTrackerNode(Node):
@@ -67,6 +74,9 @@ class StereoTrackerNode(Node):
         self.declare_parameter("camera_body_rpy_rad", [0.0, 0.0, 0.0])
         self.declare_parameter("norfair_distance_threshold", 1.25)
         self.declare_parameter("rtsp_transport", "udp")
+        self.declare_parameter("drone_id", "drone01")
+        self.declare_parameter("tracks_topic", "")
+        self.declare_parameter("perception_status_topic", "")
 
         self.source_mode = str(self.get_parameter("source_mode").value).strip().lower()
         self.left_sensor_id = int(self.get_parameter("left_sensor_id").value)
@@ -95,6 +105,15 @@ class StereoTrackerNode(Node):
         self.norfair_distance_threshold = float(
             self.get_parameter("norfair_distance_threshold").value
         )
+        self.drone_id = str(self.get_parameter("drone_id").value)
+        self.tracks_topic = (
+            str(self.get_parameter("tracks_topic").value).strip()
+            or cdrone_topic(self.drone_id, "perception/tracks")
+        )
+        self.perception_status_topic = (
+            str(self.get_parameter("perception_status_topic").value).strip()
+            or cdrone_topic(self.drone_id, "perception/status")
+        )
 
         if self.source_mode not in ("csi", "rtsp"):
             self.get_logger().warn(
@@ -114,9 +133,11 @@ class StereoTrackerNode(Node):
         self.right_cap = self._open_capture(self.right_sensor_id, self.right_url)
 
         self.prev_positions: Dict[int, Tuple[np.ndarray, float]] = {}
-        self.tracks_pub = self.create_publisher(
-            TargetTrackArray, "/cdrone/perception/tracks", 10
+        self.tracks_pub = self.create_publisher(TargetTrackArray, self.tracks_topic, 10)
+        self.perception_status_pub = self.create_publisher(
+            PerceptionStatus, self.perception_status_topic, 10
         )
+        self.last_process_time_s: float | None = None
         self.timer = self.create_timer(
             1.0 / max(self.tracker_rate_hz, 1.0), self.process_frame
         )
@@ -262,7 +283,34 @@ class StereoTrackerNode(Node):
 
         self.tracks_pub.publish(msg)
 
+    def _publish_perception_status(
+        self,
+        left_count: int,
+        right_count: int,
+        paired_count: int,
+        active_tracks: int,
+        inference_latency_ms: float,
+    ) -> None:
+        now_s = self.get_clock().now().nanoseconds / 1e9
+        if self.last_process_time_s is None:
+            fps = 0.0
+        else:
+            fps = 1.0 / max(1e-3, now_s - self.last_process_time_s)
+        self.last_process_time_s = now_s
+
+        msg = PerceptionStatus()
+        msg.stamp = self.get_clock().now().to_msg()
+        msg.drone_id = self.drone_id
+        msg.tracker_fps = float(fps)
+        msg.inference_latency_ms = float(inference_latency_ms)
+        msg.left_detections = int(left_count)
+        msg.right_detections = int(right_count)
+        msg.paired_detections = int(paired_count)
+        msg.active_tracks = int(active_tracks)
+        self.perception_status_pub.publish(msg)
+
     def process_frame(self) -> None:
+        start_t = time.perf_counter()
         ok_left, left = self.left_cap.read()
         ok_right, right = self.right_cap.read()
         if not ok_left or not ok_right:
@@ -312,6 +360,13 @@ class StereoTrackerNode(Node):
 
         tracked = self.tracker.update(detections_3d)
         self._publish_tracks(tracked)
+        self._publish_perception_status(
+            left_count=len(left_dets),
+            right_count=len(right_dets),
+            paired_count=len(pairs),
+            active_tracks=len(tracked),
+            inference_latency_ms=(time.perf_counter() - start_t) * 1000.0,
+        )
 
 
 def main(args=None) -> None:

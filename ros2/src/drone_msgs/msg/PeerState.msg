@@ -1,0 +1,14 @@
+builtin_interfaces/Time stamp
+string drone_id
+string hostname
+string self_ip
+bool connected
+bool armed
+bool autonomy_enabled
+string mode
+float32 x_m
+float32 y_m
+float32 z_m
+float32 vx_mps
+float32 vy_mps
+float32 vz_mps

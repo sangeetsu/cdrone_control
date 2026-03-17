@@ -3,9 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Dict, Protocol
 
-from drone_behavior_pkg.behaviors.advance_queue import AdvanceQueueBehavior
+from drone_behavior_pkg.behaviors.align import AlignBehavior
 from drone_behavior_pkg.behaviors.approach import ApproachBehavior
-from drone_behavior_pkg.behaviors.illuminate import IlluminateBehavior
+from drone_behavior_pkg.behaviors.follow_standoff import FollowStandoffBehavior
+from drone_behavior_pkg.behaviors.lost_target_hold import LostTargetHoldBehavior
 from drone_behavior_pkg.behaviors.search import SearchBehavior
 
 
@@ -37,8 +38,9 @@ class FailsafeHoldBehavior:
 def build_behavior_registry() -> Dict[str, BehaviorAction]:
     return {
         "SEARCH": SearchBehavior(),
+        "ALIGN": AlignBehavior(),
         "APPROACH": ApproachBehavior(),
-        "ILLUMINATE": IlluminateBehavior(),
-        "ADVANCE_QUEUE": AdvanceQueueBehavior(),
+        "FOLLOW_STANDOFF": FollowStandoffBehavior(),
+        "LOST_TARGET_HOLD": LostTargetHoldBehavior(),
         "FAILSAFE_HOLD": FailsafeHoldBehavior(),
     }

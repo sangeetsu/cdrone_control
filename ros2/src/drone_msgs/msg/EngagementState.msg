@@ -1,6 +1,14 @@
 builtin_interfaces/Time stamp
 string scenario_id
 string state
+bool autonomy_enabled
+bool autonomy_ready
+string blocked_reason
+bool estop_latched
+bool obstacle_blocked
+bool min_distance_gate_active
 int32 active_track_id
 float32 active_distance_m
+float32 active_bearing_rad
+bool target_visible
 float32 dwell_remaining_s

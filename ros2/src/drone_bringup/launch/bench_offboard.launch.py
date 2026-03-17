@@ -13,12 +13,17 @@ from launch_ros.parameter_descriptions import ParameterValue
 def launch_setup(context, *args, **kwargs):
     bringup_share = get_package_share_directory("drone_bringup")
     log_level = LaunchConfiguration("log_level")
+    mavros_namespace = LaunchConfiguration("mavros_namespace")
+    drone_id = LaunchConfiguration("drone_id")
 
     drone_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(bringup_share, "launch", "drone.launch.py")
         ),
-        launch_arguments={"log_level": log_level}.items(),
+        launch_arguments={
+            "log_level": log_level,
+            "mavros_namespace": mavros_namespace,
+        }.items(),
     )
 
     bench_vision_pose_node = Node(
@@ -46,6 +51,7 @@ def launch_setup(context, *args, **kwargs):
                 "publish_companion_status": ParameterValue(
                     LaunchConfiguration("publish_companion_status"), value_type=bool
                 ),
+                "mavros_namespace": mavros_namespace,
             }
         ],
         arguments=["--ros-args", "--log-level", log_level],
@@ -66,6 +72,8 @@ def launch_setup(context, *args, **kwargs):
                 "require_guided_mode": ParameterValue(
                     LaunchConfiguration("require_guided_mode"), value_type=bool
                 ),
+                "drone_id": drone_id,
+                "mavros_namespace": mavros_namespace,
             }
         ],
         arguments=["--ros-args", "--log-level", log_level],
@@ -79,6 +87,8 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("log_level", default_value="info"),
+            DeclareLaunchArgument("drone_id", default_value="drone01"),
+            DeclareLaunchArgument("mavros_namespace", default_value="mavros"),
             DeclareLaunchArgument("vision_rate_hz", default_value="30.0"),
             DeclareLaunchArgument("vision_frame_id", default_value="map"),
             DeclareLaunchArgument("vision_x_m", default_value="0.0"),

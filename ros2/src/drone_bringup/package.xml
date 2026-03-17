@@ -15,6 +15,7 @@
     <exec_depend>drone_behavior_pkg</exec_depend>
     <exec_depend>drone_light_pkg</exec_depend>
     <exec_depend>drone_control_pkg</exec_depend>
+    <exec_depend>drone_monitor_pkg</exec_depend>
 
     <test_depend>ament_lint_auto</test_depend>
     <test_depend>ament_lint_common</test_depend>

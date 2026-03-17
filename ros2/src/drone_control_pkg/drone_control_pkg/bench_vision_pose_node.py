@@ -5,6 +5,8 @@ from geometry_msgs.msg import PoseStamped
 from mavros_msgs.msg import CompanionProcessStatus
 from rclpy.node import Node
 
+from drone_control_pkg.topic_utils import join_topic
+
 
 def quaternion_from_euler(
     roll: float, pitch: float, yaw: float
@@ -40,6 +42,7 @@ class BenchVisionPoseNode(Node):
         self.declare_parameter("pitch_rad", 0.0)
         self.declare_parameter("yaw_rad", 0.0)
         self.declare_parameter("publish_companion_status", True)
+        self.declare_parameter("mavros_namespace", "/mavros")
 
         self.publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
         self.frame_id = str(self.get_parameter("frame_id").value)
@@ -52,12 +55,15 @@ class BenchVisionPoseNode(Node):
         self.publish_companion_status = bool(
             self.get_parameter("publish_companion_status").value
         )
+        self.mavros_namespace = str(self.get_parameter("mavros_namespace").value)
 
         self.pose_pub = self.create_publisher(
-            PoseStamped, "/mavros/vision_pose/pose", 10
+            PoseStamped, join_topic(self.mavros_namespace, "vision_pose/pose"), 10
         )
         self.status_pub = self.create_publisher(
-            CompanionProcessStatus, "/mavros/companion_process/status", 10
+            CompanionProcessStatus,
+            join_topic(self.mavros_namespace, "companion_process/status"),
+            10,
         )
 
         self.timer = self.create_timer(

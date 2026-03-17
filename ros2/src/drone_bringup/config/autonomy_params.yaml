@@ -1,8 +1,9 @@
 stereo_tracker_node:
   ros__parameters:
+    drone_id: drone01
     source_mode: csi
-    left_sensor_id: 0
-    right_sensor_id: 1
+    left_sensor_id: 2
+    right_sensor_id: 3
     left_url: "rtsp://127.0.0.1:5600/camera1"
     right_url: "rtsp://127.0.0.1:5600/camera2"
     capture_width: 1920
@@ -11,29 +12,38 @@ stereo_tracker_node:
     display_height: 640
     framerate: 30
     flip_method: 0
-    model_path: "/home/jetson/cdrone_yolo/non_xai_best.engine"
+    model_path: "/home/sangeetsu/cdrone_yolo/non_xai_best.engine"
     device_id: 0
     model_input_size: 640
     detection_conf_threshold: 0.35
     epipolar_tolerance_px: 10.0
     tracker_rate_hz: 20.0
-    calibration_path: "/home/jetson/cdrone_yolo/stereo_calibration.npz"
+    calibration_path: "/home/sangeetsu/cdrone_yolo/stereo_calibration.npz"
     camera_body_translation_m: [0.0, 0.0, 0.0]
     camera_body_rpy_rad: [0.0, 0.0, 0.0]
     norfair_distance_threshold: 1.25
     rtsp_transport: udp
 
+vio_bridge_node:
+  ros__parameters:
+    drone_id: drone01
+    publish_rate_hz: 30.0
+    input_timeout_s: 0.25
+    publish_companion_status: true
+    input_pose_topic: ""
+
 engagement_manager_node:
   ros__parameters:
+    drone_id: drone01
     control_rate_hz: 20.0
     follow_distance_m: 3.0
-    engage_distance_m: 1.2
-    dwell_time_s: 2.0
-    stability_time_s: 0.5
+    follow_distance_tolerance_m: 0.4
+    align_yaw_tolerance_rad: 0.12
     target_cooldown_s: 15.0
     min_safe_distance_m: 0.8
     lost_target_timeout_s: 0.75
     reacquire_timeout_s: 2.0
+    vio_timeout_s: 0.5
     track_gc_s: 2.5
     kp_xy: 0.45
     kp_z: 0.3
@@ -41,17 +51,23 @@ engagement_manager_node:
     max_vel_xy_mps: 1.5
     max_vel_z_mps: 0.8
     max_yaw_rate_rps: 0.6
+    obstacle_forward_distance_m: 1.5
+    obstacle_lateral_band_m: 0.8
+    obstacle_vertical_band_m: 0.8
     light_default_intensity: 0.9
 
 health_monitor_node:
   ros__parameters:
+    drone_id: drone01
     check_rate_hz: 5.0
     tracks_timeout_s: 1.0
     engagement_timeout_s: 2.0
+    vio_timeout_s: 0.5
     startup_grace_s: 5.0
 
 mavros_velocity_node:
   ros__parameters:
+    drone_id: drone01
     publish_rate_hz: 20.0
     watchdog_timeout_s: 0.5
     max_vel_xy_mps: 1.5
@@ -61,6 +77,20 @@ mavros_velocity_node:
 
 light_controller_node:
   ros__parameters:
+    drone_id: drone01
     light_gpio_pin: 33
     light_pwm_hz: 200
     light_default_intensity: 0.9
+
+telemetry_aggregator_node:
+  ros__parameters:
+    drone_id: drone01
+    hostname: cdrone-orin
+    self_ip: 127.0.0.1
+    publish_rate_hz: 5.0
+    dashboard_rate_hz: 5.0
+    battery_low_threshold_pct: 0.20
+    vio_timeout_s: 0.5
+    tracks_timeout_s: 1.0
+    mavros_timeout_s: 1.0
+    cmd_timeout_s: 0.5

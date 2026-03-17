@@ -1,0 +1,8 @@
+builtin_interfaces/Time stamp
+string drone_id
+float32 tracker_fps
+float32 inference_latency_ms
+int32 left_detections
+int32 right_detections
+int32 paired_detections
+int32 active_tracks
