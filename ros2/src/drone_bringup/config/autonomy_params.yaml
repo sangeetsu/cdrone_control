@@ -49,6 +49,8 @@ health_monitor_node:
     tracks_timeout_s: 1.0
     engagement_timeout_s: 2.0
     startup_grace_s: 5.0
+    require_vio: false
+    vio_timeout_s: 0.5
 
 mavros_velocity_node:
   ros__parameters:

@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 import rclpy
+from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
 from std_msgs.msg import Bool
 
@@ -17,14 +18,19 @@ class HealthMonitorNode(Node):
         self.declare_parameter("tracks_timeout_s", 1.0)
         self.declare_parameter("engagement_timeout_s", 2.0)
         self.declare_parameter("startup_grace_s", 5.0)
+        self.declare_parameter("require_vio", False)
+        self.declare_parameter("vio_timeout_s", 0.5)
 
         self.check_rate_hz = float(self.get_parameter("check_rate_hz").value)
         self.tracks_timeout_s = float(self.get_parameter("tracks_timeout_s").value)
         self.engagement_timeout_s = float(self.get_parameter("engagement_timeout_s").value)
         self.startup_grace_s = float(self.get_parameter("startup_grace_s").value)
+        self.require_vio = bool(self.get_parameter("require_vio").value)
+        self.vio_timeout_s = float(self.get_parameter("vio_timeout_s").value)
 
         self.last_tracks_time_s: Optional[float] = None
         self.last_engagement_time_s: Optional[float] = None
+        self.last_vio_time_s: Optional[float] = None
         self.last_estop_state = False
         self.start_time_s = self.now_s()
 
@@ -33,6 +39,9 @@ class HealthMonitorNode(Node):
         )
         self.engagement_sub = self.create_subscription(
             EngagementState, "/cdrone/engagement/state", self.engagement_callback, 10
+        )
+        self.vio_sub = self.create_subscription(
+            PoseStamped, "/cdrone/vio/pose", self.vio_callback, 10
         )
         self.estop_pub = self.create_publisher(Bool, "/cdrone/safety/estop", 10)
 
@@ -50,6 +59,9 @@ class HealthMonitorNode(Node):
     def engagement_callback(self, _msg: EngagementState) -> None:
         self.last_engagement_time_s = self.now_s()
 
+    def vio_callback(self, _msg: PoseStamped) -> None:
+        self.last_vio_time_s = self.now_s()
+
     def check_health(self) -> None:
         now_s = self.now_s()
         if now_s - self.start_time_s < self.startup_grace_s:
@@ -62,7 +74,13 @@ class HealthMonitorNode(Node):
             self.last_engagement_time_s is None
             or now_s - self.last_engagement_time_s > self.engagement_timeout_s
         )
-        estop = bool(track_stale or engagement_stale)
+        vio_stale = False
+        if self.require_vio:
+            vio_stale = (
+                self.last_vio_time_s is None
+                or now_s - self.last_vio_time_s > self.vio_timeout_s
+            )
+        estop = bool(track_stale or engagement_stale or vio_stale)
         if estop == self.last_estop_state:
             return
 

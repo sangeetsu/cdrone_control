@@ -1,0 +1,31 @@
+stereo_vio_node:
+  ros__parameters:
+    source_mode: csi
+    left_sensor_id: 0
+    right_sensor_id: 1
+    left_url: "rtsp://127.0.0.1:5600/camera1"
+    right_url: "rtsp://127.0.0.1:5600/camera2"
+    capture_width: 1920
+    capture_height: 1080
+    display_width: 960
+    display_height: 540
+    framerate: 30
+    flip_method: 0
+    calibration_path: "/home/jetson/cdrone_control/calibration/stereo_calibration.npz"
+    camera_body_translation_m: [0.0, 0.0, 0.0]
+    camera_body_rpy_rad: [0.0, 0.0, 0.0]
+    imu_topic: "/mavros/imu/data"
+    imu_timeout_s: 0.2
+    vio_rate_hz: 15.0
+    max_corners: 300
+    quality_level: 0.01
+    min_distance_px: 12.0
+    stereo_epipolar_tolerance_px: 2.5
+    min_depth_m: 0.25
+    max_depth_m: 20.0
+    min_pnp_inliers: 20
+    min_tracked_points: 30
+    min_translation_norm_m: 0.0005
+    world_frame_id: "map"
+    body_frame_id: "base_link"
+    rtsp_transport: "udp"

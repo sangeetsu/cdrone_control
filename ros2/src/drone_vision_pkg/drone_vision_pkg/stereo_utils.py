@@ -109,3 +109,66 @@ def triangulate_point(
 
 def camera_to_body(point_cam: np.ndarray, rotation: np.ndarray, translation: np.ndarray) -> np.ndarray:
     return rotation @ point_cam + translation
+
+
+def normalize_quaternion(quaternion_xyzw: Sequence[float]) -> np.ndarray:
+    quat = np.array(quaternion_xyzw, dtype=float).reshape(4)
+    norm = np.linalg.norm(quat)
+    if norm < 1e-9:
+        return np.array([0.0, 0.0, 0.0, 1.0], dtype=float)
+    return quat / norm
+
+
+def quaternion_to_rotation_matrix(quaternion_xyzw: Sequence[float]) -> np.ndarray:
+    x, y, z, w = normalize_quaternion(quaternion_xyzw)
+
+    xx = x * x
+    yy = y * y
+    zz = z * z
+    xy = x * y
+    xz = x * z
+    yz = y * z
+    wx = w * x
+    wy = w * y
+    wz = w * z
+
+    return np.array(
+        [
+            [1.0 - 2.0 * (yy + zz), 2.0 * (xy - wz), 2.0 * (xz + wy)],
+            [2.0 * (xy + wz), 1.0 - 2.0 * (yy + zz), 2.0 * (yz - wx)],
+            [2.0 * (xz - wy), 2.0 * (yz + wx), 1.0 - 2.0 * (xx + yy)],
+        ],
+        dtype=float,
+    )
+
+
+def rotation_matrix_to_quaternion(rotation: np.ndarray) -> np.ndarray:
+    r = np.array(rotation, dtype=float).reshape(3, 3)
+    trace = float(np.trace(r))
+
+    if trace > 0.0:
+        scale = math.sqrt(trace + 1.0) * 2.0
+        w = 0.25 * scale
+        x = (r[2, 1] - r[1, 2]) / scale
+        y = (r[0, 2] - r[2, 0]) / scale
+        z = (r[1, 0] - r[0, 1]) / scale
+    elif r[0, 0] > r[1, 1] and r[0, 0] > r[2, 2]:
+        scale = math.sqrt(1.0 + r[0, 0] - r[1, 1] - r[2, 2]) * 2.0
+        w = (r[2, 1] - r[1, 2]) / scale
+        x = 0.25 * scale
+        y = (r[0, 1] + r[1, 0]) / scale
+        z = (r[0, 2] + r[2, 0]) / scale
+    elif r[1, 1] > r[2, 2]:
+        scale = math.sqrt(1.0 + r[1, 1] - r[0, 0] - r[2, 2]) * 2.0
+        w = (r[0, 2] - r[2, 0]) / scale
+        x = (r[0, 1] + r[1, 0]) / scale
+        y = 0.25 * scale
+        z = (r[1, 2] + r[2, 1]) / scale
+    else:
+        scale = math.sqrt(1.0 + r[2, 2] - r[0, 0] - r[1, 1]) * 2.0
+        w = (r[1, 0] - r[0, 1]) / scale
+        x = (r[0, 2] + r[2, 0]) / scale
+        y = (r[1, 2] + r[2, 1]) / scale
+        z = 0.25 * scale
+
+    return normalize_quaternion([x, y, z, w])

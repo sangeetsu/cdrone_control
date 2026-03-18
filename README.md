@@ -16,12 +16,14 @@ What is currently proven:
 - keyboard arm/disarm now forces throttle low first
 - keyboard axes now combine correctly, so throttle and pitch/roll can be commanded together
 - normal bench `OFFBOARD` mode can be reached with the dummy vision publisher in `bench_offboard.launch.py`
+- a first in-repo stereo VIO path now exists for indoor external-vision bringup through `/mavros/vision_pose/pose`
 
 What is not ready yet:
 
 - no real no-GPS `OFFBOARD` autonomy without external vision / VIO or optical flow
 - the current autonomy path still depends on `mavros_velocity_node` and `OFFBOARD`
 - the dummy external-vision node is bench-only and not flightworthy
+- the new stereo VIO path still needs calibration, extrinsic tuning, and PX4 EKF validation before flight
 
 ## Important Learnings
 
@@ -38,6 +40,7 @@ What is not ready yet:
 - [props_on_test.md](./props_on_test.md): first low-altitude outdoor flight procedure
 - [problem.md](./problem.md): current `OFFBOARD` diagnosis and status
 - [vio_todo.md](./vio_todo.md): stereo-to-VIO follow-up work
+- [docs/indoor_vio_px4.md](./docs/indoor_vio_px4.md): step-by-step indoor VIO bringup
 
 ## Platform Assumptions
 
@@ -100,6 +103,28 @@ This path starts:
 - the velocity bridge for `OFFBOARD` setpoints
 
 Use this only to validate control-path plumbing. It is not the flight-ready no-GPS autonomy solution.
+
+## Indoor VIO Path
+
+For indoor no-GPS position aiding, use:
+
+```bash
+ros2 launch drone_bringup indoor_vio.launch.py
+```
+
+This starts:
+
+- MAVROS
+- `stereo_vio_node`
+- `px4_vision_bridge_node`
+
+Calibration is expected at:
+
+```bash
+/home/jetson/cdrone_control/calibration/stereo_calibration.npz
+```
+
+See [docs/indoor_vio_px4.md](./docs/indoor_vio_px4.md) for the full bringup sequence.
 
 ## Full Autonomy Stack
 

@@ -30,6 +30,7 @@ setup(
     entry_points={
         'console_scripts': [
             'stereo_tracker_node = drone_vision_pkg.stereo_tracker_node:main',
+            'stereo_vio_node = drone_vision_pkg.stereo_vio_node:main',
         ],
     },
 )

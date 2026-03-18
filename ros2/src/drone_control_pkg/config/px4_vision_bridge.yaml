@@ -1,0 +1,10 @@
+px4_vision_bridge_node:
+  ros__parameters:
+    input_pose_topic: "/cdrone/vio/pose"
+    input_health_topic: "/cdrone/vio/healthy"
+    output_pose_topic: "/mavros/vision_pose/pose"
+    companion_status_topic: "/mavros/companion_process/status"
+    publish_companion_status: true
+    freshness_timeout_s: 0.25
+    status_rate_hz: 2.0
+    frame_id: "map"
