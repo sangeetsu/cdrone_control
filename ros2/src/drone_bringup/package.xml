@@ -11,11 +11,15 @@
     <exec_depend>launch</exec_depend>
     <exec_depend>launch_ros</exec_depend>
     <exec_depend>mavros</exec_depend>
-    <exec_depend>drone_vision_pkg</exec_depend>
-    <exec_depend>drone_behavior_pkg</exec_depend>
-    <exec_depend>drone_light_pkg</exec_depend>
+    <exec_depend>realsense2_camera</exec_depend>
+    <exec_depend>cv_bridge</exec_depend>
+    <exec_depend>image_transport</exec_depend>
+    <exec_depend>imu_filter_madgwick</exec_depend>
+    <exec_depend>python3-yaml</exec_depend>
+    <exec_depend>tf2_geometry_msgs</exec_depend>
+    <exec_depend>tf2_ros</exec_depend>
     <exec_depend>drone_control_pkg</exec_depend>
-    <exec_depend>drone_monitor_pkg</exec_depend>
+    <exec_depend>ros2_poselib</exec_depend>
 
     <test_depend>ament_lint_auto</test_depend>
     <test_depend>ament_lint_common</test_depend>

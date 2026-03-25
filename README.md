@@ -1,201 +1,171 @@
 # cdrone_control
 
-ROS 2 control and autonomy stack for a Jetson Orin Nano multicopter running PX4 via MAVROS.
+VIO-first ROS 2 stack for getting a Jetson Orin Nano + Intel RealSense D455 to feed trusted external vision into PX4 1.16 through MAVROS.
 
-## Current Status
+## Active Goal
 
-This repo now has two distinct control paths:
+This repo is no longer centered on the old target-tracking autonomy stack.
 
-- `ALTCTL` / `STABILIZED` manual teleop from the Jetson keyboard through MAVROS `ManualControl`
-- velocity-based `OFFBOARD` plumbing for autonomy and bench experiments
+The active goal is:
 
-What is currently proven:
+1. bring up the connected D455 reliably on the Jetson
+2. feed a real VIO/VSLAM estimate into MAVROS
+3. get PX4 to trust that estimate indoors
+4. validate `POSCTL` first, then restore `OFFBOARD`
 
-- `ros2 launch drone_bringup drone.launch.py` brings up MAVROS against PX4 over `mavlink-router`
-- `ros2 run drone_control_pkg keyboard_teleop_node` works for indoor and outdoor manual teleop in `ALTCTL`
-- keyboard arm/disarm now forces throttle low first
-- keyboard axes now combine correctly, so throttle and pitch/roll can be commanded together
-- normal bench `OFFBOARD` mode can be reached with the dummy vision publisher in `bench_offboard.launch.py`
+The root problem is still the one captured in `problem.md`: PX4 is missing a trusted indoor aiding source, not a MAVROS link.
 
-What is not ready yet:
+## Phase Status
 
-- no real no-GPS `OFFBOARD` autonomy without external vision / VIO or optical flow
-- the current autonomy path still depends on `mavros_velocity_node` and `OFFBOARD`
-- the dummy external-vision node is bench-only and not flightworthy
+Phase 0, Phase 1, and the first practical part of Phase 2 are now in place:
 
-## Important Learnings
+- the old autonomy-heavy workspace has been moved to `archive/legacy_stack/`
+- the active ROS workspace now focuses on bringup, control bridging, and D455 sensor bringup
+- `realsense_d455.launch.py` now targets a VIO-friendly D455 profile from a dedicated config file
+- host bootstrap and validation scripts are now geared toward ROS 2 Humble + MAVROS + RealSense bringup
+- the D455 is now working on the pinned Isaac ROS `release-3.2` RealSense stack
+- Isaac ROS Visual SLAM is now publishing odometry from the live D455 path
+- the repo now carries scripts to install VSLAM dependencies in-container, launch the RealSense-backed VSLAM stack, and capture evidence into a gitignored temp folder
 
-1. This is a PX4 stack, not an ArduPilot GUIDED stack.
-2. Indoor teleop is currently best done in `ALTCTL`, not `OFFBOARD`.
-3. `keyboard_teleop_node` now publishes to `/mavros/manual_control/send` by default.
-4. `SPACE` means "center sticks", not emergency stop.
-5. QGC can coexist with MAVROS through `mavlink-router`, but if QGC shows transfer timeouts or MAVROS becomes unstable, close QGC and disable QGC virtual joystick.
-6. `OFFBOARD` without GPS is not the real issue. The actual requirement is a trusted aiding source such as VIO / external vision or optical flow + rangefinder.
+What is still not done:
 
-## Key Docs
+- the host-native `realsense2_camera` path is still not the recommended path on this Jetson
+- the PX4 bridge is still missing; VSLAM is alive, but PX4 is not consuming it yet
+- frame conversion, extrinsics, and PX4 fusion validation are still ahead of us
 
-- [props_off_test.md](./props_off_test.md): current indoor / bench procedure
-- [props_on_test.md](./props_on_test.md): first low-altitude outdoor flight procedure
-- [problem.md](./problem.md): current `OFFBOARD` diagnosis and status
-- [vio_todo.md](./vio_todo.md): stereo-to-VIO follow-up work
+## Active Workspace
 
-## Platform Assumptions
+Active ROS packages under `ros2/src`:
 
-- Jetson Orin Nano 8 GB
-- ROS 2 Humble
-- PX4 1.16 on ARKV6X
-- MAVROS over UDP through `mavlink-router`
-- FCU URL: `udp://:14540@127.0.0.1:14550`
-- QGC, if used, talks to `127.0.0.1:14550`
+- `drone_bringup`: MAVROS launch/config and D455 launch
+- `drone_control_pkg`: keyboard teleop, MAVROS bridge nodes, bench pose publisher, VIO bridge stub
+- `ros2_poselib`: leftover utility package kept for compatibility during the rehaul
 
-## Build
+Archived legacy packages:
 
-```bash
-cd /home/jetson/ros_ws/cdrone_control/ros2
-source /opt/ros/humble/setup.bash
-colcon build --symlink-install
-source install/setup.bash
-```
+- `archive/legacy_stack/ros2/src/drone_behavior_pkg`
+- `archive/legacy_stack/ros2/src/drone_vision_pkg`
+- `archive/legacy_stack/ros2/src/drone_light_pkg`
+- `archive/legacy_stack/ros2/src/drone_monitor_pkg`
 
-## Current Manual Teleop Path
+## Key Files
 
-Launch MAVROS:
+- `problem.md`: current PX4 indoor flight blocker
+- `memory.md`: what the repo used to contain and what changed during the rehaul
+- `rehaul_vio_px4_plan.md`: implementation plan
+- `rehaul_vio_px4_viability.md`: external compatibility review
+- `docs/rehaul/d455_vio_contract.md`: active D455 topic/rate/frame contract
+- `docs/rehaul/host_setup.md`: host dependency setup notes
+- `docs/rehaul/isaac_ros_release32.md`: pinned Isaac fallback and current container findings
+- `docs/rehaul/isaac_vslam_d455.md`: active Visual SLAM bringup path and evidence workflow
+- `problem2_realsense.md`: dated RealSense/VSLAM journal
+
+## Active Launch Flows
+
+Launch MAVROS only:
 
 ```bash
 ros2 launch drone_bringup drone.launch.py
 ```
 
-Run keyboard teleop:
+Launch the D455 with VIO-oriented defaults:
+
+```bash
+ros2 launch drone_bringup realsense_d455.launch.py
+```
+
+Run keyboard teleop for manual fallback:
 
 ```bash
 ros2 run drone_control_pkg keyboard_teleop_node
 ```
 
-Current manual backend behavior:
-
-- key `2`: `ALTCTL`
-- key `3`: `STABILIZED`
-- key `1`: arm with throttle forced low first
-- key `4`: disarm after a short low-throttle delay
-- `W/A/S/D/Q/E/R/F` latch and combine across axes until changed or `SPACE`
-- `SPACE` recenters all sticks
-
-Recommended first mode:
-
-- use `ALTCTL` for manual flight tests
-- use `STABILIZED` only if you specifically want more raw throttle behavior
-
-## Current OFFBOARD Bench Path
-
-Bench-only `OFFBOARD` launch:
+Use the legacy bench-only external-vision path if needed for plumbing checks:
 
 ```bash
 ros2 launch drone_bringup bench_offboard.launch.py
 ```
 
-This path starts:
-
-- MAVROS
-- the dummy external-vision pose publisher
-- the velocity bridge for `OFFBOARD` setpoints
-
-Use this only to validate control-path plumbing. It is not the flight-ready no-GPS autonomy solution.
-
-## Full Autonomy Stack
-
-The autonomy stack still uses the velocity-`OFFBOARD` path:
+Launch Isaac ROS Visual SLAM on the D455 path:
 
 ```bash
-ros2 launch drone_bringup autonomy_stack.launch.py
+./scripts/start_isaac_realsense_container.sh
+./scripts/launch_isaac_vslam_d455_in_container.sh
 ```
 
-At a high level:
+Bridge the live VSLAM pose into MAVROS `vision_pose/pose`:
 
-- `stereo_tracker_node` publishes perception tracks
-- `engagement_manager_node` publishes `/cdrone/control/cmd_vel_body`
-- `mavros_velocity_node` gates and forwards velocity commands to `/mavros/setpoint_velocity/cmd_vel`
+```bash
+ros2 launch drone_bringup vslam_px4_bridge.launch.py
+```
 
-Do not rely on this path for no-GPS indoor flight until a real VIO / external-vision estimator is integrated.
+Capture advisor-ready VSLAM evidence:
 
-## QGC and MAVROS
+```bash
+./scripts/capture_isaac_vslam_outputs.sh
+```
 
-This repo expects `mavlink-router` to split traffic between MAVROS and QGC.
+## D455 Defaults
 
-Expected pattern:
+The active D455 launch is tuned for VIO-style input rather than RGB/depth demos:
 
-- FC -> `mavlink-router`
-- `mavlink-router` -> `127.0.0.1:14550` for QGC
-- `mavlink-router` -> `127.0.0.1:14540` for MAVROS
+- color disabled by default
+- depth disabled by default
+- infra1 and infra2 enabled
+- gyro and accel enabled
+- IMU unification enabled
+- IR profile pinned to `640x360x90`
+- gyro and accel pinned to `200 Hz`
+- emitter disabled by default
 
-Notes:
+The default profile lives in:
 
-- QGC is useful for health and arming diagnostics
-- QGC virtual joystick must stay disabled when using Jetson keyboard teleop
-- if QGC reports transfer timeouts or MAVROS becomes unstable, close QGC before flight testing
+- `ros2/src/drone_bringup/config/realsense_d455_vio.yaml`
 
-## Safety Guidance
+Validation script:
 
-- Props-off testing first, always
-- First props-on flights should be manual `ALTCTL`, outdoors, low altitude, and not `OFFBOARD`
-- Do not attempt no-GPS autonomous flight until a real aiding source exists
-- Keep a spotter and a clear landing plan for first props-on tests
+```bash
+./scripts/check_d455_topics.sh
+```
 
-## Repository Layout
+## Host Setup
+
+The host bootstrap script now targets the active VIO-first stack:
+
+```bash
+./setup_jetson.sh
+```
+
+It is designed to install:
+
+- ROS 2 Humble
+- MAVROS + mavros extras
+- RealSense ROS driver
+- image/TF/IMU support packages
+- GeographicLib datasets
+- minimal Python dependencies for the active repo
+
+Current environment note:
+
+- this Jetson is on Ubuntu `22.04.5`
+- Jetson Linux is `R36.4.4`
+- ROS 2 Humble is installed
+- Docker access now works in this session
+- the RealSense blocker is no longer the main issue
+- the next blocker is validating the new VSLAM-to-MAVROS bridge with the flight controller online
+
+Quick audit:
+
+```bash
+./scripts/check_vio_host_status.sh
+```
+
+## Archive
+
+Legacy docs, launch files, and the old autonomy packages are preserved under:
 
 ```text
-cdrone_control/
-|- problem.md
-|- props_off_test.md
-|- props_on_test.md
-|- vio_todo.md
-|- ros2/
-|  |- src/
-|  |  |- drone_bringup/
-|  |  |- drone_msgs/
-|  |  |- drone_vision_pkg/
-|  |  |- drone_behavior_pkg/
-|  |  |- drone_control_pkg/
-|  |  |- drone_light_pkg/
-|  |  |- ros2_poselib/
-|- requirements-jetson.txt
-|- requirements-dev.txt
+archive/legacy_stack/
 ```
 
-## Main Package Roles
-
-- `drone_bringup`: launch files and MAVROS config
-- `drone_control_pkg`: keyboard teleop, MAVROS adapters, bench vision publisher
-- `drone_behavior_pkg`: autonomy state machine and health monitoring
-- `drone_vision_pkg`: stereo perception and tracking
-- `drone_light_pkg`: spotlight hardware control
-- `drone_msgs`: shared ROS message types
-
-## Useful Commands
-
-Check MAVROS state:
-
-```bash
-ros2 topic echo /mavros/state --once
-```
-
-Check manual-control messages:
-
-```bash
-ros2 topic echo /mavros/manual_control/send --once
-```
-
-Check velocity setpoints for the autonomy path:
-
-```bash
-ros2 topic hz /mavros/setpoint_velocity/cmd_vel
-```
-
-Syntax check Python nodes:
-
-```bash
-python3 -m py_compile \
-  ros2/src/drone_behavior_pkg/drone_behavior_pkg/*.py \
-  ros2/src/drone_light_pkg/drone_light_pkg/*.py \
-  ros2/src/drone_vision_pkg/drone_vision_pkg/*.py \
-  ros2/src/drone_control_pkg/drone_control_pkg/*.py
-```
+Use that archive when you need to recover old behavior, test notes, or implementation details without letting the active repo drift back toward the old autonomy-first shape.

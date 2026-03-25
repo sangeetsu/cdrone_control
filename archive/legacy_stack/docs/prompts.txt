@@ -1,0 +1,4 @@
+Spawn a subagent to go through this repo and create a memory.md for remembering what this repo used to have, I'm going for a complete rehaul. The second subagent can figure out a plan on how to rehaul this repo to get past the problem in problem.md and be able to fly in position control mode by using a realsense 455 (currently connected to it) - https://www.hackster.io/bandofpv/gps-denied-drone-with-nvidia-jetson-orin-nano-9f3417
+something like this but specific to our drone and setup (this jetson carrier board is still esc/motorless so we will test later.
+A third subagent can go through the plan and verify that the plan is actually viable by cross checking with online sources that there are no version mismatches or bugs that can't be bypassed. 
+ 

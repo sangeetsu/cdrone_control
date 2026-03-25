@@ -40,3 +40,8 @@ lib/
 install/
 log/
 
+# Local Isaac ROS dev workspace
+/external/isaac_ros_release32/
+
+# Temporary validation artifacts
+/temp_outputs/

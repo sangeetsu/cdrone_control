@@ -1,104 +1,209 @@
 #!/bin/bash
-# Setup script for cdrone_control on Jetson Orin Nano + ARK PAB Carrier + PX4
-# Run this once to install all dependencies and build the workspace
+# Host bootstrap for the active VIO-first cdrone_control stack.
 
-set -e  # Exit on error
+set -euo pipefail
 
-echo "=========================================="
-echo "cdrone_control Setup for Jetson + PX4"
-echo "=========================================="
-echo ""
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROS_DISTRO="${ROS_DISTRO:-humble}"
+ARCH="$(dpkg --print-architecture)"
 
-# Get script directory
-SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-cd "$SCRIPT_DIR"
-
-# 1. Install ROS2 MAVROS packages
-echo "Step 1/6: Installing MAVROS..."
-sudo apt update
-sudo apt install -y \
-  ros-humble-mavros \
-  ros-humble-mavros-extras \
-  ros-humble-geographic-msgs \
-  python3-pip \
-  python3-opencv
-
-echo "   ✓ MAVROS installed"
-echo ""
-
-# 2. Install GeographicLib datasets (required by MAVROS)
-echo "Step 2/6: Installing GeographicLib datasets..."
-if [ -d "/usr/share/GeographicLib" ]; then
-    echo "   ✓ GeographicLib datasets already installed"
+if [[ -r /etc/os-release ]]; then
+  # shellcheck disable=SC1091
+  source /etc/os-release
 else
-    wget https://raw.githubusercontent.com/mavlink/mavros/master/mavros/scripts/install_geographiclib_datasets.sh
-    chmod +x install_geographiclib_datasets.sh
-    sudo ./install_geographiclib_datasets.sh
-    rm install_geographiclib_datasets.sh
-    echo "   ✓ GeographicLib datasets installed"
+  echo "Unable to read /etc/os-release."
+  exit 1
 fi
-echo ""
 
-# 3. Install Python dependencies
-echo "Step 3/6: Installing Python dependencies..."
-if [ -f "requirements-jetson.txt" ]; then
-    pip3 install -r requirements-jetson.txt
-    echo "   ✓ Python dependencies installed"
-else
-    echo "   ⚠ requirements-jetson.txt not found, skipping"
+if [[ "${VERSION_CODENAME:-}" != "jammy" ]]; then
+  echo "This script expects Ubuntu 22.04 (jammy). Found '${VERSION_CODENAME:-unknown}'."
+  exit 1
 fi
-echo ""
 
-# 4. Source ROS2
-echo "Step 4/6: Sourcing ROS2 Humble..."
-source /opt/ros/humble/setup.bash
-echo "   ✓ ROS2 sourced"
-echo ""
+require_sudo() {
+  if ! sudo -n true 2>/dev/null; then
+    cat <<'EOF'
+This script needs sudo access for apt, rosdep init, udev rules, and GeographicLib setup.
+Run it from an interactive shell where you can enter your sudo password:
 
-# 5. Build workspace
-echo "Step 5/6: Building ROS2 workspace..."
-cd ros2
-rm -rf build install log
-colcon build --symlink-install --parallel-workers 1 --executor sequential
-echo "   ✓ Workspace built"
-echo ""
+  ./setup_jetson.sh
 
-# 6. Verification
-echo "Step 6/6: Verifying installation..."
-source install/setup.bash
+If you prefer to review before running, see:
+  docs/rehaul/host_setup.md
+EOF
+    exit 1
+  fi
+}
 
-# Check if packages are available
-ERRORS=0
-for pkg in drone_bringup drone_control_pkg drone_behavior_pkg drone_vision_pkg drone_light_pkg drone_msgs ros2_poselib; do
-    if ros2 pkg list | grep -q "^${pkg}$"; then
-        echo "   ✓ ${pkg}"
-    else
-        echo "   ✗ ${pkg} - NOT FOUND"
-        ERRORS=$((ERRORS + 1))
+ensure_ros_apt_source() {
+  if grep -Rqs "packages.ros.org/ros2/ubuntu" /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null; then
+    return
+  fi
+
+  sudo apt-get update
+  sudo apt-get install -y curl gnupg2 ca-certificates lsb-release software-properties-common
+  sudo curl -sSL https://raw.githubusercontent.com/ros/rosdistro/master/ros.key \
+    -o /usr/share/keyrings/ros-archive-keyring.gpg
+  echo "deb [arch=${ARCH} signed-by=/usr/share/keyrings/ros-archive-keyring.gpg] http://packages.ros.org/ros2/ubuntu ${VERSION_CODENAME} main" \
+    | sudo tee /etc/apt/sources.list.d/ros2.list >/dev/null
+}
+
+install_system_packages() {
+  sudo apt-get update
+  sudo apt-get install -y \
+    git-lfs \
+    python3-pip \
+    python3-opencv \
+    python3-colcon-common-extensions \
+    python3-rosdep \
+    python3-vcstool \
+    python3-yaml \
+    usbutils \
+    v4l-utils \
+    ros-${ROS_DISTRO}-ros-base \
+    ros-${ROS_DISTRO}-mavros \
+    ros-${ROS_DISTRO}-mavros-extras \
+    ros-${ROS_DISTRO}-geographic-msgs \
+    ros-${ROS_DISTRO}-realsense2-camera \
+    ros-${ROS_DISTRO}-cv-bridge \
+    ros-${ROS_DISTRO}-image-transport \
+    ros-${ROS_DISTRO}-image-transport-plugins \
+    ros-${ROS_DISTRO}-tf2-ros \
+    ros-${ROS_DISTRO}-tf2-geometry-msgs \
+    ros-${ROS_DISTRO}-imu-filter-madgwick
+}
+
+install_geographiclib() {
+  if [[ -d /usr/share/GeographicLib ]]; then
+    return
+  fi
+
+  local tmp_script
+  tmp_script="$(mktemp)"
+  curl -fsSL https://raw.githubusercontent.com/mavlink/mavros/master/mavros/scripts/install_geographiclib_datasets.sh \
+    -o "${tmp_script}"
+  chmod +x "${tmp_script}"
+  sudo "${tmp_script}"
+  rm -f "${tmp_script}"
+}
+
+install_realsense_rules() {
+  local rules_dir="${SCRIPT_DIR}/librealsense/config"
+  local scripts_dir="${SCRIPT_DIR}/librealsense/scripts"
+
+  if [[ ! -d "${rules_dir}" ]]; then
+    return
+  fi
+
+  sudo install -m 0644 \
+    "${rules_dir}/99-realsense-libusb.rules" \
+    /etc/udev/rules.d/99-realsense-libusb.rules
+
+  local v4l2_util
+  v4l2_util="$(command -v v4l2-ctl || true)"
+  if [[ -n "${v4l2_util}" ]]; then
+    local is_tegra=""
+    local is_ipu6=""
+    is_tegra="$("${v4l2_util}" --list-devices 2>/dev/null | grep tegra || true)"
+    is_ipu6="$("${v4l2_util}" --list-devices 2>/dev/null | grep ipu6 || true)"
+
+    if [[ -n "${is_tegra}" || -n "${is_ipu6}" ]]; then
+      sudo install -m 0644 \
+        "${rules_dir}/99-realsense-d4xx-mipi-dfu.rules" \
+        /etc/udev/rules.d/99-realsense-d4xx-mipi-dfu.rules
+
+      if [[ -f "${scripts_dir}/rs-enum.sh" ]]; then
+        sudo install -m 0755 "${scripts_dir}/rs-enum.sh" /usr/local/bin/rs-enum.sh
+      fi
+      if [[ -f "${scripts_dir}/rs_ipu6_d457_bind.sh" ]]; then
+        sudo install -m 0755 \
+          "${scripts_dir}/rs_ipu6_d457_bind.sh" \
+          /usr/local/bin/rs_ipu6_d457_bind.sh
+      fi
     fi
-done
+  fi
 
-echo ""
-if [ $ERRORS -eq 0 ]; then
-    echo "=========================================="
-    echo "✅ Setup Complete!"
-    echo "=========================================="
-    echo ""
-    echo "Next steps:"
-    echo "1. Ensure PX4 flight controller is connected to /dev/ttyACM0"
-    echo "2. Source the workspace:"
-    echo "   cd $SCRIPT_DIR/ros2"
-    echo "   source install/setup.bash"
-    echo ""
-    echo "3. Launch MAVROS only (test connection):"
-    echo "   ros2 launch drone_bringup drone.launch.py"
-    echo ""
-    echo "4. Or launch full autonomy stack:"
-    echo "   ros2 launch drone_bringup autonomy_stack.launch.py"
-    echo ""
-else
-    echo "=========================================="
-    echo "⚠ Setup completed with $ERRORS errors"
-    echo "=========================================="
-    echo "Please review the errors above and try building again."
-fi
+  sudo udevadm control --reload-rules
+  sudo udevadm trigger
+}
+
+init_rosdep() {
+  if [[ ! -e /etc/ros/rosdep/sources.list.d/20-default.list ]]; then
+    sudo rosdep init
+  fi
+  rosdep update
+}
+
+install_python_requirements() {
+  if [[ -f "${SCRIPT_DIR}/requirements-jetson.txt" ]]; then
+    python3 -m pip install --user -r "${SCRIPT_DIR}/requirements-jetson.txt"
+  fi
+}
+
+build_workspace() {
+  set +u
+  # shellcheck disable=SC1091
+  source "/opt/ros/${ROS_DISTRO}/setup.bash"
+  set -u
+  cd "${SCRIPT_DIR}/ros2"
+  rosdep install --from-paths src --ignore-src -r -y --rosdistro "${ROS_DISTRO}"
+  rm -rf build install log
+  colcon build
+}
+
+verify_workspace() {
+  set +u
+  # shellcheck disable=SC1091
+  source "/opt/ros/${ROS_DISTRO}/setup.bash"
+  # shellcheck disable=SC1091
+  source "${SCRIPT_DIR}/ros2/install/setup.bash"
+  set -u
+
+  local missing=0
+  for pkg in drone_bringup drone_control_pkg ros2_poselib; do
+    if ros2 pkg list | grep -q "^${pkg}$"; then
+      echo "  ✓ ${pkg}"
+    else
+      echo "  ✗ ${pkg}"
+      missing=$((missing + 1))
+    fi
+  done
+
+  if [[ ${missing} -ne 0 ]]; then
+    echo "Verification failed: ${missing} package(s) missing."
+    exit 1
+  fi
+}
+
+main() {
+  echo "=========================================="
+  echo "cdrone_control Host Setup"
+  echo "=========================================="
+  echo "Target: ROS 2 ${ROS_DISTRO}, MAVROS, RealSense D455 bringup"
+  echo ""
+
+  require_sudo
+  ensure_ros_apt_source
+  install_system_packages
+  install_geographiclib
+  install_realsense_rules
+  init_rosdep
+  install_python_requirements
+  build_workspace
+  verify_workspace
+
+  cat <<'EOF'
+
+Setup complete.
+
+Next commands:
+  source /opt/ros/humble/setup.bash
+  source /home/jetson/cdrone_control/ros2/install/setup.bash
+  ./scripts/check_vio_host_status.sh
+  ros2 launch drone_bringup realsense_d455.launch.py
+  ./scripts/check_d455_topics.sh
+
+EOF
+}
+
+main "$@"
