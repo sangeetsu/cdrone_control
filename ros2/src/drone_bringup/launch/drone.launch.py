@@ -1,5 +1,6 @@
 import os
 from ament_index_python.packages import get_package_share_directory
+import yaml
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
@@ -17,6 +18,11 @@ def launch_setup(context, *args, **kwargs):
     mavros_params = os.path.join(drone_bringup_pkg_share, "config", "apm_params.yaml")
     mavros_config = os.path.join(drone_bringup_pkg_share, "config", "apm_config.yaml")
     mavros_plugins = os.path.join(drone_bringup_pkg_share, "config", "apm_pluginlists.yaml")
+    with open(mavros_params, "r", encoding="utf-8") as stream:
+        mavros_param_dict = yaml.safe_load(stream) or {}
+    mavros_node_params = (
+        mavros_param_dict.get("mavros_node", {}).get("ros__parameters", {})
+    )
 
     # Launch arguments
     log_level = LaunchConfiguration("log_level")
@@ -27,7 +33,7 @@ def launch_setup(context, *args, **kwargs):
         executable="mavros_node",
         namespace=mavros_namespace,
         output="screen",
-        parameters=[mavros_params, mavros_config, mavros_plugins],
+        parameters=[mavros_node_params, mavros_config, mavros_plugins],
         arguments=["--ros-args", "--log-level", log_level],
     )
 

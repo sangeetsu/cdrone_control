@@ -45,3 +45,6 @@ log/
 
 # Temporary validation artifacts
 /temp_outputs/
+
+# Local archived flight investigations
+/flight_logs/

@@ -12,6 +12,7 @@
       #- px4flow
       #- vibration
       #- vision_speed_estimate
+      - guided_target   # unused in this repo; suppresses PositionTargetGlobal "no origin" warnings indoors
       - wheel_odometry
       - odometry        # suppress map_frd TF lookup errors (no external odometry source)
 

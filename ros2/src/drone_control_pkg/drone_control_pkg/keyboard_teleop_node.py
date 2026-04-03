@@ -15,10 +15,12 @@ import tty
 from typing import Dict, Tuple
 
 import rclpy
-from geometry_msgs.msg import TwistStamped
+from geometry_msgs.msg import PoseStamped, TwistStamped
 from mavros_msgs.msg import ManualControl
+from mavros_msgs.msg import State
 from mavros_msgs.srv import CommandBool, CommandLong, SetMode
 from rclpy.node import Node
+from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool
 
 from drone_control_pkg.topic_utils import cdrone_topic, join_topic
@@ -44,6 +46,7 @@ SPEED_BINDINGS = {
 
 MANUAL_INTERFACE = 'manual'
 VELOCITY_INTERFACE = 'velocity'
+POSITION_HOLD_MODE = 'POSCTL'
 
 
 class KeyboardTeleopNode(Node):
@@ -65,6 +68,7 @@ class KeyboardTeleopNode(Node):
         self.declare_parameter('cmd_vel_topic', '')
         self.declare_parameter('estop_topic', '')
         self.declare_parameter('manual_control_topic', '')
+        self.declare_parameter('local_pose_timeout_s', 0.5)
 
         self.command_interface = str(
             self.get_parameter('command_interface').value
@@ -89,6 +93,9 @@ class KeyboardTeleopNode(Node):
         self.disarm_request_delay_sec = float(
             self.get_parameter('disarm_request_delay_sec').value
         )
+        self.local_pose_timeout_s = float(
+            self.get_parameter('local_pose_timeout_s').value
+        )
         self.drone_id = str(self.get_parameter('drone_id').value)
         self.mavros_namespace = str(self.get_parameter('mavros_namespace').value)
         self.cmd_vel_topic = (
@@ -106,6 +113,8 @@ class KeyboardTeleopNode(Node):
         self.arm_service = join_topic(self.mavros_namespace, 'cmd/arming')
         self.mode_service = join_topic(self.mavros_namespace, 'set_mode')
         self.command_service = join_topic(self.mavros_namespace, 'cmd/command')
+        self.state_topic = join_topic(self.mavros_namespace, 'state')
+        self.local_pose_topic = join_topic(self.mavros_namespace, 'local_position/pose')
 
         self.velocity_pub = self.create_publisher(
             TwistStamped,
@@ -126,6 +135,18 @@ class KeyboardTeleopNode(Node):
         self.arm_client = self.create_client(CommandBool, self.arm_service)
         self.mode_client = self.create_client(SetMode, self.mode_service)
         self.cmd_client = self.create_client(CommandLong, self.command_service)
+        self.state_sub = self.create_subscription(State, self.state_topic, self.state_callback, 10)
+        best_effort_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=10,
+        )
+        self.local_pose_sub = self.create_subscription(
+            PoseStamped,
+            self.local_pose_topic,
+            self.local_pose_callback,
+            best_effort_qos,
+        )
 
         self.x = 0.0
         self.y = 0.0
@@ -133,6 +154,8 @@ class KeyboardTeleopNode(Node):
         self.yaw = 0.0
         self.force_zero_throttle_until_s = 0.0
         self.pending_disarm_timer = None
+        self.latest_state = State()
+        self.last_local_pose_s = 0.0
 
         self.timer = self.create_timer(
             1.0 / max(self.publish_rate_hz, 1.0), self.publish_current_command
@@ -154,7 +177,7 @@ Keyboard Teleop for cdrone_control
 
 Backend:
   MANUAL_CONTROL -> /mavros/manual_control/send
-  Intended modes: ALTCTL (preferred), STABILIZED
+  Intended modes: ALTCTL (preferred), STABILIZED, POSCTL
 
 Movement:
   W/S : Forward/Backward stick
@@ -174,7 +197,7 @@ Commands:
   3 : Set STABILIZED mode
   4 : Disarm
   5 : Disable RC/joystick override (COM_RC_IN_MODE=1)
-  6 : OFFBOARD unavailable on manual backend
+  6 : Set POSCTL mode (warn if local pose is stale)
 
 Exit:
   ESC or Ctrl+C : Quit
@@ -242,6 +265,15 @@ Current speeds:
             key = ''
         termios.tcsetattr(sys.stdin, termios.TCSADRAIN, self.settings)
         return key
+
+    def now_s(self) -> float:
+        return time.monotonic()
+
+    def state_callback(self, msg: State) -> None:
+        self.latest_state = msg
+
+    def local_pose_callback(self, _msg: PoseStamped) -> None:
+        self.last_local_pose_s = self.now_s()
 
     def publish_current_command(self):
         if self.command_interface == MANUAL_INTERFACE:
@@ -460,6 +492,26 @@ Current speeds:
         except Exception as e:
             self.get_logger().error(f'Service call failed: {e}')
 
+    def warn_if_posctl_pose_unready(self):
+        if not self.latest_state.connected:
+            self.get_logger().warn(
+                'Requesting POSCTL while MAVROS reports the FCU is disconnected.'
+            )
+            return
+
+        if self.last_local_pose_s <= 0.0:
+            self.get_logger().warn(
+                'Requesting POSCTL before any local_position/pose message has arrived.'
+            )
+            return
+
+        pose_age_s = self.now_s() - self.last_local_pose_s
+        if pose_age_s > self.local_pose_timeout_s:
+            self.get_logger().warn(
+                f'Requesting POSCTL with stale local_position/pose age='
+                f'{pose_age_s:.2f}s'
+            )
+
     def run(self):
         try:
             while rclpy.ok():
@@ -502,11 +554,9 @@ Current speeds:
                         self.get_logger().info('Setting OFFBOARD mode...')
                         self.set_mode('OFFBOARD')
                     else:
-                        self.get_logger().warn(
-                            'OFFBOARD is disabled on the manual backend. '
-                            'Use ALTCTL/STABILIZED, or relaunch with '
-                            '--ros-args -p command_interface:=velocity.'
-                        )
+                        self.warn_if_posctl_pose_unready()
+                        self.get_logger().info('Setting POSCTL mode...')
+                        self.set_mode(POSITION_HOLD_MODE)
                 else:
                     self.get_logger().warn(f'Unknown key: {repr(key)}')
         except Exception as e:

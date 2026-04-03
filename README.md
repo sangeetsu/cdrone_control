@@ -1,6 +1,6 @@
 # cdrone_control
 
-VIO-first ROS 2 stack for getting a Jetson Orin Nano + Intel RealSense D455 to feed trusted external vision into PX4 1.16 through MAVROS.
+External-pose-first ROS 2 stack for getting a Jetson Orin Nano and an indoor pose source such as Intel RealSense D455 VSLAM or OptiTrack VRPN to feed trusted external vision into PX4 1.16 through MAVROS.
 
 ## Active Goal
 
@@ -8,8 +8,8 @@ This repo is no longer centered on the old target-tracking autonomy stack.
 
 The active goal is:
 
-1. bring up the connected D455 reliably on the Jetson
-2. feed a real VIO/VSLAM estimate into MAVROS
+1. bring up the active indoor pose source reliably on the Jetson or LAN
+2. feed a trusted external pose estimate into MAVROS
 3. get PX4 to trust that estimate indoors
 4. validate `POSCTL` first, then restore `OFFBOARD`
 
@@ -30,7 +30,7 @@ Phase 0, Phase 1, and the first practical part of Phase 2 are now in place:
 What is still not done:
 
 - the host-native `realsense2_camera` path is still not the recommended path on this Jetson
-- the PX4 bridge is still missing; VSLAM is alive, but PX4 is not consuming it yet
+- a generic external-pose bridge now exists so RealSense VSLAM, OptiTrack VRPN, or any other `PoseStamped` source can feed the same MAVROS `vision_pose` path
 - frame conversion, extrinsics, and PX4 fusion validation are still ahead of us
 
 ## Active Workspace
@@ -38,7 +38,7 @@ What is still not done:
 Active ROS packages under `ros2/src`:
 
 - `drone_bringup`: MAVROS launch/config and D455 launch
-- `drone_control_pkg`: keyboard teleop, MAVROS bridge nodes, bench pose publisher, VIO bridge stub
+- `drone_control_pkg`: keyboard teleop, generic external-pose adapters/bridges, and bench pose publisher
 - `ros2_poselib`: leftover utility package kept for compatibility during the rehaul
 
 Archived legacy packages:
@@ -93,7 +93,15 @@ Launch Isaac ROS Visual SLAM on the D455 path:
 ./scripts/launch_isaac_vslam_d455_in_container.sh
 ```
 
-Bridge the live VSLAM pose into MAVROS `vision_pose/pose`:
+Bridge a generic external-pose source into MAVROS `vision_pose/pose`:
+
+```bash
+ros2 launch drone_bringup external_pose_px4_bridge.launch.py \
+  pose_source:=optitrack \
+  optitrack_server:=<motive-host>
+```
+
+Bridge the live RealSense VSLAM pose through the same contract:
 
 ```bash
 ros2 launch drone_bringup vslam_px4_bridge.launch.py
@@ -130,7 +138,7 @@ Validation script:
 
 ## Host Setup
 
-The host bootstrap script now targets the active VIO-first stack:
+The host bootstrap script now targets the active external-pose-first stack:
 
 ```bash
 ./setup_jetson.sh

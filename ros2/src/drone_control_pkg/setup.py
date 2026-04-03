@@ -38,7 +38,13 @@ setup(
             "keyboard_teleop_node = drone_control_pkg.keyboard_teleop_node:main",
             "altctl_demo_sequence_node = "
             "drone_control_pkg.altctl_demo_sequence_node:main",
+            "position_hover_demo_sequence_node = "
+            "drone_control_pkg.position_hover_demo_sequence_node:main",
             "bench_vision_pose_node = drone_control_pkg.bench_vision_pose_node:main",
+            "external_pose_adapter_node = "
+            "drone_control_pkg.external_pose_adapter_node:main",
+            "external_pose_bridge_node = "
+            "drone_control_pkg.external_pose_bridge_node:main",
             "vio_bridge_node = drone_control_pkg.vio_bridge_node:main",
         ],
     },
