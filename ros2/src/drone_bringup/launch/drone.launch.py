@@ -17,7 +17,9 @@ def launch_setup(context, *args, **kwargs):
     # Parameters for Mavros.
     mavros_params = os.path.join(drone_bringup_pkg_share, "config", "apm_params.yaml")
     mavros_config = os.path.join(drone_bringup_pkg_share, "config", "apm_config.yaml")
-    mavros_plugins = os.path.join(drone_bringup_pkg_share, "config", "apm_pluginlists.yaml")
+    mavros_plugins = os.path.join(
+        drone_bringup_pkg_share, "config", "apm_pluginlists.yaml"
+    )
     with open(mavros_params, "r", encoding="utf-8") as stream:
         mavros_param_dict = yaml.safe_load(stream) or {}
     mavros_node_params = (

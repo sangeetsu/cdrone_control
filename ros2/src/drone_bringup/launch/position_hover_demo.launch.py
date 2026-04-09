@@ -7,6 +7,27 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+import yaml
+
+
+def _load_optitrack_defaults() -> dict[str, object]:
+    config_path = os.path.join(
+        get_package_share_directory("drone_bringup"),
+        "config",
+        "optitrack_defaults.yaml",
+    )
+    with open(config_path, "r", encoding="utf-8") as config_file:
+        loaded = yaml.safe_load(config_file) or {}
+    if not isinstance(loaded, dict):
+        raise ValueError(f"Expected mapping in {config_path}")
+    return loaded
+
+
+def _default_arg(defaults: dict[str, object], key: str, fallback: object) -> str:
+    value = defaults.get(key, fallback)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 def launch_setup(context, *args, **kwargs):
@@ -27,6 +48,21 @@ def launch_setup(context, *args, **kwargs):
             "mavros_namespace": mavros_namespace,
             "pose_source": LaunchConfiguration("pose_source"),
             "source_pose_topic": LaunchConfiguration("source_pose_topic"),
+            "enable_reference_setup": "true",
+            "global_origin_latitude_deg": LaunchConfiguration(
+                "global_origin_latitude_deg"
+            ),
+            "global_origin_longitude_deg": LaunchConfiguration(
+                "global_origin_longitude_deg"
+            ),
+            "global_origin_altitude_m": LaunchConfiguration(
+                "global_origin_altitude_m"
+            ),
+            "home_position_x_m": LaunchConfiguration("home_position_x_m"),
+            "home_position_y_m": LaunchConfiguration("home_position_y_m"),
+            "home_position_z_m": LaunchConfiguration("home_position_z_m"),
+            "home_approach_z_m": LaunchConfiguration("home_approach_z_m"),
+            "reference_retry_period_s": LaunchConfiguration("reference_retry_period_s"),
             "publish_rate_hz": LaunchConfiguration("external_pose_publish_rate_hz"),
             "input_timeout_s": LaunchConfiguration("external_pose_timeout_s"),
             "adapter_timeout_s": LaunchConfiguration("external_pose_timeout_s"),
@@ -37,7 +73,20 @@ def launch_setup(context, *args, **kwargs):
             "optitrack_server": LaunchConfiguration("optitrack_server"),
             "optitrack_port": LaunchConfiguration("optitrack_port"),
             "rigid_body_name": LaunchConfiguration("rigid_body_name"),
+            "vrpn_update_freq": LaunchConfiguration("vrpn_update_freq"),
+            "vrpn_refresh_freq": LaunchConfiguration("vrpn_refresh_freq"),
+            "vrpn_sensor_data_qos": LaunchConfiguration("vrpn_sensor_data_qos"),
+            "source_best_effort": LaunchConfiguration("source_best_effort"),
             "use_vrpn_timestamps": LaunchConfiguration("use_vrpn_timestamps"),
+            "enable_pose_debug": LaunchConfiguration("enable_pose_debug"),
+            "debug_publish_rate_hz": LaunchConfiguration("debug_publish_rate_hz"),
+            "debug_history_window_s": LaunchConfiguration("debug_history_window_s"),
+            "debug_hold_timeout_s": LaunchConfiguration("debug_hold_timeout_s"),
+            "debug_warn_gap_s": LaunchConfiguration("debug_warn_gap_s"),
+            "debug_warn_position_error_m": LaunchConfiguration(
+                "debug_warn_position_error_m"
+            ),
+            "debug_warn_yaw_error_deg": LaunchConfiguration("debug_warn_yaw_error_deg"),
         }.items(),
     )
 
@@ -158,6 +207,8 @@ def launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
+    defaults = _load_optitrack_defaults()
+
     return LaunchDescription(
         [
             DeclareLaunchArgument("log_level", default_value="info"),
@@ -165,19 +216,101 @@ def generate_launch_description():
             DeclareLaunchArgument("mavros_namespace", default_value="mavros"),
             DeclareLaunchArgument("pose_source", default_value="optitrack"),
             DeclareLaunchArgument("source_pose_topic", default_value=""),
+            DeclareLaunchArgument(
+                "global_origin_latitude_deg",
+                default_value=_default_arg(
+                    defaults, "global_origin_latitude_deg", 0.0
+                ),
+            ),
+            DeclareLaunchArgument(
+                "global_origin_longitude_deg",
+                default_value=_default_arg(
+                    defaults, "global_origin_longitude_deg", 0.0
+                ),
+            ),
+            DeclareLaunchArgument(
+                "global_origin_altitude_m",
+                default_value=_default_arg(
+                    defaults, "global_origin_altitude_m", 17.1637
+                ),
+            ),
+            DeclareLaunchArgument(
+                "home_position_x_m",
+                default_value=_default_arg(defaults, "home_position_x_m", 0.0),
+            ),
+            DeclareLaunchArgument(
+                "home_position_y_m",
+                default_value=_default_arg(defaults, "home_position_y_m", 0.0),
+            ),
+            DeclareLaunchArgument(
+                "home_position_z_m",
+                default_value=_default_arg(defaults, "home_position_z_m", 0.0),
+            ),
+            DeclareLaunchArgument(
+                "home_approach_z_m",
+                default_value=_default_arg(defaults, "home_approach_z_m", 1.0),
+            ),
+            DeclareLaunchArgument(
+                "reference_retry_period_s",
+                default_value=_default_arg(defaults, "reference_retry_period_s", 1.0),
+            ),
             DeclareLaunchArgument("external_pose_publish_rate_hz", default_value="30.0"),
             DeclareLaunchArgument("external_pose_timeout_s", default_value="0.25"),
-            DeclareLaunchArgument("map_frame", default_value="map"),
+            DeclareLaunchArgument(
+                "map_frame",
+                default_value=_default_arg(defaults, "map_frame", "map"),
+            ),
             DeclareLaunchArgument(
                 "position_offset_m", default_value="[0.0, 0.0, 0.0]"
             ),
             DeclareLaunchArgument(
                 "rpy_offset_rad", default_value="[0.0, 0.0, 0.0]"
             ),
-            DeclareLaunchArgument("optitrack_server", default_value="localhost"),
-            DeclareLaunchArgument("optitrack_port", default_value="3883"),
-            DeclareLaunchArgument("rigid_body_name", default_value="RigidBody3"),
-            DeclareLaunchArgument("use_vrpn_timestamps", default_value="false"),
+            DeclareLaunchArgument(
+                "optitrack_server",
+                default_value=_default_arg(
+                    defaults, "optitrack_server", "192.168.0.217"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "optitrack_port",
+                default_value=_default_arg(defaults, "optitrack_port", 3883),
+            ),
+            DeclareLaunchArgument(
+                "rigid_body_name",
+                default_value=_default_arg(defaults, "rigid_body_name", "RigidBody3"),
+            ),
+            DeclareLaunchArgument(
+                "vrpn_update_freq",
+                default_value=_default_arg(defaults, "vrpn_update_freq", 100.0),
+            ),
+            DeclareLaunchArgument(
+                "vrpn_refresh_freq",
+                default_value=_default_arg(defaults, "vrpn_refresh_freq", 1.0),
+            ),
+            DeclareLaunchArgument(
+                "vrpn_sensor_data_qos",
+                default_value=_default_arg(defaults, "vrpn_sensor_data_qos", True),
+            ),
+            DeclareLaunchArgument(
+                "source_best_effort",
+                default_value=_default_arg(defaults, "source_best_effort", True),
+            ),
+            DeclareLaunchArgument(
+                "use_vrpn_timestamps",
+                default_value=_default_arg(defaults, "use_vrpn_timestamps", False),
+            ),
+            DeclareLaunchArgument("enable_pose_debug", default_value="true"),
+            DeclareLaunchArgument("debug_publish_rate_hz", default_value="1.0"),
+            DeclareLaunchArgument("debug_history_window_s", default_value="5.0"),
+            DeclareLaunchArgument("debug_hold_timeout_s", default_value="0.5"),
+            DeclareLaunchArgument("debug_warn_gap_s", default_value="0.25"),
+            DeclareLaunchArgument(
+                "debug_warn_position_error_m", default_value="0.10"
+            ),
+            DeclareLaunchArgument(
+                "debug_warn_yaw_error_deg", default_value="10.0"
+            ),
             DeclareLaunchArgument("publish_rate_hz", default_value="20.0"),
             DeclareLaunchArgument("takeoff_altitude_m", default_value="0.7"),
             DeclareLaunchArgument("takeoff_rate_m_s", default_value="0.5"),

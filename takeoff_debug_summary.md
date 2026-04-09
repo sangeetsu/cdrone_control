@@ -13,10 +13,11 @@
 
 - OptiTrack -> `vrpn_mocap` -> repo external-pose adapter -> `/mavros/vision_pose/pose` is implemented and bench-validated.
 - MAVROS is installed and sourced from `~/.bashrc`.
-- PX4 external-vision params were set for bench testing:
+- PX4 external-vision params were set for indoor flight:
   - `EKF2_GPS_CTRL = 0`
-  - `EKF2_EV_CTRL = 3`
-  - `EKF2_HGT_REF = 3`
+  - `EKF2_EV_CTRL = 11` (pos XY + Z + yaw on the `PoseStamped` pipeline)
+  - `EKF2_HGT_REF = 3` (EV height)
+  - `EKF2_MAG_TYPE = 5` (no magnetometer, use EV yaw)
 - `keyboard_teleop_node` supports `POSCTL` on key `6`.
 - `guided_target` MAVROS plugin was disabled to avoid irrelevant `PositionTargetGlobal ... no origin` warnings indoors.
 
@@ -215,8 +216,109 @@ Observed from `/mavros/state` capture:
   - because PX4 still considered the vehicle landed, it auto-disarmed after the preflight-inactivity timeout
   - this means the current primary blocker is now the lack of actual climb / takeoff detection inside PX4, not RC-loss failsafe behavior
 
+### 9. Frame alignment fix (2026-04-06) — RESOLVED
+
+**Root cause of March 31 drift and crash (log_43, log_44):**
+
+Two compounding issues were identified from ULG flight log analysis and live mocap axis testing:
+
+1. **Heading instability (log_43, EKF2_EV_CTRL=3)**: PX4 used magnetometer for heading indoors, which wandered from -106° to -90° to -114°. This rotated the NED frame while the trajectory setpoint remained in the old frame, creating an ever-growing position error that PX4 tried to "correct" by flying sideways.
+
+2. **180° rigid body heading error**: Live testing with Motive Z-up configuration showed the rigid body's defined "front" in Motive points at the drone's TAIL. The VRPN quaternion reported yaw ≈ -0.7° while the physical drone nose pointed in the Motive -X direction. With EV yaw fusion (EKF2_EV_CTRL=15), PX4 would think the nose faces the opposite direction, reversing every position correction.
+
+3. **Wrong Motive axis change (log_44)**: User's Motive axis change for log_44 caused Z-axis inversion (EV height flipped from +1.126 to -0.795) and a 90° yaw jump during takeoff, leading to the crash.
+
+**Fix applied:**
+
+- **Software fix (portable to all drone clones)**:
+  - `rpy_offset_rad` default changed from `[0.0, 0.0, 0.0]` to `[0.0, 0.0, 3.141593]` in `external_pose_px4_bridge.launch.py` (line 152)
+  - The adapter node applies a 180° yaw rotation to the VRPN quaternion before forwarding to MAVROS
+  - Motive configured to **Z-up** (right-handed), streaming via VRPN
+
+- **PX4 parameters set**:
+  - `EKF2_EV_CTRL = 15` (fuse EV position XY + Z + yaw)
+  - `EKF2_MAG_TYPE = 5` (disable magnetometer, use EV yaw only)
+  - `EKF2_HGT_REF = 3` (EV as height reference)
+  - `EKF2_GPS_CTRL = 0` (GPS disabled)
+
+- **QoS fix**: adapter node subscription changed to match vrpn_mocap's `BEST_EFFORT` reliability policy
+
+**Verification (2026-04-06):**
+
+Axis test with 180° yaw offset applied (baseline at rest: X=4.731, Y=0.541, Z=0.098, Yaw=177.1°):
+
+| Test | Expected | Measured delta | Result |
+|------|----------|----------------|--------|
+| UP (~1ft) | dZ > 0 | dZ=+0.688, dX=+0.057, dY=+0.022 | PASS |
+| RIGHT (~1ft) | dY > 0 | dY=+0.608, dX=+0.021, dZ=-0.007 | PASS |
+| FORWARD (~1ft) | dX ≠ 0 | dX=-0.658, dY=+0.011, dZ=+0.002 | PASS |
+
+All axes clean with near-zero crosstalk. Yaw stable at ~177° throughout. Frame alignment is correct.
+
+### 10. Live Motive realignment on 2026-04-07 — yaw fixed, height still confusing
+
+- Section 9's 180 degree software yaw offset was a temporary workaround.
+- After the Motive ground plane was redefined and the rigid body was recreated with its local forward axis aligned to the drone nose, the software yaw workaround was removed again:
+  - [ros2/src/drone_bringup/launch/external_pose_px4_bridge.launch.py](/home/jetson/cdrone_control/ros2/src/drone_bringup/launch/external_pose_px4_bridge.launch.py)
+  - [ros2/src/drone_bringup/launch/position_hover_demo.launch.py](/home/jetson/cdrone_control/ros2/src/drone_bringup/launch/position_hover_demo.launch.py)
+- The standalone bridge launch default was also corrected to match the current Motive rigid body topic:
+  - `rigid_body_name` now defaults to `RigidBody3`
+
+**Current live PX4 params re-checked after FCU reboot:**
+
+- `EKF2_EV_CTRL = 11`
+- `EKF2_MAG_TYPE = 5`
+- `EKF2_HGT_REF = 3`
+- `EKF2_GPS_CTRL = 0`
+- `EKF2_BARO_CTRL = 0`
+- `EKF2_RNG_CTRL = 0`
+
+**Live verification after the rigid body remake:**
+
+- Raw `/vrpn_mocap/RigidBody3/pose` at the "nose along Motive +X" reference pose now reports yaw near `0 deg`.
+- End-to-end pose chain is now aligned:
+  - `VRPN -> /cdrone/drone01/external_pose/input_pose`: effectively exact match
+  - `VRPN -> /mavros/vision_pose/pose`: effectively exact match
+  - `VRPN -> /mavros/local_position/pose`: yaw agrees within about `1 deg`, XY within a few mm
+- Ground-only arm/disarm test passed without sending a takeoff command:
+  - arm accepted
+  - disarm accepted
+
+**Interpretation:**
+
+- The old 180 degree heading/body-frame inconsistency is now resolved.
+- The remaining PX4 estimator complaints are no longer best explained by a yaw-frame mismatch.
+
+**Remaining live problems observed on 2026-04-07:**
+
+- The OptiTrack/VRPN stream is still not perfectly continuous:
+  - measured over `8 s`: average gap about `23.7 ms`
+  - max gap about `276 ms`
+  - `2` gaps exceeded `250 ms`
+  - `17` gaps exceeded `100 ms`
+- The adapter node reports matching source timeout warnings on `/vrpn_mocap/RigidBody3/pose`.
+- In the full idle hover-demo stack, PX4 still intermittently reports:
+  - `Navigation error: No valid position estimate`
+  - `Navigation error: No valid global position estimate`
+- Home/global-origin setup now succeeds, but the height readback is still confusing:
+  - raw mocap / vision Z near the floor was about `+0.12 m`
+  - `/mavros/local_position/pose.z` was about `+17.28 m`
+  - `/mavros/home_position/home.position.z` was also about `+17.28 m`
+
+**Current best interpretation of the height issue:**
+
+- The large `~17.28 m` Z offset is probably not the same kind of estimator-fusion failure as the old yaw problem.
+- It is more likely a reference / origin interpretation problem around:
+  - the manually injected global origin + home position
+  - MAVROS geographic altitude conversion
+  - the difference between PX4 local origin, home position, and the Motive world frame
+- In other words:
+  - yaw/body alignment now looks correct
+  - the remaining work is to make the height reference unambiguous and to reduce pose-stream dropouts
+
 ## Main Outstanding Bug
 
+- The earlier drift/crash blocker (March 31 flights) has been **resolved** — see "9. Frame alignment fix" below.
 - The repo startup path was a real issue, but it is no longer the immediate blocker in the latest captures.
 - The earlier RC-loss blocker has also now been removed from the active failure path by changing `COM_RC_IN_MODE`.
 - The current blocker is:
@@ -274,3 +376,120 @@ Observed from `/mavros/state` capture:
 - [ros2/src/drone_bringup/config/apm_pluginlists.yaml](/home/jetson/cdrone_control/ros2/src/drone_bringup/config/apm_pluginlists.yaml)
 - [ros2/src/drone_control_pkg/drone_control_pkg/external_pose_adapter_node.py](/home/jetson/cdrone_control/ros2/src/drone_control_pkg/drone_control_pkg/external_pose_adapter_node.py)
 - [ros2/src/drone_control_pkg/drone_control_pkg/external_pose_bridge_node.py](/home/jetson/cdrone_control/ros2/src/drone_control_pkg/drone_control_pkg/external_pose_bridge_node.py)
+
+### 11. Pipeline validation on 2026-04-08 — known-good OptiTrack endpoint committed to repo config
+
+- Added a dedicated bringup config file for the current indoor mocap setup:
+  - [ros2/src/drone_bringup/config/optitrack_defaults.yaml](/home/jetson/cdrone_control/ros2/src/drone_bringup/config/optitrack_defaults.yaml)
+- Both launch files now read their default OptiTrack and indoor-reference values from that config file:
+  - [ros2/src/drone_bringup/launch/external_pose_px4_bridge.launch.py](/home/jetson/cdrone_control/ros2/src/drone_bringup/launch/external_pose_px4_bridge.launch.py)
+  - [ros2/src/drone_bringup/launch/position_hover_demo.launch.py](/home/jetson/cdrone_control/ros2/src/drone_bringup/launch/position_hover_demo.launch.py)
+- The known-good defaults currently stored there are:
+  - `optitrack_server = 192.168.0.217`
+  - `rigid_body_name = RigidBody3`
+  - `global_origin_altitude_m = 17.1637`
+  - `vrpn_sensor_data_qos = true`
+  - `source_best_effort = true`
+
+**Live validation results:**
+
+- `localhost:3883` is not the active OptiTrack server on this machine.
+  - direct check to `localhost:3883` failed
+  - direct check to `192.168.0.217:3883` succeeded
+- With `optitrack_server:=192.168.0.217`, the VRPN client created `RigidBody3` immediately and the bridge path became live again.
+
+**End-to-end pose alignment with the real OptiTrack server:**
+
+- Debug summary from `/cdrone/drone01/external_pose/debug/summary` showed:
+  - `source -> adapter`: exact within report precision
+  - `source -> vision`: exact within report precision
+  - `source -> local`: about `dx=+0.0007 m`, `dy=-0.0008 m`, `dz=+0.0119 m`, `dyaw=+0.04 deg`
+- Derived indoor origin math is now self-consistent:
+  - `global_origin.altitude_m = 17.1630`
+  - `derived_origin_altitude_m = 17.1629`
+  - `origin_altitude_error_m = 0.0001`
+
+**Transport / QoS check:**
+
+- Best-effort performed better than reliable on this network with the current OptiTrack stream.
+- Best-effort sample over `8 s`:
+  - `348` samples
+  - average gap `0.0231 s`
+  - max gap `0.1613 s`
+  - `6` gaps over `0.10 s`
+  - `0` gaps over `0.25 s`
+- Reliable sample over `8 s`:
+  - `344` samples
+  - average gap `0.0224 s`
+  - max gap `0.4962 s`
+  - `21` gaps over `0.10 s`
+  - `4` gaps over `0.25 s`
+- Interpretation:
+  - keep the OptiTrack path on `vrpn_sensor_data_qos = true`
+  - keep the adapter source subscription on `source_best_effort = true`
+  - the frame and origin alignment now look clean
+  - the remaining transport risk is occasional real VRPN stalls from the upstream stream, not a bridge-side frame bug
+
+**Ground-only arm check after the config / pipeline fixes:**
+
+- Bench validation was run from the standalone external-pose bridge path only.
+- No hover-demo start request or takeoff command was sent.
+- Observed MAVROS state before arming:
+  - `connected = true`
+  - `armed = false`
+  - `mode = AUTO.LOITER`
+  - `manual_input = false`
+- MAVROS arm service result:
+  - `success = true`
+  - `result = 0`
+- MAVROS disarm service result:
+  - `success = true`
+  - `result = 0`
+- FCU status text during the arm/disarm window:
+  - `Armed by external command`
+  - PX4 log file announcement
+  - `Disarmed by external command`
+- No new estimator or prearm rejection messages appeared during that no-flight arm test.
+
+### 12. Demo milestone on 2026-04-08 — first successful autonomous arm and partial takeoff
+
+- The hover demo finally armed and lifted off under the full demo sequence.
+- Sequence observed in [output.txt](/home/jetson/cdrone_control/output.txt):
+  - `IDLE -> SYNC_TAKEOFF_PARAM`
+  - `SYNC_TAKEOFF_PARAM -> SET_TAKEOFF_MODE`
+  - `SET_TAKEOFF_MODE -> ARMING`
+  - arm request accepted
+  - `ARMING -> TAKEOFF`
+  - PX4 reported `Using default takeoff altitude: 0.60 m`
+  - PX4 reported `Takeoff detected`
+- The highest takeoff progress reported by the demo before it stopped was:
+  - `delta_z = 0.22 m`
+  - `target_delta_z = 0.60 m`
+
+**Important interpretation from the log:**
+
+- The demo did **not** stop because of the demo stage timeout.
+  - The stage timeout default is `30 s`, and this attempt aborted only a few seconds into `TAKEOFF`.
+- The log does **not** show any battery warning, low-battery event, or battery failsafe message.
+- The immediate stop condition in this run was:
+  - PX4 mode changed from `AUTO.TAKEOFF` to `AUTO.LOITER`
+  - then the demo aborted with `lost takeoff mode during climb: AUTO.LOITER`
+  - then the demo commanded `AUTO.LAND`
+
+**What is proven vs not yet proven:**
+
+- Proven:
+  - the repo-side demo sequence can now arm and initiate takeoff
+  - PX4 detected takeoff
+  - the run was cut short by the mode change to `AUTO.LOITER`, not by the configured experiment timeout
+- Not yet proven from this log alone:
+  - why PX4 switched to `AUTO.LOITER` at that moment
+  - whether the vehicle would have continued climbing or stabilizing if the demo had not immediately aborted to `AUTO.LAND`
+  - whether low battery contributed indirectly, because there is no explicit battery event in this log
+
+**Next debugging implication:**
+
+- The primary remaining issue is no longer “cannot arm”.
+- The next issue to resolve is the handoff around the top of `AUTO.TAKEOFF`:
+  - either PX4 is leaving `AUTO.TAKEOFF` earlier than expected
+  - or the demo is treating a legitimate PX4 `AUTO.TAKEOFF -> AUTO.LOITER` transition as a failure before it has enough altitude evidence to accept it

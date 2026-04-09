@@ -1,0 +1,17 @@
+optitrack_server: 192.168.0.217
+optitrack_port: 3883
+rigid_body_name: RigidBody3
+map_frame: map
+vrpn_update_freq: 100.0
+vrpn_refresh_freq: 1.0
+vrpn_sensor_data_qos: true
+source_best_effort: true
+use_vrpn_timestamps: false
+global_origin_latitude_deg: 0.0
+global_origin_longitude_deg: 0.0
+global_origin_altitude_m: 17.1637
+home_position_x_m: 0.0
+home_position_y_m: 0.0
+home_position_z_m: 0.0
+home_approach_z_m: 1.0
+reference_retry_period_s: 1.0

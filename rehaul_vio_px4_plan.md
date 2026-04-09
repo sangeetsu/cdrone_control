@@ -36,7 +36,7 @@ Use MAVROS `vision_pose` first.
 
 Why:
 
-- it already exists in this repo and is enabled in `ros2/src/drone_bringup/config/apm_config.yaml`
+- it already exists in this repo and is enabled in `ros2/src/drone_bringup/config/px4_config.yaml`
 - the bench path already proved that PX4 accepts the basic external-vision route through `/mavros/vision_pose/pose`
 - the current `vio_bridge_node.py` is already shaped like a `PoseStamped` relay
 - it is the shortest path from "no estimator" to "PX4 trusts indoor aiding"
@@ -122,7 +122,7 @@ Do not let every node "kind of" handle frame conversion differently.
 
 - `ros2/src/drone_bringup/launch/drone.launch.py`
 - `ros2/src/drone_bringup/launch/realsense_d455.launch.py`
-- `ros2/src/drone_bringup/config/apm_config.yaml`
+- `ros2/src/drone_bringup/config/px4_config.yaml`
 - `ros2/src/drone_control_pkg/drone_control_pkg/keyboard_teleop_node.py`
 - `ros2/src/drone_control_pkg/drone_control_pkg/mavros_velocity_node.py` as a temporary command path
 - the `mavlink-router` UDP topology
@@ -203,8 +203,8 @@ These are the files the rehaul will almost certainly touch:
 - `ros2/src/drone_bringup/launch/realsense_d455.launch.py`
 - `ros2/src/drone_bringup/launch/bench_offboard.launch.py`
 - `archive/legacy_stack/ros2/src/drone_bringup/launch/autonomy_stack.launch.py`
-- `ros2/src/drone_bringup/config/apm_pluginlists.yaml`
-- `ros2/src/drone_bringup/config/apm_config.yaml`
+- `ros2/src/drone_bringup/config/px4_pluginlists.yaml`
+- `ros2/src/drone_bringup/config/px4_config.yaml`
 - `archive/legacy_stack/ros2/src/drone_bringup/config/autonomy_params.yaml`
 - `ros2/src/drone_control_pkg/drone_control_pkg/vio_bridge_node.py`
 - `ros2/src/drone_control_pkg/drone_control_pkg/bench_vision_pose_node.py`
@@ -361,7 +361,7 @@ Goal:
 
 Actions:
 
-- remove the `odometry` denylist entry from `ros2/src/drone_bringup/config/apm_pluginlists.yaml`
+- remove the `odometry` denylist entry from `ros2/src/drone_bringup/config/px4_pluginlists.yaml`
 - configure MAVROS odometry intentionally instead of leaving it half-disabled
 - extend the bridge to publish odometry with covariance and twist
 - only after that, adapt the control layer from "velocity OFFBOARD experiment" to "position-control-capable autonomy"

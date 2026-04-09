@@ -116,6 +116,7 @@ class ExternalPoseAdapterNode(Node):
         self.declare_parameter("position_offset_m", [0.0, 0.0, 0.0])
         self.declare_parameter("rpy_offset_rad", [0.0, 0.0, 0.0])
         self.declare_parameter("timeout_s", 0.25)
+        self.declare_parameter("source_best_effort", True)
 
         self.drone_id = str(self.get_parameter("drone_id").value)
         self.source_pose_topic = str(self.get_parameter("source_pose_topic").value).strip()
@@ -125,6 +126,9 @@ class ExternalPoseAdapterNode(Node):
         )
         self.map_frame = str(self.get_parameter("map_frame").value).strip()
         self.timeout_s = float(self.get_parameter("timeout_s").value)
+        self.source_best_effort = bool(
+            self.get_parameter("source_best_effort").value
+        )
         self.position_offset_m = _parse_vector(
             self.get_parameter("position_offset_m").value,
             expected_len=3,
@@ -141,7 +145,11 @@ class ExternalPoseAdapterNode(Node):
         self.last_timeout_warn_s = 0.0
 
         source_qos = QoSProfile(
-            reliability=ReliabilityPolicy.BEST_EFFORT,
+            reliability=(
+                ReliabilityPolicy.BEST_EFFORT
+                if self.source_best_effort
+                else ReliabilityPolicy.RELIABLE
+            ),
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
         )
@@ -156,7 +164,8 @@ class ExternalPoseAdapterNode(Node):
 
         self.get_logger().info(
             "External pose adapter started: "
-            f"{self.source_pose_topic} -> {self.output_pose_topic}"
+            f"{self.source_pose_topic} -> {self.output_pose_topic} "
+            f"(source_qos={'best_effort' if self.source_best_effort else 'reliable'})"
         )
 
     def now_s(self) -> float:

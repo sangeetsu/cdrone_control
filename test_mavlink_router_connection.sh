@@ -1,6 +1,9 @@
 #!/bin/bash
 # Quick test to verify mavlink-router and MAVROS UDP connection
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CONFIG_DIR="$SCRIPT_DIR/ros2/src/drone_bringup/config"
+
 echo "=========================================="
 echo "Testing mavlink-router + MAVROS Setup"
 echo "=========================================="
@@ -41,17 +44,37 @@ fi
 
 echo ""
 echo "4. Checking MAVROS configuration..."
-CONFIG_FILE="/home/jetson/ros_ws/cdrone_control/ros2/src/drone_bringup/config/apm_params.yaml"
-if grep -q "udp://:14540@127.0.0.1:14550" "$CONFIG_FILE"; then
+PARAMS_FILE="$CONFIG_DIR/px4_params.yaml"
+TIME_CONFIG_FILE="$CONFIG_DIR/px4_config.yaml"
+if grep -q "udp://:14540@127.0.0.1:14550" "$PARAMS_FILE"; then
     echo "   ✅ MAVROS configured for UDP (mavlink-router)"
-    grep "fcu_url" "$CONFIG_FILE"
+    grep "fcu_url" "$PARAMS_FILE"
 else
     echo "   ⚠️  MAVROS not configured for UDP"
     echo "   Current config:"
-    grep "fcu_url" "$CONFIG_FILE"
+    grep "fcu_url" "$PARAMS_FILE"
     echo ""
     echo "   Should be: fcu_url: \"udp://:14540@127.0.0.1:14550\""
 fi
+
+echo ""
+echo "5. Checking PX4 time sync configuration..."
+if grep -q "timesync_mode: MAVLINK" "$TIME_CONFIG_FILE" && \
+   grep -q "system_time_rate: 1.0" "$TIME_CONFIG_FILE"; then
+    echo "   ✅ MAVROS is configured to use TIMESYNC + SYSTEM_TIME for PX4"
+    grep -E "timesync_mode|timesync_rate|system_time_rate" "$TIME_CONFIG_FILE"
+else
+    echo "   ⚠️  PX4 time sync settings do not match the expected MAVROS profile"
+    grep -E "timesync_mode|timesync_rate|system_time_rate" "$TIME_CONFIG_FILE"
+fi
+
+echo ""
+echo "6. Companion clock reference..."
+echo "   Phoenix local time:"
+TZ=America/Phoenix date "+%Y-%m-%d %H:%M:%S %Z (%z)"
+echo "   UTC:"
+date -u "+%Y-%m-%d %H:%M:%S UTC (+0000)"
+echo "   Note: PX4 stores the correct Unix epoch; Phoenix is a display timezone."
 
 echo ""
 echo "=========================================="

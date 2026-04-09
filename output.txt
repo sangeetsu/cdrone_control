@@ -1,0 +1,1086 @@
+[INFO] [launch]: All log files can be found below /home/jetson/.ros/log/2026-04-08-17-33-57-696322-jetson-6480
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [mavros_node-1]: process started with pid [6482]
+[INFO] [drone_setup_node-2]: process started with pid [6484]
+[INFO] [client_node-3]: process started with pid [6486]
+[INFO] [external_pose_adapter_node-4]: process started with pid [6488]
+[INFO] [external_pose_bridge_node-5]: process started with pid [6490]
+[INFO] [external_pose_debug_node-6]: process started with pid [6494]
+[INFO] [position_hover_demo_sequence_node-7]: process started with pid [6507]
+[client_node-3] check_vrpn_cookie(): VRPN Note: minor version number doesn't match: (prefer 'vrpn: ver. 07.35', got 'vrpn: ver. 07.33  0').  This is not normally a problem.
+[mavros_node-1] [INFO] [1775694837.914054892] [mavros.mavros_node]: Starting mavros_node container
+[mavros_node-1] [INFO] [1775694837.914280844] [mavros.mavros_node]: FCU URL: udp://:14540@127.0.0.1:14550
+[mavros_node-1] [INFO] [1775694837.914303372] [mavros.mavros_node]: GCS URL: 
+[mavros_node-1] [INFO] [1775694837.914313644] [mavros.mavros_node]: UAS Prefix: /uas1
+[mavros_node-1] [INFO] [1775694837.914321644] [mavros.mavros_node]: Starting mavros router node
+[mavros_node-1] [INFO] [1775694837.956999628] [mavros.mavros_router]: Built-in SIMD instructions: ARM NEON
+[mavros_node-1] [INFO] [1775694837.957148939] [mavros.mavros_router]: Built-in MAVLink package version: 2026.3.3
+[mavros_node-1] [INFO] [1775694837.957168139] [mavros.mavros_router]: Known MAVLink dialects: common ardupilotmega ASLUAV AVSSUAS all csAirLink cubepilot development icarous loweheiser marsh matrixpilot paparazzi standard stemstudios storm32 uAvionix ualberta
+[mavros_node-1] [INFO] [1775694837.957178539] [mavros.mavros_router]: MAVROS Router started
+[mavros_node-1] [INFO] [1775694837.957425547] [mavros.mavros_node]: Starting mavros uas node
+[mavros_node-1] [INFO] [1775694838.087430856] [mavros.mavros_router]: Requested to add endpoint: type: 0, url: udp://:14540@127.0.0.1:14550
+[mavros_node-1] [INFO] [1775694838.087578472] [mavros.mavros_router]: Endpoint link[1000] created
+[mavros_node-1] [INFO] [1775694838.088419559] [mavros.mavros_router]: link[1000] opened successfully
+[mavros_node-1] [INFO] [1775694838.088473191] [mavros.mavros_router]: Requested to add endpoint: type: 2, url: /uas1
+[mavros_node-1] [INFO] [1775694838.088535623] [mavros.mavros_router]: Endpoint link[1001] created
+[mavros_node-1] [INFO] [1775694838.091841186] [mavros.mavros_router]: link[1001] opened successfully
+[mavros_node-1] [INFO] [1775694838.105604077] [mavros.mavros_router]: link[1000] detected remote address 1.1
+[mavros_node-1] [INFO] [1775694838.122332020] [mavros.mavros]: UAS Executor started, threads: 6
+[mavros_node-1] [INFO] [1775694838.186688948] [mavros.mavros]: Plugin actuator_control created
+[mavros_node-1] [INFO] [1775694838.187080179] [mavros.mavros]: Plugin actuator_control initialized
+[mavros_node-1] [INFO] [1775694838.367887173] [mavros.mavros]: Plugin adsb created
+[mavros_node-1] [INFO] [1775694838.369690435] [mavros.mavros]: Plugin adsb initialized
+[mavros_node-1] [INFO] [1775694838.413844833] [mavros.mavros]: Plugin altitude created
+[mavros_node-1] [INFO] [1775694838.414365568] [mavros.mavros]: Plugin altitude initialized
+[mavros_node-1] [INFO] [1775694838.448531789] [mavros.mavros]: Plugin cam_imu_sync created
+[mavros_node-1] [INFO] [1775694838.448667565] [mavros.mavros]: Plugin cam_imu_sync initialized
+[mavros_node-1] [INFO] [1775694838.485940949] [mavros.mavros]: Plugin camera created
+[mavros_node-1] [INFO] [1775694838.486075541] [mavros.mavros]: Plugin camera initialized
+[mavros_node-1] [INFO] [1775694838.528932853] [mavros.mavros]: Plugin cellular_status created
+[mavros_node-1] [INFO] [1775694838.529044244] [mavros.mavros]: Plugin cellular_status initialized
+[mavros_node-1] [INFO] [1775694838.583509571] [mavros.mavros]: Plugin command created
+[mavros_node-1] [INFO] [1775694838.583655523] [mavros.mavros]: Plugin command initialized
+[mavros_node-1] [INFO] [1775694838.633547032] [mavros.mavros]: Plugin companion_process_status created
+[mavros_node-1] [INFO] [1775694838.633668664] [mavros.mavros]: Plugin companion_process_status initialized
+[mavros_node-1] [INFO] [1775694838.688744262] [mavros.mavros]: Plugin debug_value created
+[mavros_node-1] [INFO] [1775694838.688908870] [mavros.mavros]: Plugin debug_value initialized
+[mavros_node-1] [INFO] [1775694838.728290091] [mavros.distance_sensor]: DS: rangefinder_pub: Loading config: id: 0
+[mavros_node-1] frame_id: lidar
+[mavros_node-1] field_of_view: 0.0
+[mavros_node-1] send_tf: false
+[mavros_node-1] sensor_position: {x: 0.0, y: 0.0, z: -0.1}
+[mavros_node-1] [INFO] [1775694838.730895623] [mavros.distance_sensor]: DS: rangefinder_sub: Loading config: subscriber: true
+[mavros_node-1] id: 1
+[mavros_node-1] orientation: PITCH_270
+[mavros_node-1] [INFO] [1775694838.732223749] [mavros.mavros]: Plugin distance_sensor created
+[mavros_node-1] [INFO] [1775694838.732322725] [mavros.mavros]: Plugin distance_sensor initialized
+[mavros_node-1] [INFO] [1775694838.780778492] [mavros.mavros]: Plugin esc_status created
+[mavros_node-1] [INFO] [1775694838.780935644] [mavros.mavros]: Plugin esc_status initialized
+[mavros_node-1] [INFO] [1775694838.826994647] [mavros.mavros]: Plugin esc_telemetry created
+[mavros_node-1] [INFO] [1775694838.827141623] [mavros.mavros]: Plugin esc_telemetry initialized
+[client_node-3] [INFO] [1775694838.910496379] [vrpn_mocap.vrpn_mocap_client_node]: Created new tracker RigidBody3
+[client_node-3] [INFO] [1775694838.922856648] [vrpn_mocap.vrpn_mocap_client_node]: Creating sensor 0
+[mavros_node-1] [INFO] [1775694838.953805466] [mavros.mavros]: Plugin fake_gps created
+[mavros_node-1] [INFO] [1775694838.953920986] [mavros.mavros]: Plugin fake_gps initialized
+[external_pose_debug_node-6] [INFO] [1775694839.010839205] [external_pose_debug_node]: External pose debug started: /vrpn_mocap/RigidBody3/pose -> /cdrone/drone01/external_pose/input_pose -> /mavros/vision_pose/pose; local=/mavros/local_position/pose; source_qos=best_effort
+[mavros_node-1] [INFO] [1775694839.096309606] [mavros.mavros]: Plugin ftp created
+[mavros_node-1] [INFO] [1775694839.096460518] [mavros.mavros]: Plugin ftp initialized
+[mavros_node-1] [INFO] [1775694839.152881010] [mavros.mavros]: Plugin geofence created
+[mavros_node-1] [INFO] [1775694839.153219313] [mavros.mavros]: Plugin geofence initialized
+[mavros_node-1] [INFO] [1775694839.373016395] [mavros.mavros]: Plugin gimbal_control created
+[mavros_node-1] [INFO] [1775694839.373181962] [mavros.mavros]: Plugin gimbal_control initialized
+[external_pose_adapter_node-4] [INFO] [1775694839.448140603] [external_pose_adapter_node]: External pose adapter started: /vrpn_mocap/RigidBody3/pose -> /cdrone/drone01/external_pose/input_pose (source_qos=best_effort)
+[mavros_node-1] [INFO] [1775694839.514375577] [mavros.mavros]: Plugin global_position created
+[mavros_node-1] [INFO] [1775694839.514530296] [mavros.mavros]: Plugin global_position initialized
+[external_pose_bridge_node-5] [INFO] [1775694839.529803234] [external_pose_bridge_node]: External pose bridge started: /cdrone/drone01/external_pose/input_pose, /cdrone/drone01/vio/input_pose -> /mavros/vision_pose/pose
+[drone_setup_node-2] [INFO] [1775694839.566355851] [drone_setup]: Drone setup node started: /mavros/global_position/set_gp_origin, /mavros/home_position/set; origin=(0.0000000, 0.0000000, 17.1637m) home=(0.000, 0.000, 0.000)
+[drone_setup_node-2] [WARN] [1775694839.567198442] [drone_setup]: Using a synthetic indoor global origin at lat/lon 0,0. This is acceptable for bench indoor EV use, but replace it with the lab's real lat/lon/ellipsoid altitude for production.
+[mavros_node-1] [INFO] [1775694839.622199481] [mavros.mavros]: Plugin gps_input created
+[mavros_node-1] [INFO] [1775694839.622358712] [mavros.mavros]: Plugin gps_input initialized
+[position_hover_demo_sequence_node-7] [INFO] [1775694839.681273697] [position_hover_demo_sequence_node]: Position hover demo sequence node started. Waiting for explicit start request. takeoff_strategy=AUTO_MODE
+[mavros_node-1] [INFO] [1775694839.776900787] [mavros.mavros]: Plugin gps_rtk created
+[mavros_node-1] [INFO] [1775694839.777140018] [mavros.mavros]: Plugin gps_rtk initialized
+[mavros_node-1] [INFO] [1775694839.850105542] [mavros.mavros]: Plugin gps_status created
+[mavros_node-1] [INFO] [1775694839.850294342] [mavros.mavros]: Plugin gps_status initialized
+[mavros_node-1] [INFO] [1775694839.850323462] [mavros.mavros]: Plugin guided_target ignored
+[mavros_node-1] [INFO] [1775694839.948988243] [mavros.mavros]: Plugin hil created
+[mavros_node-1] [INFO] [1775694839.949154739] [mavros.mavros]: Plugin hil initialized
+[mavros_node-1] [INFO] [1775694840.095747226] [mavros.mavros]: Plugin home_position created
+[mavros_node-1] [INFO] [1775694840.095953498] [mavros.mavros]: Plugin home_position initialized
+[mavros_node-1] [INFO] [1775694840.217949317] [mavros.mavros]: Plugin imu created
+[mavros_node-1] [INFO] [1775694840.218160805] [mavros.mavros]: Plugin imu initialized
+[mavros_node-1] [INFO] [1775694840.338026164] [mavros.mavros]: Plugin landing_target created
+[mavros_node-1] [INFO] [1775694840.338207060] [mavros.mavros]: Plugin landing_target initialized
+[mavros_node-1] [INFO] [1775694840.427509424] [mavros.mavros]: Plugin local_position created
+[mavros_node-1] [INFO] [1775694840.427669584] [mavros.mavros]: Plugin local_position initialized
+[external_pose_adapter_node-4] [WARN] [1775694840.508753656] [external_pose_adapter_node]: External pose source timed out on /vrpn_mocap/RigidBody3/pose for 0.35s
+[mavros_node-1] [INFO] [1775694840.529159194] [mavros.mavros]: Plugin log_transfer created
+[mavros_node-1] [INFO] [1775694840.529328281] [mavros.mavros]: Plugin log_transfer initialized
+[mavros_node-1] [INFO] [1775694840.627102505] [mavros.mavros]: Plugin mag_calibration_status created
+[mavros_node-1] [INFO] [1775694840.627252809] [mavros.mavros]: Plugin mag_calibration_status initialized
+[mavros_node-1] [INFO] [1775694840.732896845] [mavros.mavros]: Plugin manual_control created
+[mavros_node-1] [INFO] [1775694840.733063021] [mavros.mavros]: Plugin manual_control initialized
+[mavros_node-1] [INFO] [1775694840.826620642] [mavros.mavros]: Plugin mocap_pose_estimate created
+[mavros_node-1] [INFO] [1775694840.826805474] [mavros.mavros]: Plugin mocap_pose_estimate initialized
+[mavros_node-1] [INFO] [1775694840.975451430] [mavros.mavros]: Plugin mount_control created
+[mavros_node-1] [INFO] [1775694840.975585638] [mavros.mavros]: Plugin mount_control initialized
+[external_pose_debug_node-6] [WARN] [1775694840.981963741] [external_pose_debug_node]: max source gap 0.39s
+[mavros_node-1] [INFO] [1775694841.076103986] [mavros.mavros]: Plugin nav_controller_output created
+[mavros_node-1] [INFO] [1775694841.076459090] [mavros.mavros]: Plugin nav_controller_output initialized
+[mavros_node-1] [INFO] [1775694841.142798512] [mavros.mavros]: Plugin obstacle_distance created
+[mavros_node-1] [INFO] [1775694841.142923120] [mavros.mavros]: Plugin obstacle_distance initialized
+[mavros_node-1] [INFO] [1775694841.252717903] [mavros.mavros]: Plugin obstacle_distance_3d created
+[mavros_node-1] [INFO] [1775694841.252853999] [mavros.mavros]: Plugin obstacle_distance_3d initialized
+[mavros_node-1] [INFO] [1775694841.252883663] [mavros.mavros]: Plugin odometry ignored
+[mavros_node-1] [INFO] [1775694841.458739424] [mavros.mavros]: Plugin onboard_computer_status created
+[mavros_node-1] [INFO] [1775694841.458853312] [mavros.mavros]: Plugin onboard_computer_status initialized
+[external_pose_adapter_node-4] [WARN] [1775694841.609493187] [external_pose_adapter_node]: External pose source timed out on /vrpn_mocap/RigidBody3/pose for 0.26s
+[mavros_node-1] [INFO] [1775694841.650029543] [mavros.mavros]: Plugin open_drone_id created
+[mavros_node-1] [INFO] [1775694841.650167527] [mavros.mavros]: Plugin open_drone_id initialized
+[mavros_node-1] [INFO] [1775694841.784109122] [mavros.mavros]: Plugin optical_flow created
+[mavros_node-1] [INFO] [1775694841.784299778] [mavros.mavros]: Plugin optical_flow initialized
+[mavros_node-1] [INFO] [1775694841.869161861] [mavros.mavros]: Plugin param created
+[mavros_node-1] [INFO] [1775694841.869302469] [mavros.mavros]: Plugin param initialized
+[mavros_node-1] [INFO] [1775694841.976223368] [mavros.mavros]: Plugin play_tune created
+[mavros_node-1] [INFO] [1775694841.976348584] [mavros.mavros]: Plugin play_tune initialized
+[mavros_node-1] [INFO] [1775694842.215203723] [mavros.mavros]: Plugin px4flow created
+[mavros_node-1] [INFO] [1775694842.215370731] [mavros.mavros]: Plugin px4flow initialized
+[mavros_node-1] [INFO] [1775694842.473798929] [mavros.mavros]: Plugin rallypoint created
+[mavros_node-1] [INFO] [1775694842.474072753] [mavros.mavros]: Plugin rallypoint initialized
+[mavros_node-1] [INFO] [1775694842.616032097] [mavros.mavros]: Plugin rangefinder created
+[mavros_node-1] [INFO] [1775694842.616203681] [mavros.mavros]: Plugin rangefinder initialized
+[mavros_node-1] [INFO] [1775694842.644876919] [mavros.mavros_router]: link[1000] detected remote address 254.0
+[mavros_node-1] [INFO] [1775694842.787338791] [mavros.mavros]: Plugin rc_io created
+[mavros_node-1] [INFO] [1775694842.787568519] [mavros.mavros]: Plugin rc_io initialized
+[mavros_node-1] [INFO] [1775694842.904788443] [mavros.mavros]: Plugin setpoint_accel created
+[mavros_node-1] [INFO] [1775694842.904958267] [mavros.mavros]: Plugin setpoint_accel initialized
+[external_pose_debug_node-6] [WARN] [1775694842.977997808] [external_pose_debug_node]: max source gap 0.39s
+[external_pose_adapter_node-4] [WARN] [1775694843.015081530] [external_pose_adapter_node]: External pose source timed out on /vrpn_mocap/RigidBody3/pose for 0.27s
+[mavros_node-1] [INFO] [1775694843.242203696] [mavros.mavros]: Plugin setpoint_attitude created
+[mavros_node-1] [INFO] [1775694843.243874286] [mavros.mavros]: Plugin setpoint_attitude initialized
+[mavros_node-1] [INFO] [1775694843.580432165] [mavros.mavros]: Plugin setpoint_position created
+[mavros_node-1] [INFO] [1775694843.580578948] [mavros.mavros]: Plugin setpoint_position initialized
+[mavros_node-1] [INFO] [1775694843.733666854] [mavros.mavros]: Plugin setpoint_raw created
+[mavros_node-1] [INFO] [1775694843.734164037] [mavros.mavros]: Plugin setpoint_raw initialized
+[mavros_node-1] [INFO] [1775694843.826301407] [mavros.mavros]: Plugin setpoint_trajectory created
+[mavros_node-1] [INFO] [1775694843.828285436] [mavros.mavros]: Plugin setpoint_trajectory initialized
+[mavros_node-1] [INFO] [1775694843.942489878] [mavros.mavros]: Plugin setpoint_velocity created
+[mavros_node-1] [INFO] [1775694843.945030995] [mavros.mavros]: Plugin setpoint_velocity initialized
+[mavros_node-1] [INFO] [1775694844.296525718] [mavros.mavros]: Plugin sim_state created
+[mavros_node-1] [INFO] [1775694844.296667030] [mavros.mavros]: Plugin sim_state initialized
+[mavros_node-1] [INFO] [1775694844.593012841] [mavros.mavros]: Plugin sys_status created
+[mavros_node-1] [INFO] [1775694844.593199145] [mavros.mavros]: Plugin sys_status initialized
+[mavros_node-1] [INFO] [1775694844.710844991] [mavros.time]: TM: Timesync mode: MAVLINK
+[mavros_node-1] [INFO] [1775694844.735898555] [mavros.mavros]: Plugin sys_time created
+[mavros_node-1] [INFO] [1775694844.736576410] [mavros.mavros]: Plugin sys_time initialized
+[mavros_node-1] [INFO] [1775694844.852239186] [mavros.mavros]: Plugin tdr_radio created
+[mavros_node-1] [INFO] [1775694844.852535794] [mavros.mavros]: Plugin tdr_radio initialized
+[mavros_node-1] [INFO] [1775694844.970470792] [mavros.mavros]: Plugin terrain created
+[mavros_node-1] [INFO] [1775694844.970688199] [mavros.mavros]: Plugin terrain initialized
+[external_pose_debug_node-6] [WARN] [1775694844.977202270] [external_pose_debug_node]: max source gap 0.47s
+[mavros_node-1] [INFO] [1775694845.116835477] [mavros.mavros]: Plugin trajectory created
+[mavros_node-1] [INFO] [1775694845.117060628] [mavros.mavros]: Plugin trajectory initialized
+[mavros_node-1] [INFO] [1775694845.381381368] [mavros.mavros]: Plugin tunnel created
+[mavros_node-1] [INFO] [1775694845.381512568] [mavros.mavros]: Plugin tunnel initialized
+[mavros_node-1] [INFO] [1775694845.549698790] [mavros.mavros]: Plugin vfr_hud created
+[mavros_node-1] [INFO] [1775694845.551511683] [mavros.mavros]: Plugin vfr_hud initialized
+[mavros_node-1] [INFO] [1775694845.734671228] [mavros.mavros]: Plugin vibration created
+[mavros_node-1] [INFO] [1775694845.736024922] [mavros.mavros]: Plugin vibration initialized
+[mavros_node-1] [INFO] [1775694845.898745360] [mavros.mavros]: Plugin vision_pose created
+[mavros_node-1] [INFO] [1775694845.898866064] [mavros.mavros]: Plugin vision_pose initialized
+[mavros_node-1] [INFO] [1775694846.193982984] [mavros.mavros]: Plugin vision_speed created
+[mavros_node-1] [INFO] [1775694846.194128200] [mavros.mavros]: Plugin vision_speed initialized
+[mavros_node-1] [INFO] [1775694846.462396168] [mavros.mavros]: Plugin waypoint created
+[mavros_node-1] [INFO] [1775694846.462580424] [mavros.mavros]: Plugin waypoint initialized
+[mavros_node-1] [INFO] [1775694846.462621480] [mavros.mavros]: Plugin wheel_odometry ignored
+[mavros_node-1] [WARN] [1775694846.634982673] [mavros.sys]: VER: broadcast request timeout, retries left 4
+[mavros_node-1] [INFO] [1775694846.639923978] [mavros.mavros]: Plugin wind_estimation created
+[mavros_node-1] [INFO] [1775694846.640108777] [mavros.mavros]: Plugin wind_estimation initialized
+[mavros_node-1] [INFO] [1775694846.655639475] [mavros.mavros_router]: link[1001] detected remote address 1.197
+[mavros_node-1] [INFO] [1775694846.670512766] [mavros.mavros]: Built-in SIMD instructions: ARM NEON
+[mavros_node-1] [INFO] [1775694846.670840381] [mavros.mavros]: Built-in MAVLink package version: 2026.3.3
+[mavros_node-1] [INFO] [1775694846.670863805] [mavros.mavros]: Known MAVLink dialects: common ardupilotmega ASLUAV AVSSUAS all csAirLink cubepilot development icarous loweheiser marsh matrixpilot paparazzi standard stemstudios storm32 uAvionix ualberta
+[mavros_node-1] [INFO] [1775694846.670878237] [mavros.mavros]: MAVROS UAS via /uas1 started. MY ID 1.191, TARGET ID 1.1
+[mavros_node-1] [INFO] [1775694846.671930364] [mavros.imu]: IMU: Attitude quaternion IMU detected!
+[mavros_node-1] [INFO] [1775694846.672845499] [mavros.rc]: RC_CHANNELS message detected!
+[mavros_node-1] [INFO] [1775694846.673125274] [mavros.sys]: FCU: EVENT 10716939 with args -0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775694846.673254042] [mavros.imu]: IMU: High resolution IMU detected!
+[mavros_node-1] [INFO] [1775694846.715656285] [mavros.mavros_router]: link[1001] detected remote address 1.191
+[external_pose_debug_node-6] [WARN] [1775694846.980117955] [external_pose_debug_node]: max source gap 0.47s
+[mavros_node-1] [WARN] [1775694846.992242257] [mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-128-0-18-1-0-0-0-0-128-43-1-128-128-59-1-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775694846.992697457] [mavros.sys]: FCU: EVENT 9697819 with args -126-208-126-0-17-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775694846.992888496] [mavros.sys]: FCU: EVENT 13835193 with args -124-0-126-0-17-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775694846.993138416] [mavros.sys]: FCU: EVENT 10011251 with args -56-0-0-0-24-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775694846.993450608] [mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775694846.993732367] [mavros.sys]: FCU: EVENT 3087815 with args -0-64-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775694846.994027919] [mavros.sys]: FCU: EVENT 79408 with args -32-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775694846.994301454] [mavros.sys]: FCU: EVENT 453929 with args -71-132-0-0-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775694846.994591182] [mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775694847.003176226] [mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-0-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775694847.605532711] [mavros.geofence]: GF: Using MISSION_ITEM_INT
+[mavros_node-1] [INFO] [1775694847.605653703] [mavros.rallypoint]: RP: Using MISSION_ITEM_INT
+[mavros_node-1] [INFO] [1775694847.605691783] [mavros.mission]: WP: Using MISSION_ITEM_INT
+[mavros_node-1] [INFO] [1775694847.605726087] [mavros.sys]: VER: 1.1: Capabilities         0x000000000000e8ff
+[mavros_node-1] [INFO] [1775694847.605760039] [mavros.sys]: VER: 1.1: Flight software:     011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775694847.605780007] [mavros.sys]: VER: 1.1: Middleware software: 011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775694847.605795879] [mavros.sys]: VER: 1.1: OS software:         0b0000ff (886acbbdb4f061e5)
+[mavros_node-1] [INFO] [1775694847.605810247] [mavros.sys]: VER: 1.1: Board hardware:      00000039
+[mavros_node-1] [INFO] [1775694847.605825383] [mavros.sys]: VER: 1.1: VID/PID:             3185:0039
+[mavros_node-1] [INFO] [1775694847.605839751] [mavros.sys]: VER: 1.1: UID:                 3333510833383530
+[mavros_node-1] [WARN] [1775694847.605971271] [mavros.cmd]: CMD: Unexpected command 520, result 0
+[mavros_node-1] [WARN] [1775694847.615609369] [mavros.sys]: VER: broadcast request timeout, retries left 3
+[mavros_node-1] [INFO] [1775694847.641553364] [mavros.mavros]: CON: Got HEARTBEAT, connected. FCU: PX4 Autopilot
+[mavros_node-1] [INFO] [1775694847.642000275] [mavros.mission]: WP: detected enable_partial_push: 0
+[mavros_node-1] [INFO] [1775694847.645646542] [mavros.imu]: IMU: High resolution IMU detected!
+[mavros_node-1] [INFO] [1775694847.645886254] [mavros.imu]: IMU: Attitude quaternion IMU detected!
+[drone_setup_node-2] [INFO] [1775694847.646758860] [drone_setup]: FCU connected; publishing indoor global origin and home position
+[mavros_node-1] [INFO] [1775694847.662110679] [mavros.rc]: RC_CHANNELS message detected!
+[drone_setup_node-2] [INFO] [1775694848.523453038] [drone_setup]: Publishing indoor reference setup (attempt 1): global_origin_ready=False home_position_ready=True
+[mavros_node-1] [INFO] [1775694848.667412578] [mavros.sys]: VER: 1.1: Capabilities         0x000000000000e8ff
+[mavros_node-1] [INFO] [1775694848.667510146] [mavros.sys]: VER: 1.1: Flight software:     011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775694848.667531330] [mavros.sys]: VER: 1.1: Middleware software: 011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775694848.667545730] [mavros.sys]: VER: 1.1: OS software:         0b0000ff (886acbbdb4f061e5)
+[mavros_node-1] [INFO] [1775694848.667556514] [mavros.sys]: VER: 1.1: Board hardware:      00000039
+[mavros_node-1] [INFO] [1775694848.667566882] [mavros.sys]: VER: 1.1: VID/PID:             3185:0039
+[mavros_node-1] [INFO] [1775694848.667576002] [mavros.sys]: VER: 1.1: UID:                 3333510833383530
+[mavros_node-1] [WARN] [1775694849.073598691] [mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-128-0-16-0-0-0-0-0-176-59-127-128-176-59-127-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775694849.073884354] [mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775694849.074033186] [mavros.sys]: FCU: EVENT 3087815 with args -0-64-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775694849.074254978] [mavros.sys]: FCU: EVENT 453929 with args -71-132-0-0-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775694849.074392673] [mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775694849.079295098] [mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-0-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[drone_setup_node-2] [INFO] [1775694849.523313927] [drone_setup]: Indoor global origin and home position are confirmed by MAVROS
+[mavros_node-1] [WARN] [1775694861.850300518] [mavros.param]: PR: request param #891 timeout, retries left 2, and 62 params still missing
+[mavros_node-1] [INFO] [1775694862.647101094] [mavros.mission]: WP: mission received
+[mavros_node-1] [INFO] [1775694867.653710220] [mavros.rallypoint]: RP: mission received
+[mavros_node-1] [INFO] [1775694872.654076667] [mavros.geofence]: GF: mission received
+[position_hover_demo_sequence_node-7] [INFO] [1775694879.202670990] [position_hover_demo_sequence_node]: Takeoff reference: start_z=0.13 m home_z=0.12 m start_minus_home=0.01 m
+[position_hover_demo_sequence_node-7] [INFO] [1775694879.206148384] [position_hover_demo_sequence_node]: State IDLE -> SYNC_TAKEOFF_PARAM: start requested
+[position_hover_demo_sequence_node-7] [INFO] [1775694879.214916351] [position_hover_demo_sequence_node]: Requested current MIS_TAKEOFF_ALT
+[position_hover_demo_sequence_node-7] [INFO] [1775694879.247379012] [position_hover_demo_sequence_node]: MIS_TAKEOFF_ALT currently 1.00
+[position_hover_demo_sequence_node-7] [INFO] [1775694879.252461162] [position_hover_demo_sequence_node]: Requested MIS_TAKEOFF_ALT=2.00
+[position_hover_demo_sequence_node-7] [INFO] [1775694879.286891441] [position_hover_demo_sequence_node]: Requested FCU parameter pull (attempt 1)
+[mavros_node-1] [INFO] [1775694879.300736373] [mavros.param]: PR: start force pull
+[position_hover_demo_sequence_node-7] [INFO] [1775694879.312930948] [position_hover_demo_sequence_node]: Set MIS_TAKEOFF_ALT to 2.00
+[position_hover_demo_sequence_node-7] [INFO] [1775694879.314663133] [position_hover_demo_sequence_node]: State SYNC_TAKEOFF_PARAM -> SET_TAKEOFF_MODE: takeoff altitude configured
+[position_hover_demo_sequence_node-7] [INFO] [1775694879.357190316] [position_hover_demo_sequence_node]: Requested mode AUTO.TAKEOFF
+[position_hover_demo_sequence_node-7] [INFO] [1775694879.377442722] [position_hover_demo_sequence_node]: Mode request accepted for AUTO.TAKEOFF
+[mavros_node-1] [WARN] [1775694879.484194981] [mavros.cmd]: CMD: Unexpected command 176, result 0
+[position_hover_demo_sequence_node-7] [INFO] [1775694879.878542407] [position_hover_demo_sequence_node]: Requested mode AUTO.TAKEOFF
+[position_hover_demo_sequence_node-7] [INFO] [1775694879.910725187] [position_hover_demo_sequence_node]: Mode request accepted for AUTO.TAKEOFF
+[position_hover_demo_sequence_node-7] [INFO] [1775694880.311009086] [position_hover_demo_sequence_node]: State SET_TAKEOFF_MODE -> ARMING: AUTO.TAKEOFF confirmed
+[position_hover_demo_sequence_node-7] [INFO] [1775694881.811951900] [position_hover_demo_sequence_node]: Requested arm
+[position_hover_demo_sequence_node-7] [INFO] [1775694882.312019550] [position_hover_demo_sequence_node]: FCU parameter pull complete: 1075 params
+[mavros_node-1] [INFO] [1775694882.373576938] [mavros.sys]: FCU: EVENT 9489139 with args -4-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775694882.376288767] [mavros.sys]: FCU: EVENT 3878855 with args -0-0-0-64-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[position_hover_demo_sequence_node-7] [INFO] [1775694882.377554407] [position_hover_demo_sequence_node]: Arm request accepted
+[mavros_node-1] [INFO] [1775694882.380672777] [mavros.sys]: FCU: EVENT 1203183 with args -234-7-3-31-15-41-8-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775694882.381105430] [mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-128-0-16-0-0-0-0-0-176-59-127-128-176-59-127-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775694882.381209594] [mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775694882.382447296] [mavros.sys]: FCU: EVENT 3087815 with args -0-64-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775694882.382707337] [mavros.sys]: FCU: EVENT 453929 with args -71-132-0-0-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775694882.382846285] [mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775694882.382929808] [mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-4-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[position_hover_demo_sequence_node-7] [INFO] [1775694882.649228949] [position_hover_demo_sequence_node]: State ARMING -> TAKEOFF: vehicle armed; waiting for PX4 AUTO.TAKEOFF climb
+[position_hover_demo_sequence_node-7] [INFO] [1775694882.677530253] [position_hover_demo_sequence_node]: Takeoff progress: delta_z=-0.01 m target_delta_z=2.00 m mode=AUTO.TAKEOFF armed=True local_minus_home=0.00 m
+[mavros_node-1] [INFO] [1775694883.645252096] [mavros.sys]: FCU: EVENT 4277609 with args -0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[position_hover_demo_sequence_node-7] [INFO] [1775694883.710662249] [position_hover_demo_sequence_node]: Takeoff progress: delta_z=-0.01 m target_delta_z=2.00 m mode=AUTO.TAKEOFF armed=True local_minus_home=0.00 m
+[position_hover_demo_sequence_node-7] [INFO] [1775694884.743943719] [position_hover_demo_sequence_node]: Takeoff progress: delta_z=0.00 m target_delta_z=2.00 m mode=AUTO.TAKEOFF armed=True local_minus_home=0.01 m
+[position_hover_demo_sequence_node-7] [INFO] [1775694885.777323310] [position_hover_demo_sequence_node]: Takeoff progress: delta_z=0.02 m target_delta_z=2.00 m mode=AUTO.TAKEOFF armed=True local_minus_home=0.03 m
+[position_hover_demo_sequence_node-7] [INFO] [1775694886.810556092] [position_hover_demo_sequence_node]: Takeoff progress: delta_z=0.41 m target_delta_z=2.00 m mode=AUTO.TAKEOFF armed=True local_minus_home=0.42 m
+[external_pose_debug_node-6] [WARN] [1775694886.978244915] [external_pose_debug_node]: source->local pos error 0.211m (dx=-0.009, dy=+0.006, dz=+0.211) src_z=0.397 local_z=0.608 src_minus_home=+0.272 local_minus_home=+0.483; source->local vertical mismatch dz=+0.211m src_minus_home=+0.272 local_minus_home=+0.483
+[position_hover_demo_sequence_node-7] [INFO] [1775694887.845088868] [position_hover_demo_sequence_node]: Takeoff progress: delta_z=0.86 m target_delta_z=2.00 m mode=AUTO.TAKEOFF armed=True local_minus_home=0.87 m
+[position_hover_demo_sequence_node-7] [WARN] [1775694888.677389836] [position_hover_demo_sequence_node]: PX4 exited AUTO.TAKEOFF before the demo observed the target altitude; shortfall=0.57 m mode=AUTO.LOITER local_minus_home=1.44 m start_minus_home=0.01 m. Accepting hover handoff.
+[position_hover_demo_sequence_node-7] [INFO] [1775694888.678159458] [position_hover_demo_sequence_node]: State TAKEOFF -> HOVER: PX4 handed off to AUTO.LOITER during takeoff
+[external_pose_debug_node-6] [WARN] [1775694888.978507825] [external_pose_debug_node]: source->local pos error 0.365m (dx=-0.004, dy=-0.002, dz=-0.365) src_z=2.068 local_z=1.702 src_minus_home=+1.942 local_minus_home=+1.577; source->local vertical mismatch dz=-0.365m src_minus_home=+1.942 local_minus_home=+1.577
+[external_pose_debug_node-6] [WARN] [1775694889.978119048] [external_pose_debug_node]: source->local pos error 0.195m (dx=+0.038, dy=-0.040, dz=-0.195) src_z=2.382 local_z=2.187 src_minus_home=+2.256 local_minus_home=+2.061; source->local vertical mismatch dz=-0.195m src_minus_home=+2.256 local_minus_home=+2.061
+[external_pose_debug_node-6] [WARN] [1775694890.978672667] [external_pose_debug_node]: source->local pos error 0.113m (dx=+0.068, dy=-0.058, dz=+0.113) src_z=2.083 local_z=2.196 src_minus_home=+1.958 local_minus_home=+2.071; source->local vertical mismatch dz=+0.113m src_minus_home=+1.958 local_minus_home=+2.071
+[external_pose_debug_node-6] [WARN] [1775694892.977576513] [external_pose_debug_node]: source->local pos error 0.268m (dx=-0.016, dy=+0.027, dz=+0.268) src_z=1.378 local_z=1.645 src_minus_home=+1.252 local_minus_home=+1.520; source->local vertical mismatch dz=+0.268m src_minus_home=+1.252 local_minus_home=+1.520
+[external_pose_debug_node-6] [WARN] [1775694894.978389482] [external_pose_debug_node]: source->local pos error 0.276m (dx=-0.111, dy=+0.063, dz=-0.276) src_z=2.380 local_z=2.103 src_minus_home=+2.254 local_minus_home=+1.978; source->local vertical mismatch dz=-0.276m src_minus_home=+2.254 local_minus_home=+1.978
+[external_pose_debug_node-6] [WARN] [1775694895.978962397] [external_pose_debug_node]: source->local pos error 0.226m (dx=-0.011, dy=-0.029, dz=-0.226) src_z=2.638 local_z=2.411 src_minus_home=+2.512 local_minus_home=+2.286; source->local vertical mismatch dz=-0.226m src_minus_home=+2.512 local_minus_home=+2.286
+[external_pose_debug_node-6] [WARN] [1775694897.978300199] [external_pose_debug_node]: source->local pos error 0.302m (dx=+0.199, dy=-0.152, dz=+0.302) src_z=1.767 local_z=2.069 src_minus_home=+1.641 local_minus_home=+1.943; source->local vertical mismatch dz=+0.302m src_minus_home=+1.641 local_minus_home=+1.943
+[position_hover_demo_sequence_node-7] [ERROR] [1775694899.046129871] [position_hover_demo_sequence_node]: Aborting demo: horizontal excursion exceeded 0.70 m
+[position_hover_demo_sequence_node-7] [INFO] [1775694899.047120616] [position_hover_demo_sequence_node]: State HOVER -> ABORT: horizontal excursion exceeded 0.70 m
+[position_hover_demo_sequence_node-7] [INFO] [1775694899.049683912] [position_hover_demo_sequence_node]: Requested mode AUTO.LAND
+[mavros_node-1] [WARN] [1775694899.063066998] [mavros.cmd]: CMD: Unexpected command 176, result 0
+[position_hover_demo_sequence_node-7] [INFO] [1775694899.077847656] [position_hover_demo_sequence_node]: Mode request accepted for AUTO.LAND
+[position_hover_demo_sequence_node-7] [INFO] [1775694899.578271801] [position_hover_demo_sequence_node]: Requested mode AUTO.LAND
+[position_hover_demo_sequence_node-7] [INFO] [1775694899.610381147] [position_hover_demo_sequence_node]: Mode request accepted for AUTO.LAND
+[external_pose_debug_node-6] [WARN] [1775694899.978738154] [external_pose_debug_node]: source->local pos error 0.255m (dx=-0.141, dy=+0.199, dz=-0.255) src_z=1.695 local_z=1.440 src_minus_home=+1.570 local_minus_home=+1.315; source->local vertical mismatch dz=-0.255m src_minus_home=+1.570 local_minus_home=+1.315
+[external_pose_debug_node-6] [WARN] [1775694901.978730375] [external_pose_debug_node]: source->local pos error 0.315m (dx=-0.315, dy=+0.117, dz=+0.071) src_z=0.738 local_z=0.808 src_minus_home=+0.612 local_minus_home=+0.683
+[external_pose_debug_node-6] [WARN] [1775694902.978922141] [external_pose_debug_node]: source->local pos error 0.386m (dx=+0.248, dy=-0.320, dz=+0.386) src_z=0.118 local_z=0.505 src_minus_home=-0.007 local_minus_home=+0.379; source->local vertical mismatch dz=+0.386m src_minus_home=-0.007 local_minus_home=+0.379
+[external_pose_debug_node-6] [WARN] [1775694904.980993711] [external_pose_debug_node]: source->local pos error 0.368m (dx=+0.332, dy=-0.148, dz=-0.368) src_z=0.263 local_z=-0.105 src_minus_home=+0.138 local_minus_home=-0.230; source->local vertical mismatch dz=-0.368m src_minus_home=+0.138 local_minus_home=-0.230
+[mavros_node-1] [INFO] [1775694906.044101870] [mavros.sys]: FCU: EVENT 9844908 with args -0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[external_pose_debug_node-6] [WARN] [1775694906.979301362] [external_pose_debug_node]: source->local pos error 0.288m (dx=-0.288, dy=+0.115, dz=+0.087) src_z=0.120 local_z=0.207 src_minus_home=-0.006 local_minus_home=+0.081
+[external_pose_debug_node-6] [WARN] [1775694907.978940342] [external_pose_debug_node]: source->local pos error 0.418m (dx=-0.418, dy=+0.163, dz=+0.033) src_z=0.120 local_z=0.153 src_minus_home=-0.005 local_minus_home=+0.027
+[mavros_node-1] [INFO] [1775694908.043104623] [mavros.sys]: FCU: EVENT 16017271 with args -6-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[position_hover_demo_sequence_node-7] [INFO] [1775694908.647524097] [position_hover_demo_sequence_node]: Requested MIS_TAKEOFF_ALT=1.00
+[position_hover_demo_sequence_node-7] [INFO] [1775694908.678031015] [position_hover_demo_sequence_node]: Restored MIS_TAKEOFF_ALT to 1.00
+[external_pose_debug_node-6] [WARN] [1775694908.979942681] [external_pose_debug_node]: source->local pos error 0.155m (dx=-0.155, dy=+0.050, dz=+0.016) src_z=0.120 local_z=0.136 src_minus_home=-0.005 local_minus_home=+0.010
+[mavros_node-1] [WARN] [1775694912.036880644] [mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-128-0-16-0-0-0-0-0-176-59-127-128-176-59-127-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775694912.037314573] [mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775694912.037653044] [mavros.sys]: FCU: EVENT 3087815 with args -0-64-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775694912.038704971] [mavros.sys]: FCU: EVENT 453929 with args -71-132-0-0-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775694912.039474875] [mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775694912.042142771] [mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-0-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775695556.625770077] [mavros.mavros]: CON: Lost connection, HEARTBEAT timed out.
+[drone_setup_node-2] [WARN] [1775695556.635170659] [drone_setup]: FCU disconnected; waiting to republish setup
+[mavros_node-1] [INFO] [1775695560.696630557] [mavros.imu]: IMU: High resolution IMU detected!
+[mavros_node-1] [INFO] [1775695560.697479841] [mavros.imu]: IMU: Attitude quaternion IMU detected!
+[mavros_node-1] [INFO] [1775695560.699751466] [mavros.rc]: RC_CHANNELS message detected!
+[mavros_node-1] [INFO] [1775695560.718989785] [mavros.mavros]: CON: Got HEARTBEAT, connected. FCU: PX4 Autopilot
+[mavros_node-1] [INFO] [1775695560.721026497] [mavros.mission]: WP: detected enable_partial_push: 0
+[mavros_node-1] [INFO] [1775695560.721527683] [mavros.rc]: RC_CHANNELS message detected!
+[mavros_node-1] [INFO] [1775695560.721749348] [mavros.imu]: IMU: High resolution IMU detected!
+[mavros_node-1] [INFO] [1775695560.722127621] [mavros.imu]: IMU: Attitude quaternion IMU detected!
+[drone_setup_node-2] [INFO] [1775695560.727913789] [drone_setup]: FCU connected; publishing indoor global origin and home position
+[mavros_node-1] [INFO] [1775695560.761112197] [mavros.sys]: VER: 1.1: Capabilities         0x000000000000e8ff
+[mavros_node-1] [INFO] [1775695560.761212421] [mavros.sys]: VER: 1.1: Flight software:     011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775695560.761232069] [mavros.sys]: VER: 1.1: Middleware software: 011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775695560.761246149] [mavros.sys]: VER: 1.1: OS software:         0b0000ff (886acbbdb4f061e5)
+[mavros_node-1] [INFO] [1775695560.761257669] [mavros.sys]: VER: 1.1: Board hardware:      00000039
+[mavros_node-1] [INFO] [1775695560.761268837] [mavros.sys]: VER: 1.1: VID/PID:             3185:0039
+[mavros_node-1] [INFO] [1775695560.761277413] [mavros.sys]: VER: 1.1: UID:                 3333510833383530
+[mavros_node-1] [WARN] [1775695560.764324434] [mavros.cmd]: CMD: Unexpected command 512, result 0
+[external_pose_debug_node-6] [WARN] [1775695560.978758270] [external_pose_debug_node]: source->local yaw error 97.0deg
+[mavros_node-1] [WARN] [1775695561.021976975] [mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-0-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[drone_setup_node-2] [INFO] [1775695561.525402585] [drone_setup]: Publishing indoor reference setup (attempt 1): global_origin_ready=False home_position_ready=False
+[drone_setup_node-2] [INFO] [1775695562.523599881] [drone_setup]: Publishing indoor reference setup (attempt 2): global_origin_ready=True home_position_ready=False
+[mavros_node-1] [WARN] [1775695563.112582737] [mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-128-0-18-0-0-0-0-0-128-59-1-128-128-59-1-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775695563.113528309] [mavros.sys]: FCU: EVENT 13835193 with args -124-0-126-0-17-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775695563.114376248] [mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775695563.114676153] [mavros.sys]: FCU: EVENT 3087815 with args -0-64-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775695563.114847002] [mavros.sys]: FCU: EVENT 453929 with args -71-132-0-0-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775695563.114958491] [mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775695563.115042267] [mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-0-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[drone_setup_node-2] [INFO] [1775695563.523440416] [drone_setup]: Indoor global origin and home position are confirmed by MAVROS
+[mavros_node-1] [WARN] [1775695565.201429067] [mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-128-0-16-0-0-0-0-0-176-59-127-128-176-59-127-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775695565.201785805] [mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775695565.202043438] [mavros.sys]: FCU: EVENT 3087815 with args -0-64-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775695565.203300051] [mavros.sys]: FCU: EVENT 453929 with args -71-132-0-0-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775695565.204407704] [mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775695565.205665117] [mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-0-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775695573.916971925] [mavros.time]: TM: RTT too high for timesync: 1792.93 ms.
+[mavros_node-1] [WARN] [1775695573.971361780] [mavros.time]: TM: RTT too high for timesync: 747.04 ms.
+[mavros_node-1] [WARN] [1775695574.866547583] [mavros.param]: PR: request param #844 timeout, retries left 2, and 70 params still missing
+[mavros_node-1] [INFO] [1775695575.725380693] [mavros.mission]: WP: mission received
+[mavros_node-1] [INFO] [1775695580.729002586] [mavros.rallypoint]: RP: mission received
+[mavros_node-1] [INFO] [1775695585.725378369] [mavros.geofence]: GF: mission received
+[mavros_node-1] [ERROR] [1775695620.024085410] [mavros.time]: TM: Time jump detected. Resetting time synchroniser.
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] [WARN] [1775695892.978238489] [external_pose_debug_node]: max source gap 0.29s
+[external_pose_debug_node-6] [WARN] [1775695893.978344490] [external_pose_debug_node]: max source gap 0.29s
+[external_pose_debug_node-6] [WARN] [1775695895.978057963] [external_pose_debug_node]: max source gap 0.29s
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] [WARN] [1775696149.608747584] [external_pose_adapter_node]: External pose source timed out on /vrpn_mocap/RigidBody3/pose for 0.31s
+[mavros_node-1] [WARN] [1775696149.955442626] [mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-128-0-18-1-0-0-0-0-128-59-5-128-128-59-5-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696149.955656170] [mavros.sys]: FCU: EVENT 13835193 with args -56-0-122-0-17-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696149.955825841] [mavros.sys]: FCU: EVENT 10011251 with args -56-0-0-0-24-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775696149.955940661] [mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696149.956031321] [mavros.sys]: FCU: EVENT 3087815 with args -0-64-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696149.956578542] [mavros.sys]: FCU: EVENT 453929 with args -71-132-0-0-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775696149.956738292] [mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775696149.956856537] [mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-0-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[external_pose_debug_node-6] [WARN] [1775696149.978476093] [external_pose_debug_node]: max source gap 0.43s
+[external_pose_adapter_node-4] [WARN] [1775696150.613149809] [external_pose_adapter_node]: External pose source timed out on /vrpn_mocap/RigidBody3/pose for 0.26s
+[external_pose_debug_node-6] [WARN] [1775696150.980857903] [external_pose_debug_node]: max source gap 0.43s
+[mavros_node-1] [WARN] [1775696152.058045327] [mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-128-0-16-0-0-0-0-0-176-59-127-128-176-59-127-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775696152.058245463] [mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696152.058338043] [mavros.sys]: FCU: EVENT 3087815 with args -0-64-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696152.058473856] [mavros.sys]: FCU: EVENT 453929 with args -71-132-0-0-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775696152.058560771] [mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775696152.058632390] [mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-0-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[external_pose_debug_node-6] [WARN] [1775696152.978393970] [external_pose_debug_node]: max source gap 0.43s
+[external_pose_debug_node-6] [WARN] [1775696153.980064671] [external_pose_debug_node]: max source gap 0.43s
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[external_pose_bridge_node-5] sequence size exceeds remaining buffer
+[client_node-3] sequence size exceeds remaining buffer
+[drone_setup_node-2] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] sequence size exceeds remaining buffer
+[position_hover_demo_sequence_node-7] sequence size exceeds remaining buffer
+[external_pose_adapter_node-4] sequence size exceeds remaining buffer
+[mavros_node-1] sequence size exceeds remaining buffer
+[external_pose_debug_node-6] [WARN] [1775696194.979321182] [external_pose_debug_node]: max source gap 0.27s
+[external_pose_debug_node-6] [WARN] [1775696196.978874457] [external_pose_debug_node]: max source gap 0.27s
+[external_pose_debug_node-6] [WARN] [1775696197.979116252] [external_pose_debug_node]: max source gap 0.27s
+[external_pose_debug_node-6] [WARN] [1775696232.982066397] [external_pose_debug_node]: max source gap 0.26s
+[mavros_node-1] [WARN] [1775696233.498211625] [mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-128-0-18-1-0-0-0-0-128-59-5-128-128-59-5-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696233.498392558] [mavros.sys]: FCU: EVENT 13835193 with args -56-0-122-0-17-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696233.498564947] [mavros.sys]: FCU: EVENT 10011251 with args -56-0-0-0-24-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775696233.498672471] [mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696233.498751129] [mavros.sys]: FCU: EVENT 3087815 with args -0-64-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696233.498839996] [mavros.sys]: FCU: EVENT 453929 with args -71-132-0-0-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775696233.498976576] [mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775696233.499056194] [mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-0-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[external_pose_debug_node-6] [WARN] [1775696234.981911568] [external_pose_debug_node]: max source gap 0.31s
+[mavros_node-1] [WARN] [1775696235.639157099] [mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-128-0-16-0-0-0-0-0-176-59-127-128-176-59-127-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775696235.639357266] [mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696235.639448340] [mavros.sys]: FCU: EVENT 3087815 with args -0-64-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696235.639577528] [mavros.sys]: FCU: EVENT 453929 with args -71-132-0-0-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775696235.639675771] [mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775696235.639752830] [mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-0-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[external_pose_debug_node-6] [WARN] [1775696235.984470035] [external_pose_debug_node]: max source gap 0.31s
+[external_pose_debug_node-6] [WARN] [1775696237.985469488] [external_pose_debug_node]: max source gap 0.31s
+[drone_setup_node-2] [WARN] [1775696257.442816128] [drone_setup]: FCU disconnected; waiting to republish setup
+[drone_setup_node-2] [INFO] [1775696257.691869578] [drone_setup]: FCU connected; publishing indoor global origin and home position
+[drone_setup_node-2] [INFO] [1775696258.526433995] [drone_setup]: Publishing indoor reference setup (attempt 1): global_origin_ready=False home_position_ready=False
+[mavros_node-1] [INFO] [1775696258.546421516] [mavros.sys]: VER: 1.1: Capabilities         0x000000000000e8ff
+[mavros_node-1] [INFO] [1775696258.546537456] [mavros.sys]: VER: 1.1: Flight software:     011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696258.546560624] [mavros.sys]: VER: 1.1: Middleware software: 011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696258.546573169] [mavros.sys]: VER: 1.1: OS software:         0b0000ff (886acbbdb4f061e5)
+[mavros_node-1] [INFO] [1775696258.546583121] [mavros.sys]: VER: 1.1: Board hardware:      00000039
+[mavros_node-1] [INFO] [1775696258.546592625] [mavros.sys]: VER: 1.1: VID/PID:             3185:0039
+[mavros_node-1] [INFO] [1775696258.546601009] [mavros.sys]: VER: 1.1: UID:                 3333510833383530
+[mavros_node-1] [WARN] [1775696258.548472968] [mavros.cmd]: CMD: Unexpected command 520, result 0
+[drone_setup_node-2] [INFO] [1775696259.523006982] [drone_setup]: Indoor global origin and home position are confirmed by MAVROS
+[mavros_node-1] [INFO] [1775696259.539965903] [mavros.sys]: VER: 1.1: Capabilities         0x000000000000e8ff
+[mavros_node-1] [INFO] [1775696259.540068722] [mavros.sys]: VER: 1.1: Flight software:     011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696259.540088114] [mavros.sys]: VER: 1.1: Middleware software: 011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696259.540099410] [mavros.sys]: VER: 1.1: OS software:         0b0000ff (886acbbdb4f061e5)
+[mavros_node-1] [INFO] [1775696259.540108755] [mavros.sys]: VER: 1.1: Board hardware:      00000039
+[mavros_node-1] [INFO] [1775696259.540119059] [mavros.sys]: VER: 1.1: VID/PID:             3185:0039
+[mavros_node-1] [INFO] [1775696259.540127315] [mavros.sys]: VER: 1.1: UID:                 3333510833383530
+[mavros_node-1] [INFO] [1775696260.734628981] [mavros.sys]: VER: 1.1: Capabilities         0x000000000000e8ff
+[mavros_node-1] [INFO] [1775696260.734746136] [mavros.sys]: VER: 1.1: Flight software:     011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696260.734772121] [mavros.sys]: VER: 1.1: Middleware software: 011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696260.734789402] [mavros.sys]: VER: 1.1: OS software:         0b0000ff (886acbbdb4f061e5)
+[mavros_node-1] [INFO] [1775696260.734801594] [mavros.sys]: VER: 1.1: Board hardware:      00000039
+[mavros_node-1] [INFO] [1775696260.734813690] [mavros.sys]: VER: 1.1: VID/PID:             3185:0039
+[mavros_node-1] [INFO] [1775696260.734824763] [mavros.sys]: VER: 1.1: UID:                 3333510833383530
+[mavros_node-1] [INFO] [1775696261.531101025] [mavros.sys]: VER: 1.1: Capabilities         0x000000000000e8ff
+[mavros_node-1] [INFO] [1775696261.531905944] [mavros.sys]: VER: 1.1: Flight software:     011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696261.531936121] [mavros.sys]: VER: 1.1: Middleware software: 011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696261.531950233] [mavros.sys]: VER: 1.1: OS software:         0b0000ff (886acbbdb4f061e5)
+[mavros_node-1] [INFO] [1775696261.531961946] [mavros.sys]: VER: 1.1: Board hardware:      00000039
+[mavros_node-1] [INFO] [1775696261.531971578] [mavros.sys]: VER: 1.1: VID/PID:             3185:0039
+[mavros_node-1] [INFO] [1775696261.531980282] [mavros.sys]: VER: 1.1: UID:                 3333510833383530
+[mavros_node-1] [INFO] [1775696262.698931106] [mavros.sys]: VER: 1.1: Capabilities         0x000000000000e8ff
+[mavros_node-1] [INFO] [1775696262.699077798] [mavros.sys]: VER: 1.1: Flight software:     011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696262.699147336] [mavros.sys]: VER: 1.1: Middleware software: 011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696262.699166153] [mavros.sys]: VER: 1.1: OS software:         0b0000ff (886acbbdb4f061e5)
+[mavros_node-1] [INFO] [1775696262.699177865] [mavros.sys]: VER: 1.1: Board hardware:      00000039
+[mavros_node-1] [INFO] [1775696262.699187273] [mavros.sys]: VER: 1.1: VID/PID:             3185:0039
+[mavros_node-1] [INFO] [1775696262.699195401] [mavros.sys]: VER: 1.1: UID:                 3333510833383530
+[mavros_node-1] [INFO] [1775696263.598897033] [mavros.sys]: VER: 1.1: Capabilities         0x000000000000e8ff
+[mavros_node-1] [INFO] [1775696263.599067342] [mavros.sys]: VER: 1.1: Flight software:     011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696263.599086606] [mavros.sys]: VER: 1.1: Middleware software: 011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696263.599097679] [mavros.sys]: VER: 1.1: OS software:         0b0000ff (886acbbdb4f061e5)
+[mavros_node-1] [INFO] [1775696263.599106351] [mavros.sys]: VER: 1.1: Board hardware:      00000039
+[mavros_node-1] [INFO] [1775696263.599114927] [mavros.sys]: VER: 1.1: VID/PID:             3185:0039
+[mavros_node-1] [INFO] [1775696263.599123216] [mavros.sys]: VER: 1.1: UID:                 3333510833383530
+[mavros_node-1] [INFO] [1775696267.790479128] [mavros.sys]: VER: 1.1: Capabilities         0x000000000000e8ff
+[mavros_node-1] [INFO] [1775696267.790594395] [mavros.sys]: VER: 1.1: Flight software:     011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696267.790622652] [mavros.sys]: VER: 1.1: Middleware software: 011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696267.790638972] [mavros.sys]: VER: 1.1: OS software:         0b0000ff (886acbbdb4f061e5)
+[mavros_node-1] [INFO] [1775696267.790651100] [mavros.sys]: VER: 1.1: Board hardware:      00000039
+[mavros_node-1] [INFO] [1775696267.790662237] [mavros.sys]: VER: 1.1: VID/PID:             3185:0039
+[mavros_node-1] [INFO] [1775696267.790673405] [mavros.sys]: VER: 1.1: UID:                 3333510833383530
+[mavros_node-1] [INFO] [1775696267.794962519] [mavros.sys]: VER: 1.1: Capabilities         0x000000000000e8ff
+[mavros_node-1] [INFO] [1775696267.795960211] [mavros.sys]: VER: 1.1: Flight software:     011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696267.795998228] [mavros.sys]: VER: 1.1: Middleware software: 011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1775696267.796017717] [mavros.sys]: VER: 1.1: OS software:         0b0000ff (886acbbdb4f061e5)
+[mavros_node-1] [INFO] [1775696267.796033973] [mavros.sys]: VER: 1.1: Board hardware:      00000039
+[mavros_node-1] [INFO] [1775696267.796046198] [mavros.sys]: VER: 1.1: VID/PID:             3185:0039
+[mavros_node-1] [INFO] [1775696267.796057494] [mavros.sys]: VER: 1.1: UID:                 3333510833383530
+[external_pose_adapter_node-4] [WARN] [1775696277.108696404] [external_pose_adapter_node]: External pose source timed out on /vrpn_mocap/RigidBody3/pose for 0.30s
+[external_pose_debug_node-6] [WARN] [1775696277.981034716] [external_pose_debug_node]: max source gap 0.69s
+[external_pose_debug_node-6] [WARN] [1775696278.980671731] [external_pose_debug_node]: max source gap 0.69s
+[mavros_node-1] [ERROR] [1775696279.773244895] [mavros.sys]: FCU: EVENT 3087815 with args -0-64-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696279.776148751] [mavros.sys]: FCU: EVENT 453929 with args -71-132-0-0-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775696279.886612589] [mavros.time]: TM: RTT too high for timesync: 2768.33 ms.
+[mavros_node-1] [WARN] [1775696280.115365533] [mavros.time]: TM: RTT too high for timesync: 1863.45 ms.
+[mavros_node-1] [WARN] [1775696280.397451727] [mavros.time]: TM: RTT too high for timesync: 1245.71 ms.
+[mavros_node-1] [WARN] [1775696280.511092160] [mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-128-0-16-0-0-0-0-0-176-59-127-128-176-59-127-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775696280.511816852] [mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696280.512315810] [mavros.sys]: FCU: EVENT 3087815 with args -0-64-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1775696280.512852305] [mavros.sys]: FCU: EVENT 453929 with args -71-132-0-0-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1775696280.513827372] [mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775696280.514397116] [mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-0-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1775696280.586482475] [mavros.time]: TM: RTT too high for timesync: 737.84 ms.
+[mavros_node-1] [WARN] [1775696280.755435323] [mavros.time]: TM: RTT too high for timesync: 292.87 ms.
+[external_pose_debug_node-6] [WARN] [1775696280.980908618] [external_pose_debug_node]: max source gap 0.69s
+[mavros_node-1] [INFO] [1775696281.743446794] [mavros.mission]: WP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696281.743969688] [mavros.mission]: WP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696286.724293289] [mavros.rallypoint]: RP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696286.724409772] [mavros.rallypoint]: RP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696286.747551911] [mavros.mission]: WP: mission received
+[mavros_node-1] [INFO] [1775696291.717705364] [mavros.geofence]: GF: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696291.717806775] [mavros.geofence]: GF: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696291.731254245] [mavros.rallypoint]: RP: mission received
+[mavros_node-1] [INFO] [1775696291.757712758] [mavros.mission]: WP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696291.757809144] [mavros.mission]: WP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696296.722103716] [mavros.geofence]: GF: mission received
+[mavros_node-1] [INFO] [1775696296.746444117] [mavros.rallypoint]: RP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696296.747950590] [mavros.rallypoint]: RP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696296.761916504] [mavros.mission]: WP: mission received
+[mavros_node-1] [INFO] [1775696301.741850289] [mavros.geofence]: GF: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696301.741963956] [mavros.geofence]: GF: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696301.755559936] [mavros.rallypoint]: RP: mission received
+[mavros_node-1] [INFO] [1775696301.774981481] [mavros.mission]: WP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696301.775078252] [mavros.mission]: WP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696306.771077118] [mavros.geofence]: GF: mission received
+[mavros_node-1] [INFO] [1775696306.776918329] [mavros.rallypoint]: RP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696306.777005467] [mavros.rallypoint]: RP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696306.788983770] [mavros.mission]: WP: mission received
+[mavros_node-1] [INFO] [1775696311.780798063] [mavros.rallypoint]: RP: mission received
+[mavros_node-1] [INFO] [1775696311.786954322] [mavros.geofence]: GF: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696311.787041108] [mavros.geofence]: GF: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696311.806418196] [mavros.mission]: WP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696311.807746039] [mavros.mission]: WP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696316.797768307] [mavros.geofence]: GF: mission received
+[mavros_node-1] [INFO] [1775696316.801278063] [mavros.rallypoint]: RP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696316.801367314] [mavros.rallypoint]: RP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696316.814538251] [mavros.mission]: WP: mission received
+[mavros_node-1] [INFO] [1775696321.808415785] [mavros.rallypoint]: RP: mission received
+[mavros_node-1] [INFO] [1775696321.810236697] [mavros.geofence]: GF: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696321.810308154] [mavros.geofence]: GF: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696321.839613142] [mavros.mission]: WP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696321.839707481] [mavros.mission]: WP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696326.816301267] [mavros.geofence]: GF: mission received
+[mavros_node-1] [INFO] [1775696326.822421330] [mavros.rallypoint]: RP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696326.822514260] [mavros.rallypoint]: RP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696326.843058824] [mavros.mission]: WP: mission received
+[mavros_node-1] [INFO] [1775696331.824319903] [mavros.rallypoint]: RP: mission received
+[mavros_node-1] [INFO] [1775696331.827010404] [mavros.geofence]: GF: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696331.827091686] [mavros.geofence]: GF: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696331.856638718] [mavros.mission]: WP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696331.856790146] [mavros.mission]: WP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696336.832650256] [mavros.geofence]: GF: mission received
+[mavros_node-1] [INFO] [1775696336.857566413] [mavros.rallypoint]: RP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696336.857661200] [mavros.rallypoint]: RP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696336.860417014] [mavros.mission]: WP: mission received
+[mavros_node-1] [INFO] [1775696341.847107002] [mavros.geofence]: GF: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696341.847206044] [mavros.geofence]: GF: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696341.864253998] [mavros.rallypoint]: RP: mission received
+[mavros_node-1] [INFO] [1775696341.900877329] [mavros.mission]: WP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696341.900979764] [mavros.mission]: WP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696346.849151747] [mavros.geofence]: GF: mission received
+[mavros_node-1] [INFO] [1775696346.903390014] [mavros.mission]: WP: mission received
+[mavros_node-1] [INFO] [1775696346.904626909] [mavros.rallypoint]: RP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696346.904691103] [mavros.rallypoint]: RP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696351.865417354] [mavros.geofence]: GF: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696351.865519021] [mavros.geofence]: GF: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696351.906163626] [mavros.rallypoint]: RP: mission received
+[mavros_node-1] [INFO] [1775696351.933437272] [mavros.mission]: WP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696351.933527770] [mavros.mission]: WP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696356.868531865] [mavros.geofence]: GF: mission received
+[mavros_node-1] [INFO] [1775696356.935130906] [mavros.mission]: WP: mission received
+[mavros_node-1] [INFO] [1775696356.950548188] [mavros.rallypoint]: RP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696356.950635518] [mavros.rallypoint]: RP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696361.881590606] [mavros.geofence]: GF: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696361.881712849] [mavros.geofence]: GF: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696361.952252203] [mavros.rallypoint]: RP: mission received
+[mavros_node-1] [INFO] [1775696366.883925758] [mavros.geofence]: GF: mission received
+[mavros_node-1] [INFO] [1775696366.961920616] [mavros.rallypoint]: RP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696366.962019243] [mavros.rallypoint]: RP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696371.897368416] [mavros.geofence]: GF: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696371.897473635] [mavros.geofence]: GF: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696371.968188881] [mavros.rallypoint]: RP: mission received
+[mavros_node-1] [INFO] [1775696376.901063112] [mavros.geofence]: GF: mission received
+[mavros_node-1] [INFO] [1775696376.983682674] [mavros.rallypoint]: RP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696376.983780212] [mavros.rallypoint]: RP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696381.986362342] [mavros.rallypoint]: RP: mission received
+[mavros_node-1] [INFO] [1775696386.998575046] [mavros.rallypoint]: RP: seems GCS requesting mission
+[mavros_node-1] [INFO] [1775696386.998706473] [mavros.rallypoint]: RP: scheduling pull after GCS is done
+[mavros_node-1] [INFO] [1775696392.001301939] [mavros.rallypoint]: RP: mission received
+                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               

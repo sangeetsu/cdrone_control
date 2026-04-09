@@ -3,10 +3,32 @@ import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
+import yaml
+
+
+def _load_optitrack_defaults() -> dict[str, object]:
+    config_path = os.path.join(
+        get_package_share_directory("drone_bringup"),
+        "config",
+        "optitrack_defaults.yaml",
+    )
+    with open(config_path, "r", encoding="utf-8") as config_file:
+        loaded = yaml.safe_load(config_file) or {}
+    if not isinstance(loaded, dict):
+        raise ValueError(f"Expected mapping in {config_path}")
+    return loaded
+
+
+def _default_arg(defaults: dict[str, object], key: str, fallback: object) -> str:
+    value = defaults.get(key, fallback)
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    return str(value)
 
 
 def launch_setup(context, *args, **kwargs):
@@ -32,6 +54,48 @@ def launch_setup(context, *args, **kwargs):
     )
 
     nodes = [drone_launch]
+    nodes.append(
+        Node(
+            package="drone_control_pkg",
+            executable="drone_setup_node",
+            output="screen",
+            condition=IfCondition(LaunchConfiguration("enable_reference_setup")),
+            parameters=[
+                {
+                    "mavros_namespace": mavros_namespace,
+                    "global_origin_latitude_deg": ParameterValue(
+                        LaunchConfiguration("global_origin_latitude_deg"),
+                        value_type=float,
+                    ),
+                    "global_origin_longitude_deg": ParameterValue(
+                        LaunchConfiguration("global_origin_longitude_deg"),
+                        value_type=float,
+                    ),
+                    "global_origin_altitude_m": ParameterValue(
+                        LaunchConfiguration("global_origin_altitude_m"),
+                        value_type=float,
+                    ),
+                    "home_position_x_m": ParameterValue(
+                        LaunchConfiguration("home_position_x_m"), value_type=float
+                    ),
+                    "home_position_y_m": ParameterValue(
+                        LaunchConfiguration("home_position_y_m"), value_type=float
+                    ),
+                    "home_position_z_m": ParameterValue(
+                        LaunchConfiguration("home_position_z_m"), value_type=float
+                    ),
+                    "home_approach_z_m": ParameterValue(
+                        LaunchConfiguration("home_approach_z_m"), value_type=float
+                    ),
+                    "retry_period_s": ParameterValue(
+                        LaunchConfiguration("reference_retry_period_s"),
+                        value_type=float,
+                    ),
+                }
+            ],
+            arguments=["--ros-args", "--log-level", log_level],
+        )
+    )
 
     if pose_source == "optitrack":
         vrpn_share = get_package_share_directory("vrpn_mocap")
@@ -50,6 +114,16 @@ def launch_setup(context, *args, **kwargs):
                             LaunchConfiguration("optitrack_port"), value_type=int
                         ),
                         "frame_id": LaunchConfiguration("map_frame"),
+                        "update_freq": ParameterValue(
+                            LaunchConfiguration("vrpn_update_freq"), value_type=float
+                        ),
+                        "refresh_freq": ParameterValue(
+                            LaunchConfiguration("vrpn_refresh_freq"), value_type=float
+                        ),
+                        "sensor_data_qos": ParameterValue(
+                            LaunchConfiguration("vrpn_sensor_data_qos"),
+                            value_type=bool,
+                        ),
                         "use_vrpn_timestamps": ParameterValue(
                             LaunchConfiguration("use_vrpn_timestamps"),
                             value_type=bool,
@@ -82,6 +156,9 @@ def launch_setup(context, *args, **kwargs):
                     "map_frame": LaunchConfiguration("map_frame"),
                     "position_offset_m": LaunchConfiguration("position_offset_m"),
                     "rpy_offset_rad": LaunchConfiguration("rpy_offset_rad"),
+                    "source_best_effort": ParameterValue(
+                        LaunchConfiguration("source_best_effort"), value_type=bool
+                    ),
                     "timeout_s": ParameterValue(
                         LaunchConfiguration("adapter_timeout_s"), value_type=float
                     ),
@@ -123,11 +200,54 @@ def launch_setup(context, *args, **kwargs):
             arguments=["--ros-args", "--log-level", log_level],
         )
     )
+    nodes.append(
+        Node(
+            package="drone_control_pkg",
+            executable="external_pose_debug_node",
+            output="screen",
+            condition=IfCondition(LaunchConfiguration("enable_pose_debug")),
+            parameters=[
+                {
+                    "drone_id": drone_id,
+                    "mavros_namespace": mavros_namespace,
+                    "source_pose_topic": adapter_source_topic,
+                    "adapter_output_pose_topic": LaunchConfiguration("external_pose_topic"),
+                    "vision_pose_topic": LaunchConfiguration("output_pose_topic"),
+                    "publish_rate_hz": ParameterValue(
+                        LaunchConfiguration("debug_publish_rate_hz"), value_type=float
+                    ),
+                    "history_window_s": ParameterValue(
+                        LaunchConfiguration("debug_history_window_s"), value_type=float
+                    ),
+                    "hold_timeout_s": ParameterValue(
+                        LaunchConfiguration("debug_hold_timeout_s"), value_type=float
+                    ),
+                    "warn_gap_s": ParameterValue(
+                        LaunchConfiguration("debug_warn_gap_s"), value_type=float
+                    ),
+                    "warn_position_error_m": ParameterValue(
+                        LaunchConfiguration("debug_warn_position_error_m"),
+                        value_type=float,
+                    ),
+                    "warn_yaw_error_deg": ParameterValue(
+                        LaunchConfiguration("debug_warn_yaw_error_deg"),
+                        value_type=float,
+                    ),
+                    "source_best_effort": ParameterValue(
+                        LaunchConfiguration("source_best_effort"), value_type=bool
+                    ),
+                }
+            ],
+            arguments=["--ros-args", "--log-level", log_level],
+        )
+    )
 
     return nodes
 
 
 def generate_launch_description():
+    defaults = _load_optitrack_defaults()
+
     return LaunchDescription(
         [
             DeclareLaunchArgument("log_level", default_value="info"),
@@ -139,22 +259,105 @@ def generate_launch_description():
             DeclareLaunchArgument("bridge_input_pose_topic", default_value=""),
             DeclareLaunchArgument("legacy_input_pose_topic", default_value=""),
             DeclareLaunchArgument("output_pose_topic", default_value=""),
+            DeclareLaunchArgument("enable_reference_setup", default_value="true"),
+            DeclareLaunchArgument(
+                "global_origin_latitude_deg",
+                default_value=_default_arg(
+                    defaults, "global_origin_latitude_deg", 0.0
+                ),
+            ),
+            DeclareLaunchArgument(
+                "global_origin_longitude_deg",
+                default_value=_default_arg(
+                    defaults, "global_origin_longitude_deg", 0.0
+                ),
+            ),
+            DeclareLaunchArgument(
+                "global_origin_altitude_m",
+                default_value=_default_arg(
+                    defaults, "global_origin_altitude_m", 17.1637
+                ),
+            ),
+            DeclareLaunchArgument(
+                "home_position_x_m",
+                default_value=_default_arg(defaults, "home_position_x_m", 0.0),
+            ),
+            DeclareLaunchArgument(
+                "home_position_y_m",
+                default_value=_default_arg(defaults, "home_position_y_m", 0.0),
+            ),
+            DeclareLaunchArgument(
+                "home_position_z_m",
+                default_value=_default_arg(defaults, "home_position_z_m", 0.0),
+            ),
+            DeclareLaunchArgument(
+                "home_approach_z_m",
+                default_value=_default_arg(defaults, "home_approach_z_m", 1.0),
+            ),
+            DeclareLaunchArgument(
+                "reference_retry_period_s",
+                default_value=_default_arg(defaults, "reference_retry_period_s", 1.0),
+            ),
             DeclareLaunchArgument("publish_rate_hz", default_value="30.0"),
             DeclareLaunchArgument("input_timeout_s", default_value="0.25"),
             DeclareLaunchArgument("adapter_timeout_s", default_value="0.25"),
             DeclareLaunchArgument("publish_companion_status", default_value="true"),
             DeclareLaunchArgument("restamp_with_local_clock", default_value="false"),
-            DeclareLaunchArgument("map_frame", default_value="map"),
+            DeclareLaunchArgument(
+                "map_frame",
+                default_value=_default_arg(defaults, "map_frame", "map"),
+            ),
             DeclareLaunchArgument(
                 "position_offset_m", default_value="[0.0, 0.0, 0.0]"
             ),
             DeclareLaunchArgument(
                 "rpy_offset_rad", default_value="[0.0, 0.0, 0.0]"
             ),
-            DeclareLaunchArgument("optitrack_server", default_value="localhost"),
-            DeclareLaunchArgument("optitrack_port", default_value="3883"),
-            DeclareLaunchArgument("rigid_body_name", default_value="rigidbody3"),
-            DeclareLaunchArgument("use_vrpn_timestamps", default_value="false"),
+            DeclareLaunchArgument(
+                "optitrack_server",
+                default_value=_default_arg(
+                    defaults, "optitrack_server", "192.168.0.217"
+                ),
+            ),
+            DeclareLaunchArgument(
+                "optitrack_port",
+                default_value=_default_arg(defaults, "optitrack_port", 3883),
+            ),
+            DeclareLaunchArgument(
+                "rigid_body_name",
+                default_value=_default_arg(defaults, "rigid_body_name", "RigidBody3"),
+            ),
+            DeclareLaunchArgument(
+                "vrpn_update_freq",
+                default_value=_default_arg(defaults, "vrpn_update_freq", 100.0),
+            ),
+            DeclareLaunchArgument(
+                "vrpn_refresh_freq",
+                default_value=_default_arg(defaults, "vrpn_refresh_freq", 1.0),
+            ),
+            DeclareLaunchArgument(
+                "vrpn_sensor_data_qos",
+                default_value=_default_arg(defaults, "vrpn_sensor_data_qos", True),
+            ),
+            DeclareLaunchArgument(
+                "source_best_effort",
+                default_value=_default_arg(defaults, "source_best_effort", True),
+            ),
+            DeclareLaunchArgument(
+                "use_vrpn_timestamps",
+                default_value=_default_arg(defaults, "use_vrpn_timestamps", False),
+            ),
+            DeclareLaunchArgument("enable_pose_debug", default_value="true"),
+            DeclareLaunchArgument("debug_publish_rate_hz", default_value="1.0"),
+            DeclareLaunchArgument("debug_history_window_s", default_value="5.0"),
+            DeclareLaunchArgument("debug_hold_timeout_s", default_value="0.5"),
+            DeclareLaunchArgument("debug_warn_gap_s", default_value="0.25"),
+            DeclareLaunchArgument(
+                "debug_warn_position_error_m", default_value="0.10"
+            ),
+            DeclareLaunchArgument(
+                "debug_warn_yaw_error_deg", default_value="10.0"
+            ),
             OpaqueFunction(function=launch_setup),
         ]
     )

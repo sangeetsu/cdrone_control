@@ -45,6 +45,8 @@ setup(
             "drone_control_pkg.external_pose_adapter_node:main",
             "external_pose_bridge_node = "
             "drone_control_pkg.external_pose_bridge_node:main",
+            "external_pose_debug_node = "
+            "drone_control_pkg.external_pose_debug_node:main",
             "vio_bridge_node = drone_control_pkg.vio_bridge_node:main",
         ],
     },

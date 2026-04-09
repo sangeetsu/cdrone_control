@@ -73,7 +73,8 @@ ros2 launch drone_bringup position_hover_demo.launch.py \
   takeoff_strategy:=AUTO_MODE \
   hover_duration_s:=5.0 \
   hover_mode:=HOLD \
-  max_horizontal_excursion_m:=0.5
+  max_horizontal_excursion_m:=0.5 \
+  2>&1 | tee output.txt
 ```
 
 ## Terminal 2

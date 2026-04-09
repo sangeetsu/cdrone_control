@@ -1,21 +1,20 @@
+from __future__ import annotations
+
 import rclpy
-from rclpy.node import Node
+from geographic_msgs.msg import GeoPointStamped
+from mavros_msgs.msg import HomePosition, State
 from rclpy import qos
+from rclpy.node import Node
 
-from mavros_msgs.msg import State, HomePosition
-from mavros_msgs.srv import CommandLong, SetMode
+from drone_control_pkg.topic_utils import join_topic
 
-from geographic_msgs.msg import GeoPointStamped, GeoPoint
-from geometry_msgs.msg import Point, Quaternion, Vector3
-
-# QoS profile used for the state subscriber topics.
 STATE_QOS = qos.QoSProfile(
     depth=10,
-    durability=rclpy.qos.QoSDurabilityPolicy.TRANSIENT_LOCAL,
-    history=rclpy.qos.QoSHistoryPolicy.KEEP_ALL,
+    durability=qos.QoSDurabilityPolicy.TRANSIENT_LOCAL,
+    history=qos.QoSHistoryPolicy.KEEP_LAST,
+    reliability=qos.QoSReliabilityPolicy.RELIABLE,
 )
 
-# QoS profile used for the pose subscriber topics.
 PUB_QOS = qos.QoSProfile(
     depth=10,
     durability=qos.QoSDurabilityPolicy.TRANSIENT_LOCAL,
@@ -24,105 +23,196 @@ PUB_QOS = qos.QoSProfile(
 
 
 class DroneSetup(Node):
-    def __init__(self):
+    def __init__(self) -> None:
         super().__init__("drone_setup")
 
-        self.mode_cli = self.create_client(SetMode, "/mavros/set_mode")
+        self.declare_parameter("mavros_namespace", "/mavros")
+        self.declare_parameter("global_origin_latitude_deg", 0.0)
+        self.declare_parameter("global_origin_longitude_deg", 0.0)
+        self.declare_parameter("global_origin_altitude_m", 0.0)
+        self.declare_parameter("home_position_x_m", 0.0)
+        self.declare_parameter("home_position_y_m", 0.0)
+        self.declare_parameter("home_position_z_m", 0.0)
+        self.declare_parameter("home_approach_z_m", 1.0)
+        self.declare_parameter("retry_period_s", 1.0)
 
-        # service to send commands to the drone. Mainly used for requesting datastream
-        # requests to access the drone's data from mavros topics.
-        self.cmd_cli = self.create_client(CommandLong, "/mavros/cmd/command")
+        self.mavros_namespace = str(self.get_parameter("mavros_namespace").value)
+        self.global_origin_latitude_deg = float(
+            self.get_parameter("global_origin_latitude_deg").value
+        )
+        self.global_origin_longitude_deg = float(
+            self.get_parameter("global_origin_longitude_deg").value
+        )
+        self.global_origin_altitude_m = float(
+            self.get_parameter("global_origin_altitude_m").value
+        )
+        self.home_position_x_m = float(self.get_parameter("home_position_x_m").value)
+        self.home_position_y_m = float(self.get_parameter("home_position_y_m").value)
+        self.home_position_z_m = float(self.get_parameter("home_position_z_m").value)
+        self.home_approach_z_m = float(self.get_parameter("home_approach_z_m").value)
+        self.retry_period_s = max(
+            float(self.get_parameter("retry_period_s").value),
+            0.1,
+        )
 
-        # publisher to set HOME_POSITION
+        self.state_topic = join_topic(self.mavros_namespace, "state")
+        self.home_position_set_topic = join_topic(
+            self.mavros_namespace, "home_position/set"
+        )
+        self.home_position_topic = join_topic(
+            self.mavros_namespace, "home_position/home"
+        )
+        self.global_origin_set_topic = join_topic(
+            self.mavros_namespace, "global_position/set_gp_origin"
+        )
+        self.global_origin_topic = join_topic(
+            self.mavros_namespace, "global_position/gp_origin"
+        )
+
+        self.connected = False
+        self.last_connect_time_s = 0.0
+        self.last_home_position_time_s = 0.0
+        self.last_global_origin_time_s = 0.0
+        self.publish_attempt_count = 0
+        self.setup_complete_logged = False
+
+        self.create_subscription(State, self.state_topic, self.state_callback, STATE_QOS)
+        self.create_subscription(
+            HomePosition,
+            self.home_position_topic,
+            self.home_position_callback,
+            STATE_QOS,
+        )
+        self.create_subscription(
+            GeoPointStamped,
+            self.global_origin_topic,
+            self.global_origin_callback,
+            STATE_QOS,
+        )
+
         self.set_home_pub = self.create_publisher(
-            HomePosition, "/mavros/home_position/set", PUB_QOS
+            HomePosition, self.home_position_set_topic, PUB_QOS
         )
-
-        # publisher to set GPS_GLOBAL_ORIGIN
-        # https://mavlink.io/en/messages/common.html#SET_GPS_GLOBAL_ORIGIN
         self.set_gp_pub = self.create_publisher(
-            GeoPointStamped, "/mavros/global_position/set_gp_origin", PUB_QOS
+            GeoPointStamped, self.global_origin_set_topic, PUB_QOS
         )
 
-        self.set_gp_origin()
-        self.set_home_pos()
+        self.timer = self.create_timer(self.retry_period_s, self.timer_callback)
+        self.get_logger().info(
+            "Drone setup node started: "
+            f"{self.global_origin_set_topic}, {self.home_position_set_topic}; "
+            f"origin=({self.global_origin_latitude_deg:.7f}, "
+            f"{self.global_origin_longitude_deg:.7f}, "
+            f"{self.global_origin_altitude_m:.4f}m) "
+            f"home=({self.home_position_x_m:.3f}, {self.home_position_y_m:.3f}, "
+            f"{self.home_position_z_m:.3f})"
+        )
+        if (
+            abs(self.global_origin_latitude_deg) < 1e-9
+            and abs(self.global_origin_longitude_deg) < 1e-9
+        ):
+            self.get_logger().warn(
+                "Using a synthetic indoor global origin at lat/lon 0,0. "
+                "This is acceptable for bench indoor EV use, but replace it "
+                "with the lab's real lat/lon/ellipsoid altitude for production."
+            )
 
-        # request a periodic messages from the fcu. We do this because sometimes fcu does not send needed messages to mavros.
-        self.set_message_interval(32, 100000)  # local position
-        self.set_message_interval(30, 100000)  # attitude
-        self.set_message_interval(26, 100000)  # scaled imu
-        self.set_message_interval(27, 100000)  # raw imu
+    def now_s(self) -> float:
+        return self.get_clock().now().nanoseconds / 1e9
 
-        # set mode to guided
-        mode_req = SetMode.Request()
-        # https://mavlink.io/en/messages/common.html#MAV_MODE_GUIDED_DISARMED
-        mode_req.base_mode = 88
-        future = self.mode_cli.call_async(mode_req)
-        rclpy.spin_until_future_complete(self, future)
+    def state_callback(self, msg: State) -> None:
+        was_connected = self.connected
+        self.connected = bool(msg.connected)
 
-    def set_message_interval(self, msg_id: int, msg_interval: int):
-        """Request a periodic message from the fcu.
-            For message ids: https://mavlink.io/en/messages/common.html
+        if self.connected and not was_connected:
+            self.last_connect_time_s = self.now_s()
+            self.last_home_position_time_s = 0.0
+            self.last_global_origin_time_s = 0.0
+            self.publish_attempt_count = 0
+            self.setup_complete_logged = False
+            self.get_logger().info(
+                "FCU connected; publishing indoor global origin and home position"
+            )
+        elif was_connected and not self.connected:
+            self.last_home_position_time_s = 0.0
+            self.last_global_origin_time_s = 0.0
+            self.setup_complete_logged = False
+            self.get_logger().warn("FCU disconnected; waiting to republish setup")
 
-        Args:
-            msg_id (int): Mavlink message id of the requested message.
-            msg_interval (float): Interval in microseconds between two messages. 0 to request default interval.
-        """
+    def home_position_callback(self, msg: HomePosition) -> None:
+        del msg
+        self.last_home_position_time_s = self.now_s()
 
-        cmd_req = CommandLong.Request()
-        # mavlink message id of the MAV_CMD_SET_MESSAGE_INTERVAL message which we use to request a message.
-        cmd_req.command = 511
-        cmd_req.param1 = float(msg_id)
-        cmd_req.param2 = float(msg_interval)
-        future = self.cmd_cli.call_async(cmd_req)
-        rclpy.spin_until_future_complete(self, future)
+    def global_origin_callback(self, msg: GeoPointStamped) -> None:
+        del msg
+        self.last_global_origin_time_s = self.now_s()
 
-    def set_home_pos(self):
-        self.get_logger().info("Setting home position.")
+    def home_position_ready(self) -> bool:
+        return self.last_home_position_time_s >= self.last_connect_time_s > 0.0
+
+    def global_origin_ready(self) -> bool:
+        return self.last_global_origin_time_s >= self.last_connect_time_s > 0.0
+
+    def make_home_position_msg(self) -> HomePosition:
         msg = HomePosition()
-
         msg.header.stamp = self.get_clock().now().to_msg()
-
-        # Geo point
-        msg.geo.altitude = 0.0
-        msg.geo.latitude = 0.0
-        msg.geo.longitude = 0.0
-
-        # position
-        msg.position.x = 0.0
-        msg.position.y = 0.0
-        msg.position.z = 0.0
-
-        # orientation
-        msg.orientation.x = 0.0
-        msg.orientation.y = 0.0
-        msg.orientation.z = 0.0
+        msg.header.frame_id = "map"
+        msg.geo.latitude = float(self.global_origin_latitude_deg)
+        msg.geo.longitude = float(self.global_origin_longitude_deg)
+        msg.geo.altitude = float(self.global_origin_altitude_m)
+        msg.position.x = float(self.home_position_x_m)
+        msg.position.y = float(self.home_position_y_m)
+        msg.position.z = float(self.home_position_z_m)
         msg.orientation.w = 1.0
+        msg.approach.z = float(self.home_approach_z_m)
+        return msg
 
-        # approach. Vector3
-        msg.approach.x = 0.0
-        msg.approach.y = 0.0
-        msg.approach.z = 1.0
-
-        self.set_home_pub.publish(msg)
-
-    def set_gp_origin(self):
-        self.get_logger().info("Setting global position origin")
+    def make_global_origin_msg(self) -> GeoPointStamped:
         msg = GeoPointStamped()
         msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = "map"
+        msg.position.latitude = float(self.global_origin_latitude_deg)
+        msg.position.longitude = float(self.global_origin_longitude_deg)
+        msg.position.altitude = float(self.global_origin_altitude_m)
+        return msg
 
-        msg.position.altitude = 0.0
-        msg.position.latitude = 0.0
-        msg.position.longitude = 0.0
+    def timer_callback(self) -> None:
+        if not self.connected:
+            return
 
-        self.set_gp_pub.publish(msg)
+        if self.home_position_ready() and self.global_origin_ready():
+            if not self.setup_complete_logged:
+                self.setup_complete_logged = True
+                self.get_logger().info(
+                    "Indoor global origin and home position are confirmed by MAVROS"
+                )
+            return
+
+        self.publish_attempt_count += 1
+        if not self.global_origin_ready():
+            self.set_gp_pub.publish(self.make_global_origin_msg())
+        if not self.home_position_ready():
+            self.set_home_pub.publish(self.make_home_position_msg())
+
+        self.get_logger().info(
+            "Publishing indoor reference setup "
+            f"(attempt {self.publish_attempt_count}): "
+            f"global_origin_ready={self.global_origin_ready()} "
+            f"home_position_ready={self.home_position_ready()}"
+        )
 
 
-def main(args=None):
+def main(args=None) -> None:
     rclpy.init(args=args)
     node = DroneSetup()
-    rclpy.spin(node)
-    rclpy.shutdown()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        pass
+    finally:
+        node.destroy_node()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

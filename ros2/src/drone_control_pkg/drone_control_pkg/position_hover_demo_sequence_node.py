@@ -4,8 +4,9 @@ import math
 from typing import Optional, Tuple
 
 import rclpy
+from geographic_msgs.msg import GeoPointStamped
 from geometry_msgs.msg import PoseStamped
-from mavros_msgs.msg import CompanionProcessStatus, ManualControl, State
+from mavros_msgs.msg import CompanionProcessStatus, HomePosition, ManualControl, State
 from mavros_msgs.srv import CommandBool, CommandTOLLocal, ParamPull, SetMode
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
@@ -102,6 +103,7 @@ class PositionHoverDemoSequenceNode(Node):
         self.declare_parameter(
             "connection_loss_timeout_during_param_sync_s", 3.0
         )
+        self.declare_parameter("mode_request_retry_interval_s", 0.5)
         self.declare_parameter("companion_status_timeout_s", 0.5)
         self.declare_parameter("require_companion_active", True)
         self.declare_parameter("max_horizontal_excursion_m", 0.75)
@@ -113,6 +115,8 @@ class PositionHoverDemoSequenceNode(Node):
         self.declare_parameter("manual_control_topic", "")
         self.declare_parameter("state_topic", "")
         self.declare_parameter("local_pose_topic", "")
+        self.declare_parameter("home_position_topic", "")
+        self.declare_parameter("global_origin_topic", "")
         self.declare_parameter("companion_status_topic", "")
         self.declare_parameter("status_topic", "")
         self.declare_parameter("start_service", "")
@@ -165,6 +169,9 @@ class PositionHoverDemoSequenceNode(Node):
                 "connection_loss_timeout_during_param_sync_s"
             ).value
         )
+        self.mode_request_retry_interval_s = float(
+            self.get_parameter("mode_request_retry_interval_s").value
+        )
         self.companion_status_timeout_s = float(
             self.get_parameter("companion_status_timeout_s").value
         )
@@ -198,6 +205,14 @@ class PositionHoverDemoSequenceNode(Node):
             str(self.get_parameter("local_pose_topic").value).strip()
             or join_topic(self.mavros_namespace, "local_position/pose")
         )
+        self.home_position_topic = (
+            str(self.get_parameter("home_position_topic").value).strip()
+            or join_topic(self.mavros_namespace, "home_position/home")
+        )
+        self.global_origin_topic = (
+            str(self.get_parameter("global_origin_topic").value).strip()
+            or join_topic(self.mavros_namespace, "global_position/gp_origin")
+        )
         self.companion_status_topic = (
             str(self.get_parameter("companion_status_topic").value).strip()
             or join_topic(self.mavros_namespace, "companion_process/status")
@@ -220,8 +235,13 @@ class PositionHoverDemoSequenceNode(Node):
 
         self.latest_state = State()
         self.latest_pose = PoseStamped()
+        self.latest_home_position: Optional[HomePosition] = None
+        self.latest_global_origin: Optional[GeoPointStamped] = None
         self.last_state_time_s = 0.0
         self.last_pose_time_s = 0.0
+        self.last_fcu_connect_time_s = 0.0
+        self.last_home_position_time_s = 0.0
+        self.last_global_origin_time_s = 0.0
         self.last_companion_time_s = 0.0
         self.companion_active = False
 
@@ -244,6 +264,7 @@ class PositionHoverDemoSequenceNode(Node):
         self.param_pull_future = None
         self.param_future = None
         self.param_mirror_ready = False
+        self.allow_param_lookup_without_full_mirror = True
         self.param_future_kind: Optional[str] = None
         self.pending_param_value: Optional[float] = None
 
@@ -255,6 +276,7 @@ class PositionHoverDemoSequenceNode(Node):
         self.disarm_request_sent = False
         self.connection_lost_since_s: Optional[float] = None
         self.connection_loss_warned = False
+        self.last_mode_request_time_s = 0.0
         self.next_param_pull_attempt_s = 0.0
         self.param_pull_attempt_count = 0
 
@@ -285,6 +307,18 @@ class PositionHoverDemoSequenceNode(Node):
             self.local_pose_topic,
             self.pose_callback,
             best_effort_qos,
+        )
+        self.create_subscription(
+            HomePosition,
+            self.home_position_topic,
+            self.home_position_callback,
+            state_qos,
+        )
+        self.create_subscription(
+            GeoPointStamped,
+            self.global_origin_topic,
+            self.global_origin_callback,
+            state_qos,
         )
         self.create_subscription(
             CompanionProcessStatus,
@@ -333,12 +367,29 @@ class PositionHoverDemoSequenceNode(Node):
         return self.get_clock().now().nanoseconds / 1e9
 
     def state_callback(self, msg: State) -> None:
+        was_connected = bool(self.latest_state.connected)
+        now_s = self.now_s()
         self.latest_state = msg
-        self.last_state_time_s = self.now_s()
+        self.last_state_time_s = now_s
+        if msg.connected and not was_connected:
+            self.last_fcu_connect_time_s = now_s
+            self.last_home_position_time_s = 0.0
+            self.last_global_origin_time_s = 0.0
+        elif was_connected and not msg.connected:
+            self.last_home_position_time_s = 0.0
+            self.last_global_origin_time_s = 0.0
 
     def pose_callback(self, msg: PoseStamped) -> None:
         self.latest_pose = msg
         self.last_pose_time_s = self.now_s()
+
+    def home_position_callback(self, msg: HomePosition) -> None:
+        self.latest_home_position = msg
+        self.last_home_position_time_s = self.now_s()
+
+    def global_origin_callback(self, msg: GeoPointStamped) -> None:
+        self.latest_global_origin = msg
+        self.last_global_origin_time_s = self.now_s()
 
     def companion_status_callback(self, msg: CompanionProcessStatus) -> None:
         if (
@@ -379,6 +430,16 @@ class PositionHoverDemoSequenceNode(Node):
             return self.touchdown_altitude_m
         return self.takeoff_origin_altitude_m + self.touchdown_altitude_m
 
+    def current_altitude_above_home_m(self) -> Optional[float]:
+        if self.latest_home_position is None:
+            return None
+        return self.current_altitude_m() - float(self.latest_home_position.position.z)
+
+    def takeoff_origin_above_home_m(self) -> Optional[float]:
+        if self.latest_home_position is None or self.takeoff_origin_altitude_m is None:
+            return None
+        return self.takeoff_origin_altitude_m - float(self.latest_home_position.position.z)
+
     def current_yaw_rad(self) -> float:
         orientation = self.latest_pose.pose.orientation
         siny_cosp = 2.0 * (
@@ -395,20 +456,39 @@ class PositionHoverDemoSequenceNode(Node):
             timeout_s = max(timeout_s, self.local_pose_timeout_during_param_sync_s)
         return (self.now_s() - self.last_pose_time_s) <= timeout_s
 
-    def state_fresh(self) -> bool:
+    def active_state_timeout_s(self) -> float:
         timeout_s = self.state_timeout_s
-        if self.demo_state == "SYNC_TAKEOFF_PARAM":
+        if self.demo_state in {
+            "SYNC_TAKEOFF_PARAM",
+            "SET_TAKEOFF_MODE",
+            "ARMING",
+            "TAKEOFF",
+        }:
             timeout_s = max(timeout_s, self.state_timeout_during_param_sync_s)
-        return (self.now_s() - self.last_state_time_s) <= timeout_s
+        return max(timeout_s, 0.0)
+
+    def state_fresh(self) -> bool:
+        return (self.now_s() - self.last_state_time_s) <= self.active_state_timeout_s()
 
     def companion_status_fresh(self) -> bool:
         return (
             self.now_s() - self.last_companion_time_s
         ) <= self.companion_status_timeout_s
 
+    def home_position_ready(self) -> bool:
+        return self.last_home_position_time_s >= self.last_fcu_connect_time_s > 0.0
+
+    def global_origin_ready(self) -> bool:
+        return self.last_global_origin_time_s >= self.last_fcu_connect_time_s > 0.0
+
     def active_connection_loss_timeout_s(self) -> float:
         timeout_s = self.connection_loss_timeout_s
-        if self.demo_state == "SYNC_TAKEOFF_PARAM":
+        if self.demo_state in {
+            "SYNC_TAKEOFF_PARAM",
+            "SET_TAKEOFF_MODE",
+            "ARMING",
+            "TAKEOFF",
+        }:
             timeout_s = max(
                 timeout_s,
                 self.connection_loss_timeout_during_param_sync_s,
@@ -418,11 +498,21 @@ class PositionHoverDemoSequenceNode(Node):
     def mode_matches(self, mode_name: str) -> bool:
         return str(self.latest_state.mode).upper() == str(mode_name).upper()
 
+    def mode_request_retry_ready(self) -> bool:
+        if self.last_mode_request_time_s <= 0.0:
+            return True
+        return (
+            self.now_s() - self.last_mode_request_time_s
+        ) >= self.mode_request_retry_interval_s
+
     def is_land_mode(self) -> bool:
         return "LAND" in str(self.latest_state.mode).upper()
 
     def is_takeoff_mode(self) -> bool:
         return "TAKEOFF" in str(self.latest_state.mode).upper()
+
+    def is_takeoff_handoff_mode(self) -> bool:
+        return self.mode_matches("AUTO.LOITER") or self.mode_matches(self.hover_mode)
 
     def publish_status(self) -> None:
         msg = String()
@@ -471,6 +561,10 @@ class PositionHoverDemoSequenceNode(Node):
             return False, "FCU is not connected"
         if not self.pose_fresh():
             return False, "local pose is stale or missing"
+        if not self.global_origin_ready():
+            return False, "global origin is missing"
+        if not self.home_position_ready():
+            return False, "home position is missing"
         if self.require_companion_active:
             if not self.companion_status_fresh():
                 return False, "external pose status is stale or missing"
@@ -504,14 +598,25 @@ class PositionHoverDemoSequenceNode(Node):
         self.pending_arm_value = None
         self.pending_param_value = None
         self.param_mirror_ready = False
+        self.allow_param_lookup_without_full_mirror = True
         self.original_takeoff_alt_m = None
         self.takeoff_param_ready = False
         self.takeoff_param_changed = False
         self.restore_complete = False
         self.connection_lost_since_s = None
         self.connection_loss_warned = False
+        self.last_mode_request_time_s = 0.0
         self.next_param_pull_attempt_s = 0.0
         self.param_pull_attempt_count = 0
+
+        start_above_home_m = self.takeoff_origin_above_home_m()
+        if start_above_home_m is not None:
+            self.get_logger().info(
+                "Takeoff reference: "
+                f"start_z={self.takeoff_origin_altitude_m:.2f} m "
+                f"home_z={self.latest_home_position.position.z:.2f} m "
+                f"start_minus_home={start_above_home_m:.2f} m"
+            )
 
         self.transition_to("SYNC_TAKEOFF_PARAM", "start requested")
         response.success = True
@@ -577,6 +682,7 @@ class PositionHoverDemoSequenceNode(Node):
         req.custom_mode = mode_name
         self.pending_mode_name = mode_name
         self.mode_future = self.mode_client.call_async(req)
+        self.last_mode_request_time_s = self.now_s()
         self.get_logger().info(f"Requested mode {mode_name}")
 
     def request_arm(self, arm_value: bool) -> None:
@@ -652,6 +758,7 @@ class PositionHoverDemoSequenceNode(Node):
     def schedule_param_pull_retry(self, reason: str) -> None:
         delay_s = max(self.param_pull_retry_delay_s, 0.0)
         self.param_mirror_ready = False
+        self.allow_param_lookup_without_full_mirror = False
         self.next_param_pull_attempt_s = self.now_s() + delay_s
         if delay_s > 0.0:
             self.get_logger().warn(f"{reason}; retrying param pull in {delay_s:.1f}s")
@@ -702,7 +809,10 @@ class PositionHoverDemoSequenceNode(Node):
             try:
                 response = self.arm_future.result()
                 if not response.success:
-                    self.enter_abort(f"{action} request was rejected")
+                    self.enter_abort(
+                        f"{action} request was rejected "
+                        f"(result {response.result}, mode={self.latest_state.mode})"
+                    )
                 else:
                     self.get_logger().info(f"{action.capitalize()} request accepted")
             except Exception as exc:
@@ -753,6 +863,7 @@ class PositionHoverDemoSequenceNode(Node):
                     )
                     self.param_mirror_ready = True
                     self.next_param_pull_attempt_s = 0.0
+                self.allow_param_lookup_without_full_mirror = True
             except Exception as exc:
                 self.schedule_param_pull_retry(
                     f"FCU parameter pull raised for {self.takeoff_param_id}: {exc}"
@@ -918,12 +1029,15 @@ class PositionHoverDemoSequenceNode(Node):
         if (
             self.demo_state == "TAKEOFF"
             and not self.latest_state.armed
-            and self.arm_request_sent
-            and self.mode_future is None
         ):
-            self.enter_abort(
-                f"vehicle disarmed during takeoff while mode={self.latest_state.mode}"
-            )
+            if self.arm_request_sent and self.mode_future is None:
+                self.enter_abort(
+                    f"vehicle disarmed during takeoff while mode={self.latest_state.mode}"
+                )
+            else:
+                self.enter_abort(
+                    f"vehicle is not armed in TAKEOFF while mode={self.latest_state.mode}"
+                )
             return
         if (
             self.demo_state == "TAKEOFF"
@@ -931,8 +1045,11 @@ class PositionHoverDemoSequenceNode(Node):
             and self.mode_future is None
             and not self.is_takeoff_mode()
         ):
-            self.enter_abort(f"lost takeoff mode during climb: {self.latest_state.mode}")
-            return
+            if not self.is_takeoff_handoff_mode():
+                self.enter_abort(
+                    f"lost takeoff mode during climb: {self.latest_state.mode}"
+                )
+                return
 
         timeout_limit = self.stage_timeout_limit_s()
         if timeout_limit is not None and self.stage_elapsed_s() > timeout_limit:
@@ -946,12 +1063,12 @@ class PositionHoverDemoSequenceNode(Node):
             if self.takeoff_param_ready:
                 self.transition_to("SET_TAKEOFF_MODE", "takeoff altitude configured")
             elif (
-                self.param_pull_future is None
-                and not self.param_mirror_ready
-                and self.now_s() >= self.next_param_pull_attempt_s
+                self.param_future is None
+                and (
+                    self.param_mirror_ready
+                    or self.allow_param_lookup_without_full_mirror
+                )
             ):
-                self.request_param_pull()
-            elif self.param_mirror_ready and self.param_future is None:
                 if self.original_takeoff_alt_m is None:
                     self.request_param_get()
                 else:
@@ -959,12 +1076,18 @@ class PositionHoverDemoSequenceNode(Node):
                         self.takeoff_altitude_m,
                         kind="SET_TARGET",
                     )
+            elif (
+                self.param_pull_future is None
+                and not self.param_mirror_ready
+                and self.now_s() >= self.next_param_pull_attempt_s
+            ):
+                self.request_param_pull()
             return
 
         if self.demo_state == "SET_TAKEOFF_MODE":
             if self.is_takeoff_mode():
                 self.transition_to("ARMING", "AUTO.TAKEOFF confirmed")
-            elif self.mode_future is None:
+            elif self.mode_future is None and self.mode_request_retry_ready():
                 self.request_mode(self.takeoff_mode)
             return
 
@@ -978,7 +1101,11 @@ class PositionHoverDemoSequenceNode(Node):
                         "vehicle armed; waiting for PX4 AUTO.TAKEOFF climb",
                     )
                 return
-            if not self.is_takeoff_mode() and self.mode_future is None:
+            if (
+                not self.is_takeoff_mode()
+                and self.mode_future is None
+                and self.mode_request_retry_ready()
+            ):
                 self.request_mode(self.takeoff_mode)
                 return
             if (
@@ -1003,36 +1130,69 @@ class PositionHoverDemoSequenceNode(Node):
             return
 
         if self.demo_state == "TAKEOFF":
+            current_altitude_m = self.current_altitude_m()
+            target_altitude_m = self.takeoff_target_altitude_m()
+            altitude_delta_m = current_altitude_m - (
+                self.takeoff_origin_altitude_m
+                if self.takeoff_origin_altitude_m is not None
+                else 0.0
+            )
+            current_above_home_m = self.current_altitude_above_home_m()
             if (
                 self.last_takeoff_progress_log_s == 0.0
                 or (self.now_s() - self.last_takeoff_progress_log_s) >= 1.0
             ):
-                altitude_delta_m = self.current_altitude_m() - (
-                    self.takeoff_origin_altitude_m
-                    if self.takeoff_origin_altitude_m is not None
-                    else 0.0
-                )
-                self.get_logger().info(
+                progress_message = (
                     "Takeoff progress: "
                     f"delta_z={altitude_delta_m:.2f} m "
                     f"target_delta_z={self.takeoff_altitude_m:.2f} m "
                     f"mode={self.latest_state.mode} "
                     f"armed={self.latest_state.armed}"
                 )
+                if current_above_home_m is not None:
+                    progress_message += (
+                        f" local_minus_home={current_above_home_m:.2f} m"
+                    )
+                self.get_logger().info(progress_message)
                 self.last_takeoff_progress_log_s = self.now_s()
-            if self.current_altitude_m() >= (
-                self.takeoff_target_altitude_m() - self.altitude_tolerance_m
-            ):
+            if current_altitude_m >= (target_altitude_m - self.altitude_tolerance_m):
                 if self.mode_matches(self.hover_mode):
                     self.transition_to("HOVER", "target altitude reached")
                 else:
                     self.transition_to("SET_HOVER_MODE", "target altitude reached")
+                return
+            if self.is_takeoff_handoff_mode():
+                shortfall_m = max(target_altitude_m - current_altitude_m, 0.0)
+                start_above_home_m = self.takeoff_origin_above_home_m()
+                if shortfall_m > self.altitude_tolerance_m:
+                    warn_message = (
+                        "PX4 exited AUTO.TAKEOFF before the demo observed the "
+                        f"target altitude; shortfall={shortfall_m:.2f} m "
+                        f"mode={self.latest_state.mode}"
+                    )
+                    if current_above_home_m is not None and start_above_home_m is not None:
+                        warn_message += (
+                            f" local_minus_home={current_above_home_m:.2f} m"
+                            f" start_minus_home={start_above_home_m:.2f} m"
+                        )
+                    warn_message += ". Accepting hover handoff."
+                    self.get_logger().warn(warn_message)
+                if self.mode_matches(self.hover_mode):
+                    self.transition_to(
+                        "HOVER",
+                        f"PX4 handed off to {self.latest_state.mode} during takeoff",
+                    )
+                else:
+                    self.transition_to(
+                        "SET_HOVER_MODE",
+                        f"PX4 handed off to {self.latest_state.mode} during takeoff",
+                    )
             return
 
         if self.demo_state == "SET_HOVER_MODE":
             if self.mode_matches(self.hover_mode):
                 self.transition_to("HOVER", "hover mode confirmed")
-            elif self.mode_future is None:
+            elif self.mode_future is None and self.mode_request_retry_ready():
                 self.request_mode(self.hover_mode)
             return
 
@@ -1044,7 +1204,7 @@ class PositionHoverDemoSequenceNode(Node):
         if self.demo_state == "SET_LAND_MODE":
             if self.is_land_mode():
                 self.transition_to("WAIT_TOUCHDOWN", "AUTO.LAND confirmed")
-            elif self.mode_future is None:
+            elif self.mode_future is None and self.mode_request_retry_ready():
                 self.request_mode(self.land_mode)
             return
 
@@ -1113,7 +1273,11 @@ class PositionHoverDemoSequenceNode(Node):
 
         if self.demo_state == "ABORT":
             if self.latest_state.connected and self.latest_state.armed:
-                if not self.is_land_mode() and self.mode_future is None:
+                if (
+                    not self.is_land_mode()
+                    and self.mode_future is None
+                    and self.mode_request_retry_ready()
+                ):
                     self.request_mode(self.land_mode)
                 return
             if self.takeoff_param_changed and self.restore_takeoff_alt_on_exit:
