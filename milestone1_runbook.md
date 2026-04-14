@@ -14,7 +14,7 @@ The intended sequence is:
 
 1. prove hover still works
 2. prove a short safe goto south of the pillar
-3. prove a longer goto to the circle staging point south of the pillar
+3. prove a longer goto to a safer east-side interior point
 4. only then try the circle demo
 
 ## Assumptions
@@ -174,23 +174,23 @@ Expected result:
 - hold
 - land
 
-## Phase 3: Longer Goto To The Circle Staging Point
+## Phase 3: Longer Goto To A Safer East-Side Interior Point
 
-This target sits on the south side of the pillar-centered orbit:
+Use this updated target instead of the old east-edge quarter point:
 
-- `goal_x_m:=-5.62`
-- `goal_y_m:=0.40`
+- `goal_x_m:=-0.14`
+- `goal_y_m:=0.19`
 
-It is south of the pillar, safely inside the perimeter, stages the drone directly onto the circle path, and Phase 3 already uses the indoor speed profile.
+This point is still south of the pillar, is interior to the perimeter, and stages well for the circle demo.
 
 Terminal 1:
 
 ```bash
 ros2 launch drone_bringup position_goto_demo.launch.py \
-  goal_x_m:=-5.62 \
-  goal_y_m:=0.40 \
+  goal_x_m:=-0.14 \
+  goal_y_m:=0.19 \
   goal_z_m:=2.0 \
-  max_goal_distance_from_start_m:=8.0 \
+  max_goal_distance_from_start_m:=16.0 \
   use_speed_profile:=true \
   perimeter_boundary_margin_m:=1.0 \
   perimeter_keep_out_margin_m:=0.3
@@ -220,7 +220,7 @@ Expected result:
 
 - take off
 - switch to OFFBOARD
-- fly to the south-side circle staging point at `2.0 m`
+- fly to the east-side interior point at `2.0 m`
 - hold
 - land near that point
 
@@ -234,12 +234,11 @@ The cleanest setup is:
 2. leave the drone where it landed
 3. start the circle demo from that new position
 
-The circle demo now derives its orbit from the pillar keep-out:
+The default circle center is already perimeter-checked and sits in safe space:
 
-- center is the pillar keep-out centroid
-- radius is the minimum size that clears the pillar, plus extra clearance
-- pillar clearance is `1.2 m`
-- altitude is `2.0 m`
+- center `(-0.1357, 0.1878)`
+- radius `3.0 m`
+- altitude `2.0 m`
 
 For the first real flight, use a slower circle speed than the default:
 
@@ -252,7 +251,6 @@ ros2 launch drone_bringup position_circle_demo.launch.py \
   circle_altitude_m:=2.0 \
   circle_speed_mps:=0.5 \
   use_speed_profile:=true \
-  circle_keep_out_clearance_m:=1.2 \
   perimeter_boundary_margin_m:=1.0 \
   perimeter_keep_out_margin_m:=0.3
 ```
