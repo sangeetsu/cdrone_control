@@ -1,44 +1,42 @@
 # cdrone_control
 
-External-pose-first ROS 2 stack for getting a Jetson Orin Nano and an indoor pose source such as Intel RealSense D455 VSLAM or OptiTrack VRPN to feed trusted external vision into PX4 1.16 through MAVROS.
+External-pose-backed ROS 2 stack for indoor PX4 flight experiments on a Jetson Orin Nano, with the current emphasis on OptiTrack-backed hover validation and a minimal active target-follow path.
 
 ## Active Goal
 
-This repo is no longer centered on the old target-tracking autonomy stack.
+The active goal is now:
 
-The active goal is:
+1. keep the current external-pose pipeline healthy enough for hover and recovery testing
+2. restore a minimal active `TargetTrackArray` -> follow-controller -> body-velocity control path
+3. validate target-follow with the current OptiTrack-backed ownship pose source
+4. keep D455 / VIO work on the backburner until the follow-control loop is stable
 
-1. bring up the active indoor pose source reliably on the Jetson or LAN
-2. feed a trusted external pose estimate into MAVROS
-3. get PX4 to trust that estimate indoors
-4. validate `POSCTL` first, then restore `OFFBOARD`
-
-The root problem is still the one captured in `problem.md`: PX4 is missing a trusted indoor aiding source, not a MAVROS link.
+The root problem in `problem.md` still matters for `OFFBOARD`, but VIO is no longer the immediate workstream.
 
 ## Phase Status
 
-Phase 0, Phase 1, and the first practical part of Phase 2 are now in place:
+The repo already has the base pieces needed for this next pass:
 
 - the old autonomy-heavy workspace has been moved to `archive/legacy_stack/`
-- the active ROS workspace now focuses on bringup, control bridging, and D455 sensor bringup
-- `realsense_d455.launch.py` now targets a VIO-friendly D455 profile from a dedicated config file
-- host bootstrap and validation scripts are now geared toward ROS 2 Humble + MAVROS + RealSense bringup
-- the D455 is now working on the pinned Isaac ROS `release-3.2` RealSense stack
-- Isaac ROS Visual SLAM is now publishing odometry from the live D455 path
-- the repo now carries scripts to install VSLAM dependencies in-container, launch the RealSense-backed VSLAM stack, and capture evidence into a gitignored temp folder
+- the active ROS workspace already has the generic external-pose adapter / bridge used by the hover demo
+- the hover demo can arm, lift, hover briefly, and land with the current external-pose chain
+- a second demo can now take off, switch to OFFBOARD, fly to a specified local `map`-frame coordinate, hold, and land
+- the MAVROS velocity bridge still exists and can be reused for body-frame follow control
+- archived YOLO / Norfair follow logic still exists as reference material under `archive/legacy_stack/`
 
 What is still not done:
 
-- the host-native `realsense2_camera` path is still not the recommended path on this Jetson
-- a generic external-pose bridge now exists so RealSense VSLAM, OptiTrack VRPN, or any other `PoseStamped` source can feed the same MAVROS `vision_pose` path
-- frame conversion, extrinsics, and PX4 fusion validation are still ahead of us
+- the perception-side YOLO / Norfair publisher is still archived and not yet restored to the active workspace
+- the new target-follow controller still needs real flight tuning and validation
+- moving map-frame target pursuit is still future work; the current active follow controller is body-frame follow only
+- VIO is intentionally deferred for now
 
 ## Active Workspace
 
 Active ROS packages under `ros2/src`:
 
-- `drone_bringup`: MAVROS launch/config and D455 launch
-- `drone_control_pkg`: keyboard teleop, generic external-pose adapters/bridges, and bench pose publisher
+- `drone_bringup`: MAVROS launch/config, external-pose launch flows, and D455 launch
+- `drone_control_pkg`: keyboard teleop, demo sequences, external-pose adapters/bridges, and active control nodes
 - `ros2_poselib`: leftover utility package kept for compatibility during the rehaul
 
 Archived legacy packages:
@@ -50,15 +48,13 @@ Archived legacy packages:
 
 ## Key Files
 
-- `problem.md`: current PX4 indoor flight blocker
-- `memory.md`: what the repo used to contain and what changed during the rehaul
-- `rehaul_vio_px4_plan.md`: implementation plan
-- `rehaul_vio_px4_viability.md`: external compatibility review
-- `docs/rehaul/d455_vio_contract.md`: active D455 topic/rate/frame contract
+- `problem.md`: current PX4 / OFFBOARD blocker context
+- `milestone_planner.md`: current implementation checklist and transform plan
+- `docs/archived/`: older hover, VIO, recovery, and reference notes moved out of the repo root
+- `docs/rehaul/d455_vio_contract.md`: retained D455 contract notes for later VIO work
 - `docs/rehaul/host_setup.md`: host dependency setup notes
-- `docs/rehaul/isaac_ros_release32.md`: pinned Isaac fallback and current container findings
-- `docs/rehaul/isaac_vslam_d455.md`: active Visual SLAM bringup path and evidence workflow
-- `problem2_realsense.md`: dated RealSense/VSLAM journal
+- `docs/rehaul/isaac_ros_release32.md`: pinned Isaac fallback notes
+- `docs/rehaul/isaac_vslam_d455.md`: retained Visual SLAM notes for later
 
 ## Active Launch Flows
 
@@ -86,6 +82,30 @@ Use the legacy bench-only external-vision path if needed for plumbing checks:
 ros2 launch drone_bringup bench_offboard.launch.py
 ```
 
+Launch the current hover demo:
+
+```bash
+ros2 launch drone_bringup position_hover_demo.launch.py
+```
+
+Launch the current target-follow control backend:
+
+```bash
+ros2 launch drone_bringup target_follow.launch.py
+```
+
+Enable target follow when you are ready to let the controller command body-frame motion:
+
+```bash
+ros2 service call /cdrone/drone01/control/target_follow_enable std_srvs/srv/SetBool "{data: true}"
+```
+
+Disable it again:
+
+```bash
+ros2 service call /cdrone/drone01/control/target_follow_enable std_srvs/srv/SetBool "{data: false}"
+```
+
 Launch Isaac ROS Visual SLAM on the D455 path:
 
 ```bash
@@ -99,6 +119,79 @@ Bridge a generic external-pose source into MAVROS `vision_pose/pose`:
 ros2 launch drone_bringup external_pose_px4_bridge.launch.py \
   pose_source:=optitrack \
   optitrack_server:=<motive-host>
+```
+
+Launch the second demo that goes one step past hover and flies to a specified local `map`-frame coordinate:
+
+```bash
+ros2 launch drone_bringup position_goto_demo.launch.py \
+  goal_x_m:=0.5 \
+  goal_y_m:=0.0 \
+  goal_z_m:=0.7
+```
+
+Here, "world frame" means the local PX4 / MAVROS `map` frame from `/mavros/local_position/pose`, not GPS latitude/longitude.
+
+The goto demo now loads `ros2/src/drone_bringup/config/drone_studio_perimeter.yaml` by default and will:
+
+- reject goals outside the studio boundary
+- reject goals inside the pillar keep-out polygon
+- reject goals above the configured ceiling
+- reject straight-line goal paths that would cross the boundary or the pillar keep-out
+- abort into land if the vehicle drifts outside the perimeter during the demo
+
+Launch the circle variant to take off, move to a safe orbit entry point, fly a `2.0 m` altitude circle inside the studio perimeter, hold briefly, and land:
+
+```bash
+ros2 launch drone_bringup position_circle_demo.launch.py
+```
+
+The default circle demo now derives a perimeter-checked orbit around the `studio_pillar` keep-out polygon, with `1.2 m` pillar clearance, `2.0 m` altitude, and one loop. It uses the same perimeter guard as the goto demo, so the orbit is rejected if the planned path would leave the studio boundary, enter the pillar keep-out polygon, or exceed the configured ceiling.
+
+Start the goto sequence explicitly:
+
+```bash
+ros2 service call /cdrone/drone01/demo/position_goto_start std_srvs/srv/Trigger "{}"
+```
+
+Abort it if needed:
+
+```bash
+ros2 service call /cdrone/drone01/demo/position_goto_abort std_srvs/srv/Trigger "{}"
+```
+
+## Studio Safety Geometry
+
+For studio safety, the best fit for this repo is a companion-side local-frame fence:
+
+- define the allowed studio area as a polygon in the same local `map` frame used by `/mavros/local_position/pose`
+- define the pillar as a 4-point keep-out polygon in that same frame
+- reject static goals outside the polygon or inside the pillar bubble
+- block target-follow motion when the next commanded motion would cross either boundary
+
+Do not calibrate against the physical wall line unless you really mean to fly that close. Capture the safe inner boundary you actually want to enforce.
+
+Template config:
+
+- `ros2/src/drone_bringup/config/perimeter.yaml`
+- `ros2/src/drone_bringup/config/drone_studio_perimeter.yaml`: finalized studio geometry from the latest calibration pass
+
+Interactive calibration helper:
+
+```bash
+python3 scripts/calibrate_perimeter.py \
+  --topic /mavros/local_position/pose \
+  --output ros2/src/drone_bringup/config/perimeter.yaml \
+  --boundary-labels north_west north_east south_east south_west \
+  --pillar-labels pillar_nw pillar_ne pillar_se pillar_sw
+```
+
+If MAVROS local pose is not live yet, the same helper can sample the adapter output instead:
+
+```bash
+python3 scripts/calibrate_perimeter.py \
+  --topic /cdrone/drone01/external_pose/input_pose \
+  --best-effort
 ```
 
 Bridge the live RealSense VSLAM pose through the same contract:

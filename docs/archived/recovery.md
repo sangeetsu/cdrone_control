@@ -324,7 +324,7 @@ That is the lowest-friction path if the flash does not wipe `/`.
 
 ## Key Files
 
-- [problem2_realsense.md](/home/jetson/cdrone_control/problem2_realsense.md)
+- [problem2_realsense.md](/home/jetson/cdrone_control/docs/archived/problem2_realsense.md)
 - [isaac_ros_release32.md](/home/jetson/cdrone_control/docs/rehaul/isaac_ros_release32.md)
 - [isaac_vslam_d455.md](/home/jetson/cdrone_control/docs/rehaul/isaac_vslam_d455.md)
 - [d455_firmware_downgrade.md](/home/jetson/cdrone_control/docs/rehaul/d455_firmware_downgrade.md)

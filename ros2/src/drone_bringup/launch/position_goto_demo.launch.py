@@ -92,12 +92,13 @@ def launch_setup(context, *args, **kwargs):
 
     demo_node = Node(
         package="drone_control_pkg",
-        executable="position_hover_demo_sequence_node",
+        executable="position_goto_demo_sequence_node",
         output="screen",
         parameters=[
             {
                 "drone_id": drone_id,
                 "mavros_namespace": mavros_namespace,
+                "demo_mode": LaunchConfiguration("demo_mode"),
                 "publish_rate_hz": ParameterValue(
                     LaunchConfiguration("publish_rate_hz"), value_type=float
                 ),
@@ -110,17 +111,8 @@ def launch_setup(context, *args, **kwargs):
                     value_type=float,
                 ),
                 "takeoff_strategy": LaunchConfiguration("takeoff_strategy"),
-                "hover_duration_s": ParameterValue(
-                    LaunchConfiguration("hover_duration_s"),
-                    value_type=float,
-                ),
-                "hover_mode": LaunchConfiguration("hover_mode"),
                 "altitude_tolerance_m": ParameterValue(
                     LaunchConfiguration("altitude_tolerance_m"),
-                    value_type=float,
-                ),
-                "start_altitude_limit_m": ParameterValue(
-                    LaunchConfiguration("start_altitude_limit_m"),
                     value_type=float,
                 ),
                 "touchdown_altitude_m": ParameterValue(
@@ -137,10 +129,6 @@ def launch_setup(context, *args, **kwargs):
                 ),
                 "arm_zero_throttle_hold_s": ParameterValue(
                     LaunchConfiguration("arm_zero_throttle_hold_s"),
-                    value_type=float,
-                ),
-                "manual_hover_throttle_center": ParameterValue(
-                    LaunchConfiguration("manual_hover_throttle_center"),
                     value_type=float,
                 ),
                 "local_pose_timeout_s": ParameterValue(
@@ -177,10 +165,6 @@ def launch_setup(context, *args, **kwargs):
                     LaunchConfiguration("require_companion_active"),
                     value_type=bool,
                 ),
-                "max_horizontal_excursion_m": ParameterValue(
-                    LaunchConfiguration("max_horizontal_excursion_m"),
-                    value_type=float,
-                ),
                 "restore_takeoff_alt_on_exit": ParameterValue(
                     LaunchConfiguration("restore_takeoff_alt_on_exit"),
                     value_type=bool,
@@ -207,6 +191,117 @@ def launch_setup(context, *args, **kwargs):
                     LaunchConfiguration("restore_speed_profile_on_exit"),
                     value_type=bool,
                 ),
+                "offboard_setpoint_warmup_s": ParameterValue(
+                    LaunchConfiguration("offboard_setpoint_warmup_s"),
+                    value_type=float,
+                ),
+                "goal_frame_id": LaunchConfiguration("goal_frame_id"),
+                "goal_x_m": ParameterValue(
+                    LaunchConfiguration("goal_x_m"),
+                    value_type=float,
+                ),
+                "goal_y_m": ParameterValue(
+                    LaunchConfiguration("goal_y_m"),
+                    value_type=float,
+                ),
+                "goal_z_m": ParameterValue(
+                    LaunchConfiguration("goal_z_m"),
+                    value_type=float,
+                ),
+                "use_current_yaw_for_goal": ParameterValue(
+                    LaunchConfiguration("use_current_yaw_for_goal"),
+                    value_type=bool,
+                ),
+                "goal_yaw_rad": ParameterValue(
+                    LaunchConfiguration("goal_yaw_rad"),
+                    value_type=float,
+                ),
+                "goal_position_tolerance_m": ParameterValue(
+                    LaunchConfiguration("goal_position_tolerance_m"),
+                    value_type=float,
+                ),
+                "goal_hold_duration_s": ParameterValue(
+                    LaunchConfiguration("goal_hold_duration_s"),
+                    value_type=float,
+                ),
+                "max_goal_distance_from_start_m": ParameterValue(
+                    LaunchConfiguration("max_goal_distance_from_start_m"),
+                    value_type=float,
+                ),
+                "circle_center_x_m": ParameterValue(
+                    LaunchConfiguration("circle_center_x_m"),
+                    value_type=float,
+                ),
+                "circle_center_y_m": ParameterValue(
+                    LaunchConfiguration("circle_center_y_m"),
+                    value_type=float,
+                ),
+                "circle_radius_m": ParameterValue(
+                    LaunchConfiguration("circle_radius_m"),
+                    value_type=float,
+                ),
+                "circle_altitude_m": ParameterValue(
+                    LaunchConfiguration("circle_altitude_m"),
+                    value_type=float,
+                ),
+                "circle_speed_mps": ParameterValue(
+                    LaunchConfiguration("circle_speed_mps"),
+                    value_type=float,
+                ),
+                "circle_loops": ParameterValue(
+                    LaunchConfiguration("circle_loops"),
+                    value_type=float,
+                ),
+                "circle_clockwise": ParameterValue(
+                    LaunchConfiguration("circle_clockwise"),
+                    value_type=bool,
+                ),
+                "circle_use_keep_out_orbit": ParameterValue(
+                    LaunchConfiguration("circle_use_keep_out_orbit"),
+                    value_type=bool,
+                ),
+                "circle_keep_out_name": LaunchConfiguration("circle_keep_out_name"),
+                "circle_keep_out_clearance_m": ParameterValue(
+                    LaunchConfiguration("circle_keep_out_clearance_m"),
+                    value_type=float,
+                ),
+                "circle_sample_count": ParameterValue(
+                    LaunchConfiguration("circle_sample_count"),
+                    value_type=int,
+                ),
+                "circle_entry_candidate_count": ParameterValue(
+                    LaunchConfiguration("circle_entry_candidate_count"),
+                    value_type=int,
+                ),
+                "max_circle_entry_distance_from_start_m": ParameterValue(
+                    LaunchConfiguration("max_circle_entry_distance_from_start_m"),
+                    value_type=float,
+                ),
+                "enable_perimeter_guard": ParameterValue(
+                    LaunchConfiguration("enable_perimeter_guard"),
+                    value_type=bool,
+                ),
+                "perimeter_config": LaunchConfiguration("perimeter_config"),
+                "perimeter_segment_sample_step_m": ParameterValue(
+                    LaunchConfiguration("perimeter_segment_sample_step_m"),
+                    value_type=float,
+                ),
+                "perimeter_boundary_tolerance_m": ParameterValue(
+                    LaunchConfiguration("perimeter_boundary_tolerance_m"),
+                    value_type=float,
+                ),
+                "perimeter_boundary_margin_m": ParameterValue(
+                    LaunchConfiguration("perimeter_boundary_margin_m"),
+                    value_type=float,
+                ),
+                "perimeter_keep_out_margin_m": ParameterValue(
+                    LaunchConfiguration("perimeter_keep_out_margin_m"),
+                    value_type=float,
+                ),
+                "perimeter_ceiling_tolerance_m": ParameterValue(
+                    LaunchConfiguration("perimeter_ceiling_tolerance_m"),
+                    value_type=float,
+                ),
             }
         ],
         arguments=["--ros-args", "--log-level", log_level],
@@ -218,6 +313,11 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     defaults = _load_optitrack_defaults()
     bringup_share = get_package_share_directory("drone_bringup")
+    default_perimeter_config = os.path.join(
+        bringup_share,
+        "config",
+        "drone_studio_perimeter.yaml",
+    )
     default_speed_profile_config = os.path.join(
         bringup_share,
         "config",
@@ -229,6 +329,7 @@ def generate_launch_description():
             DeclareLaunchArgument("log_level", default_value="info"),
             DeclareLaunchArgument("drone_id", default_value="drone01"),
             DeclareLaunchArgument("mavros_namespace", default_value="mavros"),
+            DeclareLaunchArgument("demo_mode", default_value="goto"),
             DeclareLaunchArgument("pose_source", default_value="optitrack"),
             DeclareLaunchArgument("source_pose_topic", default_value=""),
             DeclareLaunchArgument(
@@ -330,15 +431,11 @@ def generate_launch_description():
             DeclareLaunchArgument("takeoff_altitude_m", default_value="0.7"),
             DeclareLaunchArgument("takeoff_rate_m_s", default_value="0.5"),
             DeclareLaunchArgument("takeoff_strategy", default_value="AUTO_MODE"),
-            DeclareLaunchArgument("hover_duration_s", default_value="5.0"),
-            DeclareLaunchArgument("hover_mode", default_value="HOLD"),
             DeclareLaunchArgument("altitude_tolerance_m", default_value="0.10"),
-            DeclareLaunchArgument("start_altitude_limit_m", default_value="0.20"),
             DeclareLaunchArgument("touchdown_altitude_m", default_value="0.15"),
             DeclareLaunchArgument("touchdown_dwell_s", default_value="1.0"),
             DeclareLaunchArgument("stage_timeout_s", default_value="30.0"),
             DeclareLaunchArgument("arm_zero_throttle_hold_s", default_value="1.5"),
-            DeclareLaunchArgument("manual_hover_throttle_center", default_value="500.0"),
             DeclareLaunchArgument("local_pose_timeout_s", default_value="0.5"),
             DeclareLaunchArgument(
                 "local_pose_timeout_during_param_sync_s", default_value="1.0"
@@ -354,7 +451,6 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("companion_status_timeout_s", default_value="0.5"),
             DeclareLaunchArgument("require_companion_active", default_value="true"),
-            DeclareLaunchArgument("max_horizontal_excursion_m", default_value="0.75"),
             DeclareLaunchArgument("restore_takeoff_alt_on_exit", default_value="true"),
             DeclareLaunchArgument("takeoff_param_id", default_value="MIS_TAKEOFF_ALT"),
             DeclareLaunchArgument("param_pull_force", default_value="true"),
@@ -368,6 +464,63 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "restore_speed_profile_on_exit",
                 default_value="true",
+            ),
+            DeclareLaunchArgument("offboard_setpoint_warmup_s", default_value="1.5"),
+            DeclareLaunchArgument("goal_frame_id", default_value="map"),
+            DeclareLaunchArgument("goal_x_m", default_value="0.5"),
+            DeclareLaunchArgument("goal_y_m", default_value="0.0"),
+            DeclareLaunchArgument("goal_z_m", default_value="0.7"),
+            DeclareLaunchArgument("use_current_yaw_for_goal", default_value="true"),
+            DeclareLaunchArgument("goal_yaw_rad", default_value="0.0"),
+            DeclareLaunchArgument("goal_position_tolerance_m", default_value="0.15"),
+            DeclareLaunchArgument("goal_hold_duration_s", default_value="2.0"),
+            DeclareLaunchArgument("max_goal_distance_from_start_m", default_value="2.0"),
+            DeclareLaunchArgument("circle_center_x_m", default_value="-0.1357"),
+            DeclareLaunchArgument("circle_center_y_m", default_value="0.1878"),
+            DeclareLaunchArgument("circle_radius_m", default_value="3.0"),
+            DeclareLaunchArgument("circle_altitude_m", default_value="2.0"),
+            DeclareLaunchArgument("circle_speed_mps", default_value="0.8"),
+            DeclareLaunchArgument("circle_loops", default_value="1.0"),
+            DeclareLaunchArgument("circle_clockwise", default_value="false"),
+            DeclareLaunchArgument("circle_use_keep_out_orbit", default_value="false"),
+            DeclareLaunchArgument(
+                "circle_keep_out_name",
+                default_value="studio_pillar",
+            ),
+            DeclareLaunchArgument(
+                "circle_keep_out_clearance_m",
+                default_value="1.2",
+            ),
+            DeclareLaunchArgument("circle_sample_count", default_value="180"),
+            DeclareLaunchArgument("circle_entry_candidate_count", default_value="72"),
+            DeclareLaunchArgument(
+                "max_circle_entry_distance_from_start_m",
+                default_value="0.0",
+            ),
+            DeclareLaunchArgument("enable_perimeter_guard", default_value="true"),
+            DeclareLaunchArgument(
+                "perimeter_config",
+                default_value=default_perimeter_config,
+            ),
+            DeclareLaunchArgument(
+                "perimeter_segment_sample_step_m",
+                default_value="0.10",
+            ),
+            DeclareLaunchArgument(
+                "perimeter_boundary_tolerance_m",
+                default_value="0.05",
+            ),
+            DeclareLaunchArgument(
+                "perimeter_boundary_margin_m",
+                default_value="1.0",
+            ),
+            DeclareLaunchArgument(
+                "perimeter_keep_out_margin_m",
+                default_value="0.0",
+            ),
+            DeclareLaunchArgument(
+                "perimeter_ceiling_tolerance_m",
+                default_value="0.05",
             ),
             OpaqueFunction(function=launch_setup),
         ]

@@ -90,138 +90,56 @@ def launch_setup(context, *args, **kwargs):
         }.items(),
     )
 
-    demo_node = Node(
+    mavros_velocity_node = Node(
         package="drone_control_pkg",
-        executable="position_hover_demo_sequence_node",
+        executable="mavros_velocity_node",
         output="screen",
         parameters=[
             {
+                "publish_rate_hz": ParameterValue(
+                    LaunchConfiguration("velocity_rate_hz"), value_type=float
+                ),
+                "watchdog_timeout_s": ParameterValue(
+                    LaunchConfiguration("watchdog_timeout_s"), value_type=float
+                ),
+                "require_guided_mode": ParameterValue(
+                    LaunchConfiguration("require_guided_mode"), value_type=bool
+                ),
                 "drone_id": drone_id,
                 "mavros_namespace": mavros_namespace,
-                "publish_rate_hz": ParameterValue(
-                    LaunchConfiguration("publish_rate_hz"), value_type=float
-                ),
-                "takeoff_altitude_m": ParameterValue(
-                    LaunchConfiguration("takeoff_altitude_m"),
-                    value_type=float,
-                ),
-                "takeoff_rate_m_s": ParameterValue(
-                    LaunchConfiguration("takeoff_rate_m_s"),
-                    value_type=float,
-                ),
-                "takeoff_strategy": LaunchConfiguration("takeoff_strategy"),
-                "hover_duration_s": ParameterValue(
-                    LaunchConfiguration("hover_duration_s"),
-                    value_type=float,
-                ),
-                "hover_mode": LaunchConfiguration("hover_mode"),
-                "altitude_tolerance_m": ParameterValue(
-                    LaunchConfiguration("altitude_tolerance_m"),
-                    value_type=float,
-                ),
-                "start_altitude_limit_m": ParameterValue(
-                    LaunchConfiguration("start_altitude_limit_m"),
-                    value_type=float,
-                ),
-                "touchdown_altitude_m": ParameterValue(
-                    LaunchConfiguration("touchdown_altitude_m"),
-                    value_type=float,
-                ),
-                "touchdown_dwell_s": ParameterValue(
-                    LaunchConfiguration("touchdown_dwell_s"),
-                    value_type=float,
-                ),
-                "stage_timeout_s": ParameterValue(
-                    LaunchConfiguration("stage_timeout_s"),
-                    value_type=float,
-                ),
-                "arm_zero_throttle_hold_s": ParameterValue(
-                    LaunchConfiguration("arm_zero_throttle_hold_s"),
-                    value_type=float,
-                ),
-                "manual_hover_throttle_center": ParameterValue(
-                    LaunchConfiguration("manual_hover_throttle_center"),
-                    value_type=float,
-                ),
-                "local_pose_timeout_s": ParameterValue(
-                    LaunchConfiguration("local_pose_timeout_s"),
-                    value_type=float,
-                ),
-                "local_pose_timeout_during_param_sync_s": ParameterValue(
-                    LaunchConfiguration("local_pose_timeout_during_param_sync_s"),
-                    value_type=float,
-                ),
-                "state_timeout_s": ParameterValue(
-                    LaunchConfiguration("state_timeout_s"),
-                    value_type=float,
-                ),
-                "state_timeout_during_param_sync_s": ParameterValue(
-                    LaunchConfiguration("state_timeout_during_param_sync_s"),
-                    value_type=float,
-                ),
-                "connection_loss_timeout_s": ParameterValue(
-                    LaunchConfiguration("connection_loss_timeout_s"),
-                    value_type=float,
-                ),
-                "connection_loss_timeout_during_param_sync_s": ParameterValue(
-                    LaunchConfiguration(
-                        "connection_loss_timeout_during_param_sync_s"
-                    ),
-                    value_type=float,
-                ),
-                "companion_status_timeout_s": ParameterValue(
-                    LaunchConfiguration("companion_status_timeout_s"),
-                    value_type=float,
-                ),
-                "require_companion_active": ParameterValue(
-                    LaunchConfiguration("require_companion_active"),
-                    value_type=bool,
-                ),
-                "max_horizontal_excursion_m": ParameterValue(
-                    LaunchConfiguration("max_horizontal_excursion_m"),
-                    value_type=float,
-                ),
-                "restore_takeoff_alt_on_exit": ParameterValue(
-                    LaunchConfiguration("restore_takeoff_alt_on_exit"),
-                    value_type=bool,
-                ),
-                "takeoff_param_id": LaunchConfiguration("takeoff_param_id"),
-                "param_pull_force": ParameterValue(
-                    LaunchConfiguration("param_pull_force"),
-                    value_type=bool,
-                ),
-                "param_pull_retry_delay_s": ParameterValue(
-                    LaunchConfiguration("param_pull_retry_delay_s"),
-                    value_type=float,
-                ),
-                "param_sync_timeout_s": ParameterValue(
-                    LaunchConfiguration("param_sync_timeout_s"),
-                    value_type=float,
-                ),
-                "use_speed_profile": ParameterValue(
-                    LaunchConfiguration("use_speed_profile"),
-                    value_type=bool,
-                ),
-                "speed_profile_config": LaunchConfiguration("speed_profile_config"),
-                "restore_speed_profile_on_exit": ParameterValue(
-                    LaunchConfiguration("restore_speed_profile_on_exit"),
-                    value_type=bool,
-                ),
             }
         ],
         arguments=["--ros-args", "--log-level", log_level],
     )
 
-    return [pose_bridge_launch, demo_node]
+    target_follow_controller = Node(
+        package="drone_control_pkg",
+        executable="target_follow_controller_node",
+        output="screen",
+        parameters=[
+            LaunchConfiguration("safety_config"),
+            {
+                "publish_rate_hz": ParameterValue(
+                    LaunchConfiguration("follow_rate_hz"), value_type=float
+                ),
+                "drone_id": drone_id,
+                "mavros_namespace": mavros_namespace,
+                "tracks_topic": LaunchConfiguration("tracks_topic"),
+            },
+        ],
+        arguments=["--ros-args", "--log-level", log_level],
+    )
+
+    return [pose_bridge_launch, mavros_velocity_node, target_follow_controller]
 
 
 def generate_launch_description():
-    defaults = _load_optitrack_defaults()
     bringup_share = get_package_share_directory("drone_bringup")
-    default_speed_profile_config = os.path.join(
+    defaults = _load_optitrack_defaults()
+    default_safety_config = os.path.join(
         bringup_share,
         "config",
-        "indoor_speed_profile.yaml",
+        "target_follow_safety.yaml",
     )
 
     return LaunchDescription(
@@ -231,6 +149,8 @@ def generate_launch_description():
             DeclareLaunchArgument("mavros_namespace", default_value="mavros"),
             DeclareLaunchArgument("pose_source", default_value="optitrack"),
             DeclareLaunchArgument("source_pose_topic", default_value=""),
+            DeclareLaunchArgument("tracks_topic", default_value=""),
+            DeclareLaunchArgument("safety_config", default_value=default_safety_config),
             DeclareLaunchArgument(
                 "global_origin_latitude_deg",
                 default_value=_default_arg(
@@ -326,49 +246,10 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "debug_warn_yaw_error_deg", default_value="10.0"
             ),
-            DeclareLaunchArgument("publish_rate_hz", default_value="20.0"),
-            DeclareLaunchArgument("takeoff_altitude_m", default_value="0.7"),
-            DeclareLaunchArgument("takeoff_rate_m_s", default_value="0.5"),
-            DeclareLaunchArgument("takeoff_strategy", default_value="AUTO_MODE"),
-            DeclareLaunchArgument("hover_duration_s", default_value="5.0"),
-            DeclareLaunchArgument("hover_mode", default_value="HOLD"),
-            DeclareLaunchArgument("altitude_tolerance_m", default_value="0.10"),
-            DeclareLaunchArgument("start_altitude_limit_m", default_value="0.20"),
-            DeclareLaunchArgument("touchdown_altitude_m", default_value="0.15"),
-            DeclareLaunchArgument("touchdown_dwell_s", default_value="1.0"),
-            DeclareLaunchArgument("stage_timeout_s", default_value="30.0"),
-            DeclareLaunchArgument("arm_zero_throttle_hold_s", default_value="1.5"),
-            DeclareLaunchArgument("manual_hover_throttle_center", default_value="500.0"),
-            DeclareLaunchArgument("local_pose_timeout_s", default_value="0.5"),
-            DeclareLaunchArgument(
-                "local_pose_timeout_during_param_sync_s", default_value="1.0"
-            ),
-            DeclareLaunchArgument("state_timeout_s", default_value="2.0"),
-            DeclareLaunchArgument(
-                "state_timeout_during_param_sync_s", default_value="8.0"
-            ),
-            DeclareLaunchArgument("connection_loss_timeout_s", default_value="0.5"),
-            DeclareLaunchArgument(
-                "connection_loss_timeout_during_param_sync_s",
-                default_value="3.0",
-            ),
-            DeclareLaunchArgument("companion_status_timeout_s", default_value="0.5"),
-            DeclareLaunchArgument("require_companion_active", default_value="true"),
-            DeclareLaunchArgument("max_horizontal_excursion_m", default_value="0.75"),
-            DeclareLaunchArgument("restore_takeoff_alt_on_exit", default_value="true"),
-            DeclareLaunchArgument("takeoff_param_id", default_value="MIS_TAKEOFF_ALT"),
-            DeclareLaunchArgument("param_pull_force", default_value="true"),
-            DeclareLaunchArgument("param_pull_retry_delay_s", default_value="1.0"),
-            DeclareLaunchArgument("param_sync_timeout_s", default_value="60.0"),
-            DeclareLaunchArgument("use_speed_profile", default_value="false"),
-            DeclareLaunchArgument(
-                "speed_profile_config",
-                default_value=default_speed_profile_config,
-            ),
-            DeclareLaunchArgument(
-                "restore_speed_profile_on_exit",
-                default_value="true",
-            ),
+            DeclareLaunchArgument("velocity_rate_hz", default_value="20.0"),
+            DeclareLaunchArgument("watchdog_timeout_s", default_value="0.5"),
+            DeclareLaunchArgument("require_guided_mode", default_value="true"),
+            DeclareLaunchArgument("follow_rate_hz", default_value="20.0"),
             OpaqueFunction(function=launch_setup),
         ]
     )

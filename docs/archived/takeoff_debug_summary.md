@@ -25,7 +25,7 @@
 
 - Main node: [ros2/src/drone_control_pkg/drone_control_pkg/position_hover_demo_sequence_node.py](/home/jetson/cdrone_control/ros2/src/drone_control_pkg/drone_control_pkg/position_hover_demo_sequence_node.py)
 - Launch file: [ros2/src/drone_bringup/launch/position_hover_demo.launch.py](/home/jetson/cdrone_control/ros2/src/drone_bringup/launch/position_hover_demo.launch.py)
-- Runbook: [position_hover_demo_runbook.md](/home/jetson/cdrone_control/position_hover_demo_runbook.md)
+- Runbook: [position_hover_demo_runbook.md](/home/jetson/cdrone_control/docs/archived/position_hover_demo_runbook.md)
 
 ## Current Launch Command
 

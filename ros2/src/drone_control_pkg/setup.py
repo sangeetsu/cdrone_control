@@ -40,6 +40,8 @@ setup(
             "drone_control_pkg.altctl_demo_sequence_node:main",
             "position_hover_demo_sequence_node = "
             "drone_control_pkg.position_hover_demo_sequence_node:main",
+            "position_goto_demo_sequence_node = "
+            "drone_control_pkg.position_goto_demo_sequence_node:main",
             "bench_vision_pose_node = drone_control_pkg.bench_vision_pose_node:main",
             "external_pose_adapter_node = "
             "drone_control_pkg.external_pose_adapter_node:main",
@@ -47,6 +49,8 @@ setup(
             "drone_control_pkg.external_pose_bridge_node:main",
             "external_pose_debug_node = "
             "drone_control_pkg.external_pose_debug_node:main",
+            "target_follow_controller_node = "
+            "drone_control_pkg.target_follow_controller_node:main",
             "vio_bridge_node = drone_control_pkg.vio_bridge_node:main",
         ],
     },

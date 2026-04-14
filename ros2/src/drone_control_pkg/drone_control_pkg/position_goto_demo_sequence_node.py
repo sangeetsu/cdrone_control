@@ -1,41 +1,28 @@
 from __future__ import annotations
 
 import math
+import os
 from typing import Optional, Tuple
 
 import rclpy
 from geographic_msgs.msg import GeoPointStamped
 from geometry_msgs.msg import PoseStamped
-from mavros_msgs.msg import CompanionProcessStatus, HomePosition, ManualControl, State
+from mavros_msgs.msg import CompanionProcessStatus, HomePosition, State
 from mavros_msgs.srv import CommandBool, CommandTOLLocal, ParamPull, SetMode
-from rclpy.node import Node
-from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
 from rcl_interfaces.srv import GetParameters, SetParameters
+from rclpy.node import Node
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
+from drone_control_pkg.perimeter_utils import PerimeterGuard
 from drone_control_pkg.px4_param_profile import Px4ParamProfile
 from drone_control_pkg.topic_utils import cdrone_topic, join_topic
 
 
 def clamp(value: float, min_v: float, max_v: float) -> float:
     return max(min(value, max_v), min_v)
-
-
-def normalize_hover_mode(value: str) -> str:
-    normalized = str(value or "").strip().upper()
-    aliases = {
-        "HOLD": "AUTO.LOITER",
-        "AUTO.LOITER": "AUTO.LOITER",
-        "LOITER": "AUTO.LOITER",
-        "POSCTL": "POSCTL",
-    }
-    if normalized not in aliases:
-        raise ValueError(
-            "hover_mode must be one of: POSCTL, HOLD, AUTO.LOITER, LOITER"
-        )
-    return aliases[normalized]
 
 
 def normalize_takeoff_strategy(value: str) -> str:
@@ -53,6 +40,20 @@ def normalize_takeoff_strategy(value: str) -> str:
             "takeoff_strategy must be one of: AUTO_MODE, AUTO, AUTO_TAKEOFF, "
             "LOCAL_COMMAND, LOCAL, TAKEOFF_LOCAL"
         )
+    return aliases[normalized]
+
+
+def normalize_demo_mode(value: str) -> str:
+    normalized = str(value or "").strip().lower()
+    aliases = {
+        "goto": "goto",
+        "position_goto": "goto",
+        "circle": "circle",
+        "orbit": "circle",
+        "position_circle": "circle",
+    }
+    if normalized not in aliases:
+        raise ValueError("demo_mode must be one of: goto, circle, orbit")
     return aliases[normalized]
 
 
@@ -75,27 +76,83 @@ def parameter_value_is_declared_numeric(value: ParameterValue) -> bool:
     }
 
 
-class PositionHoverDemoSequenceNode(Node):
+def quaternion_from_yaw(yaw_rad: float) -> tuple[float, float, float, float]:
+    half_yaw = yaw_rad * 0.5
+    return 0.0, 0.0, math.sin(half_yaw), math.cos(half_yaw)
+
+
+def polygon_centroid_xy(vertices_xy: tuple[tuple[float, float], ...]) -> tuple[float, float]:
+    area_twice = 0.0
+    centroid_x = 0.0
+    centroid_y = 0.0
+    for idx in range(len(vertices_xy)):
+        x1, y1 = vertices_xy[idx]
+        x2, y2 = vertices_xy[(idx + 1) % len(vertices_xy)]
+        cross = (x1 * y2) - (x2 * y1)
+        area_twice += cross
+        centroid_x += (x1 + x2) * cross
+        centroid_y += (y1 + y2) * cross
+    if math.isclose(area_twice, 0.0, abs_tol=1e-9):
+        mean_x = sum(vertex[0] for vertex in vertices_xy) / len(vertices_xy)
+        mean_y = sum(vertex[1] for vertex in vertices_xy) / len(vertices_xy)
+        return (mean_x, mean_y)
+    return (
+        centroid_x / (3.0 * area_twice),
+        centroid_y / (3.0 * area_twice),
+    )
+
+
+def polygon_max_radius_from_center(
+    center_xy: tuple[float, float],
+    vertices_xy: tuple[tuple[float, float], ...],
+) -> float:
+    max_radius_m = 0.0
+    for idx in range(len(vertices_xy)):
+        start_xy = vertices_xy[idx]
+        end_xy = vertices_xy[(idx + 1) % len(vertices_xy)]
+        for sample_idx in range(51):
+            t = sample_idx / 50.0
+            sample_xy = (
+                start_xy[0] + ((end_xy[0] - start_xy[0]) * t),
+                start_xy[1] + ((end_xy[1] - start_xy[1]) * t),
+            )
+            max_radius_m = max(
+                max_radius_m,
+                math.hypot(
+                    sample_xy[0] - center_xy[0],
+                    sample_xy[1] - center_xy[1],
+                ),
+            )
+    return max_radius_m
+
+
+class PositionGotoDemoSequenceNode(Node):
     TERMINAL_STATES = {"IDLE", "COMPLETE", "ABORT"}
+    OFFBOARD_PUBLISH_STATES = {
+        "WARMUP_OFFBOARD",
+        "SET_OFFBOARD_MODE",
+        "GOTO",
+        "GOAL_HOLD",
+        "MOVE_TO_CIRCLE_ENTRY",
+        "ORBIT",
+        "ORBIT_HOLD",
+    }
 
     def __init__(self) -> None:
-        super().__init__("position_hover_demo_sequence_node")
+        super().__init__("position_goto_demo_sequence_node")
 
         self.declare_parameter("publish_rate_hz", 20.0)
         self.declare_parameter("drone_id", "drone01")
         self.declare_parameter("mavros_namespace", "/mavros")
+        self.declare_parameter("demo_mode", "goto")
         self.declare_parameter("takeoff_altitude_m", 0.7)
         self.declare_parameter("takeoff_rate_m_s", 0.5)
         self.declare_parameter("takeoff_strategy", "AUTO_MODE")
-        self.declare_parameter("hover_duration_s", 5.0)
-        self.declare_parameter("hover_mode", "HOLD")
         self.declare_parameter("altitude_tolerance_m", 0.10)
-        self.declare_parameter("start_altitude_limit_m", 0.20)
         self.declare_parameter("touchdown_altitude_m", 0.15)
         self.declare_parameter("touchdown_dwell_s", 1.0)
         self.declare_parameter("stage_timeout_s", 30.0)
         self.declare_parameter("arm_zero_throttle_hold_s", 1.5)
-        self.declare_parameter("manual_hover_throttle_center", 500.0)
         self.declare_parameter("local_pose_timeout_s", 0.5)
         self.declare_parameter("local_pose_timeout_during_param_sync_s", 1.0)
         self.declare_parameter("state_timeout_s", 2.0)
@@ -107,7 +164,6 @@ class PositionHoverDemoSequenceNode(Node):
         self.declare_parameter("mode_request_retry_interval_s", 0.5)
         self.declare_parameter("companion_status_timeout_s", 0.5)
         self.declare_parameter("require_companion_active", True)
-        self.declare_parameter("max_horizontal_excursion_m", 0.75)
         self.declare_parameter("restore_takeoff_alt_on_exit", True)
         self.declare_parameter("takeoff_param_id", "MIS_TAKEOFF_ALT")
         self.declare_parameter("param_pull_force", True)
@@ -116,7 +172,36 @@ class PositionHoverDemoSequenceNode(Node):
         self.declare_parameter("use_speed_profile", False)
         self.declare_parameter("speed_profile_config", "")
         self.declare_parameter("restore_speed_profile_on_exit", True)
-        self.declare_parameter("manual_control_topic", "")
+        self.declare_parameter("offboard_setpoint_warmup_s", 1.5)
+        self.declare_parameter("goal_frame_id", "map")
+        self.declare_parameter("goal_x_m", 0.5)
+        self.declare_parameter("goal_y_m", 0.0)
+        self.declare_parameter("goal_z_m", 0.7)
+        self.declare_parameter("use_current_yaw_for_goal", True)
+        self.declare_parameter("goal_yaw_rad", 0.0)
+        self.declare_parameter("goal_position_tolerance_m", 0.15)
+        self.declare_parameter("goal_hold_duration_s", 2.0)
+        self.declare_parameter("max_goal_distance_from_start_m", 2.0)
+        self.declare_parameter("circle_center_x_m", -0.1357)
+        self.declare_parameter("circle_center_y_m", 0.1878)
+        self.declare_parameter("circle_radius_m", 3.0)
+        self.declare_parameter("circle_altitude_m", 2.0)
+        self.declare_parameter("circle_speed_mps", 0.8)
+        self.declare_parameter("circle_loops", 1.0)
+        self.declare_parameter("circle_clockwise", False)
+        self.declare_parameter("circle_use_keep_out_orbit", False)
+        self.declare_parameter("circle_keep_out_name", "studio_pillar")
+        self.declare_parameter("circle_keep_out_clearance_m", 1.2)
+        self.declare_parameter("circle_sample_count", 180)
+        self.declare_parameter("circle_entry_candidate_count", 72)
+        self.declare_parameter("max_circle_entry_distance_from_start_m", 0.0)
+        self.declare_parameter("enable_perimeter_guard", True)
+        self.declare_parameter("perimeter_config", "")
+        self.declare_parameter("perimeter_segment_sample_step_m", 0.10)
+        self.declare_parameter("perimeter_boundary_tolerance_m", 0.05)
+        self.declare_parameter("perimeter_boundary_margin_m", 1.0)
+        self.declare_parameter("perimeter_keep_out_margin_m", 0.0)
+        self.declare_parameter("perimeter_ceiling_tolerance_m", 0.05)
         self.declare_parameter("state_topic", "")
         self.declare_parameter("local_pose_topic", "")
         self.declare_parameter("home_position_topic", "")
@@ -125,24 +210,21 @@ class PositionHoverDemoSequenceNode(Node):
         self.declare_parameter("status_topic", "")
         self.declare_parameter("start_service", "")
         self.declare_parameter("abort_service", "")
+        self.declare_parameter("position_setpoint_topic", "")
 
         self.publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
         self.drone_id = str(self.get_parameter("drone_id").value)
         self.mavros_namespace = str(self.get_parameter("mavros_namespace").value)
+        self.demo_mode = normalize_demo_mode(
+            str(self.get_parameter("demo_mode").value)
+        )
         self.takeoff_altitude_m = float(self.get_parameter("takeoff_altitude_m").value)
         self.takeoff_rate_m_s = float(self.get_parameter("takeoff_rate_m_s").value)
         self.takeoff_strategy = normalize_takeoff_strategy(
             str(self.get_parameter("takeoff_strategy").value)
         )
-        self.hover_duration_s = float(self.get_parameter("hover_duration_s").value)
-        self.hover_mode = normalize_hover_mode(
-            str(self.get_parameter("hover_mode").value)
-        )
         self.altitude_tolerance_m = float(
             self.get_parameter("altitude_tolerance_m").value
-        )
-        self.start_altitude_limit_m = float(
-            self.get_parameter("start_altitude_limit_m").value
         )
         self.touchdown_altitude_m = float(
             self.get_parameter("touchdown_altitude_m").value
@@ -151,9 +233,6 @@ class PositionHoverDemoSequenceNode(Node):
         self.stage_timeout_s = float(self.get_parameter("stage_timeout_s").value)
         self.arm_zero_throttle_hold_s = float(
             self.get_parameter("arm_zero_throttle_hold_s").value
-        )
-        self.manual_hover_throttle_center = float(
-            self.get_parameter("manual_hover_throttle_center").value
         )
         self.local_pose_timeout_s = float(
             self.get_parameter("local_pose_timeout_s").value
@@ -182,9 +261,6 @@ class PositionHoverDemoSequenceNode(Node):
         self.require_companion_active = bool(
             self.get_parameter("require_companion_active").value
         )
-        self.max_horizontal_excursion_m = float(
-            self.get_parameter("max_horizontal_excursion_m").value
-        )
         self.restore_takeoff_alt_on_exit = bool(
             self.get_parameter("restore_takeoff_alt_on_exit").value
         )
@@ -205,11 +281,81 @@ class PositionHoverDemoSequenceNode(Node):
         self.restore_speed_profile_on_exit = bool(
             self.get_parameter("restore_speed_profile_on_exit").value
         )
-
-        self.manual_control_topic = (
-            str(self.get_parameter("manual_control_topic").value).strip()
-            or join_topic(self.mavros_namespace, "manual_control/send")
+        self.offboard_setpoint_warmup_s = float(
+            self.get_parameter("offboard_setpoint_warmup_s").value
         )
+        self.goal_frame_id = str(self.get_parameter("goal_frame_id").value).strip()
+        self.goal_x_m = float(self.get_parameter("goal_x_m").value)
+        self.goal_y_m = float(self.get_parameter("goal_y_m").value)
+        self.goal_z_m = float(self.get_parameter("goal_z_m").value)
+        self.use_current_yaw_for_goal = bool(
+            self.get_parameter("use_current_yaw_for_goal").value
+        )
+        self.goal_yaw_rad = float(self.get_parameter("goal_yaw_rad").value)
+        self.goal_position_tolerance_m = float(
+            self.get_parameter("goal_position_tolerance_m").value
+        )
+        self.goal_hold_duration_s = float(
+            self.get_parameter("goal_hold_duration_s").value
+        )
+        self.max_goal_distance_from_start_m = float(
+            self.get_parameter("max_goal_distance_from_start_m").value
+        )
+        self.circle_center_x_m = float(
+            self.get_parameter("circle_center_x_m").value
+        )
+        self.circle_center_y_m = float(
+            self.get_parameter("circle_center_y_m").value
+        )
+        self.circle_radius_m = float(self.get_parameter("circle_radius_m").value)
+        self.circle_altitude_m = float(
+            self.get_parameter("circle_altitude_m").value
+        )
+        self.circle_speed_mps = float(self.get_parameter("circle_speed_mps").value)
+        self.circle_loops = float(self.get_parameter("circle_loops").value)
+        self.circle_clockwise = bool(
+            self.get_parameter("circle_clockwise").value
+        )
+        self.circle_use_keep_out_orbit = bool(
+            self.get_parameter("circle_use_keep_out_orbit").value
+        )
+        self.circle_keep_out_name = str(
+            self.get_parameter("circle_keep_out_name").value
+        ).strip()
+        self.circle_keep_out_clearance_m = float(
+            self.get_parameter("circle_keep_out_clearance_m").value
+        )
+        self.circle_sample_count = int(
+            self.get_parameter("circle_sample_count").value
+        )
+        self.circle_entry_candidate_count = int(
+            self.get_parameter("circle_entry_candidate_count").value
+        )
+        self.max_circle_entry_distance_from_start_m = float(
+            self.get_parameter("max_circle_entry_distance_from_start_m").value
+        )
+        self.enable_perimeter_guard = bool(
+            self.get_parameter("enable_perimeter_guard").value
+        )
+        self.perimeter_config = str(
+            self.get_parameter("perimeter_config").value
+        ).strip()
+        self.perimeter_segment_sample_step_m = float(
+            self.get_parameter("perimeter_segment_sample_step_m").value
+        )
+        self.perimeter_boundary_tolerance_m = float(
+            self.get_parameter("perimeter_boundary_tolerance_m").value
+        )
+        self.perimeter_boundary_margin_m = float(
+            self.get_parameter("perimeter_boundary_margin_m").value
+        )
+        self.perimeter_keep_out_margin_m = float(
+            self.get_parameter("perimeter_keep_out_margin_m").value
+        )
+        self.perimeter_ceiling_tolerance_m = float(
+            self.get_parameter("perimeter_ceiling_tolerance_m").value
+        )
+
         self.state_topic = (
             str(self.get_parameter("state_topic").value).strip()
             or join_topic(self.mavros_namespace, "state")
@@ -232,19 +378,26 @@ class PositionHoverDemoSequenceNode(Node):
         )
         self.status_topic = (
             str(self.get_parameter("status_topic").value).strip()
-            or cdrone_topic(self.drone_id, "demo/position_hover_state")
+            or cdrone_topic(self.drone_id, "demo/position_goto_state")
         )
         self.start_service_name = (
             str(self.get_parameter("start_service").value).strip()
-            or cdrone_topic(self.drone_id, "demo/position_hover_start")
+            or cdrone_topic(self.drone_id, "demo/position_goto_start")
         )
         self.abort_service_name = (
             str(self.get_parameter("abort_service").value).strip()
-            or cdrone_topic(self.drone_id, "demo/position_hover_abort")
+            or cdrone_topic(self.drone_id, "demo/position_goto_abort")
+        )
+        self.position_setpoint_topic = (
+            str(self.get_parameter("position_setpoint_topic").value).strip()
+            or join_topic(self.mavros_namespace, "setpoint_position/local")
         )
 
         self.takeoff_mode = "AUTO.TAKEOFF"
+        self.offboard_mode = "OFFBOARD"
         self.land_mode = "AUTO.LAND"
+        self.perimeter_guard: Optional[PerimeterGuard] = None
+        self.perimeter_guard_error = ""
 
         self.latest_state = State()
         self.latest_pose = PoseStamped()
@@ -261,9 +414,10 @@ class PositionHoverDemoSequenceNode(Node):
         self.demo_state = "IDLE"
         self.stage_started_s = self.now_s()
         self.abort_reason = ""
-        self.takeoff_origin_xy: Optional[Tuple[float, float]] = None
         self.takeoff_origin_altitude_m: Optional[float] = None
+        self.takeoff_origin_xy: Optional[Tuple[float, float]] = None
         self.touchdown_started_s: Optional[float] = None
+        self.goal_reached_started_s: Optional[float] = None
 
         self.mode_future = None
         self.pending_mode_name: Optional[str] = None
@@ -281,7 +435,6 @@ class PositionHoverDemoSequenceNode(Node):
         self.param_future_kind: Optional[str] = None
         self.pending_param_value: Optional[float] = None
         self.pending_param_name: Optional[str] = None
-
         self.original_takeoff_alt_m: Optional[float] = None
         self.takeoff_param_ready = False
         self.takeoff_param_changed = False
@@ -299,10 +452,15 @@ class PositionHoverDemoSequenceNode(Node):
         self.last_mode_request_time_s = 0.0
         self.next_param_pull_attempt_s = 0.0
         self.param_pull_attempt_count = 0
+        self.offboard_setpoint: Optional[PoseStamped] = None
+        self.circle_entry_angle_rad: Optional[float] = None
+        self.circle_started_s: Optional[float] = None
+        self.circle_fixed_yaw_rad: Optional[float] = None
+        self.circle_keep_out_orbit_applied = False
 
         self.status_pub = self.create_publisher(String, self.status_topic, 10)
-        self.manual_pub = self.create_publisher(
-            ManualControl, self.manual_control_topic, 10
+        self.position_setpoint_pub = self.create_publisher(
+            PoseStamped, self.position_setpoint_topic, 10
         )
 
         state_qos = QoSProfile(
@@ -316,12 +474,7 @@ class PositionHoverDemoSequenceNode(Node):
             depth=10,
         )
 
-        self.create_subscription(
-            State,
-            self.state_topic,
-            self.state_callback,
-            state_qos,
-        )
+        self.create_subscription(State, self.state_topic, self.state_callback, state_qos)
         self.create_subscription(
             PoseStamped,
             self.local_pose_topic,
@@ -376,10 +529,11 @@ class PositionHoverDemoSequenceNode(Node):
         self.timer = self.create_timer(
             1.0 / max(self.publish_rate_hz, 1.0), self.timer_callback
         )
+        self.load_perimeter_guard()
         self.load_speed_profile()
         self.get_logger().info(
-            "Position hover demo sequence node started. "
-            f"Waiting for explicit start request. "
+            "Position goto demo sequence node started. "
+            f"Waiting for explicit start request. demo_mode={self.demo_mode} "
             f"takeoff_strategy={self.takeoff_strategy}"
         )
         self.publish_status()
@@ -431,35 +585,6 @@ class PositionHoverDemoSequenceNode(Node):
             float(self.latest_pose.pose.position.x),
             float(self.latest_pose.pose.position.y),
         )
-
-    def horizontal_excursion_m(self) -> float:
-        if self.takeoff_origin_xy is None:
-            return 0.0
-        current_xy = self.current_xy()
-        return math.hypot(
-            current_xy[0] - self.takeoff_origin_xy[0],
-            current_xy[1] - self.takeoff_origin_xy[1],
-        )
-
-    def takeoff_target_altitude_m(self) -> float:
-        if self.takeoff_origin_altitude_m is None:
-            return self.takeoff_altitude_m
-        return self.takeoff_origin_altitude_m + self.takeoff_altitude_m
-
-    def touchdown_threshold_altitude_m(self) -> float:
-        if self.takeoff_origin_altitude_m is None:
-            return self.touchdown_altitude_m
-        return self.takeoff_origin_altitude_m + self.touchdown_altitude_m
-
-    def current_altitude_above_home_m(self) -> Optional[float]:
-        if self.latest_home_position is None:
-            return None
-        return self.current_altitude_m() - float(self.latest_home_position.position.z)
-
-    def takeoff_origin_above_home_m(self) -> Optional[float]:
-        if self.latest_home_position is None or self.takeoff_origin_altitude_m is None:
-            return None
-        return self.takeoff_origin_altitude_m - float(self.latest_home_position.position.z)
 
     def current_yaw_rad(self) -> float:
         orientation = self.latest_pose.pose.orientation
@@ -534,12 +659,151 @@ class PositionHoverDemoSequenceNode(Node):
         return "TAKEOFF" in str(self.latest_state.mode).upper()
 
     def is_takeoff_handoff_mode(self) -> bool:
-        return self.mode_matches("AUTO.LOITER") or self.mode_matches(self.hover_mode)
+        mode_name = str(self.latest_state.mode).upper()
+        return mode_name in {"AUTO.LOITER", "POSCTL"}
 
-    def publish_status(self) -> None:
-        msg = String()
-        msg.data = self.demo_state
-        self.status_pub.publish(msg)
+    def takeoff_target_altitude_m(self) -> float:
+        if self.takeoff_origin_altitude_m is None:
+            return self.takeoff_altitude_m
+        return self.takeoff_origin_altitude_m + self.takeoff_altitude_m
+
+    def touchdown_threshold_altitude_m(self) -> float:
+        if self.takeoff_origin_altitude_m is None:
+            return self.touchdown_altitude_m
+        return self.takeoff_origin_altitude_m + self.touchdown_altitude_m
+
+    def current_frame_id(self) -> str:
+        return str(self.latest_pose.header.frame_id or self.goal_frame_id or "map").strip()
+
+    def goal_xy(self) -> Tuple[float, float]:
+        return (self.goal_x_m, self.goal_y_m)
+
+    def circle_center_xy(self) -> Tuple[float, float]:
+        return (self.circle_center_x_m, self.circle_center_y_m)
+
+    def circle_direction_sign(self) -> float:
+        return -1.0 if self.circle_clockwise else 1.0
+
+    def circle_total_angle_rad(self) -> float:
+        return 2.0 * math.pi * max(self.circle_loops, 0.0)
+
+    def circle_total_duration_s(self) -> float:
+        speed_mps = max(self.circle_speed_mps, 1e-3)
+        circumference_m = self.circle_total_angle_rad() * max(self.circle_radius_m, 0.0)
+        return circumference_m / speed_mps
+
+    def circle_point_xy(self, angle_rad: float) -> Tuple[float, float]:
+        return (
+            self.circle_center_x_m + (self.circle_radius_m * math.cos(angle_rad)),
+            self.circle_center_y_m + (self.circle_radius_m * math.sin(angle_rad)),
+        )
+
+    def circle_entry_pose(self) -> Optional[PoseStamped]:
+        if self.circle_entry_angle_rad is None:
+            return None
+        x_m, y_m = self.circle_point_xy(self.circle_entry_angle_rad)
+        yaw_rad = (
+            self.circle_fixed_yaw_rad
+            if self.circle_fixed_yaw_rad is not None
+            else self.current_yaw_rad()
+        )
+        return self.make_pose_setpoint(x_m, y_m, self.circle_altitude_m, yaw_rad)
+
+    def configure_circle_keep_out_orbit(self) -> Optional[str]:
+        if not self.circle_use_keep_out_orbit:
+            return None
+        if self.perimeter_guard is None:
+            return self.perimeter_guard_error or "perimeter guard is unavailable"
+        keep_out_name = self.circle_keep_out_name or "studio_pillar"
+        keep_out = next(
+            (
+                region
+                for region in self.perimeter_guard.keep_outs
+                if region.name == keep_out_name
+            ),
+            None,
+        )
+        if keep_out is None:
+            return f"keep-out polygon '{keep_out_name}' was not found"
+        center_xy = polygon_centroid_xy(keep_out.vertices_xy_m)
+        radius_m = polygon_max_radius_from_center(
+            center_xy,
+            keep_out.vertices_xy_m,
+        ) + max(self.circle_keep_out_clearance_m, 0.0)
+        self.circle_center_x_m = center_xy[0]
+        self.circle_center_y_m = center_xy[1]
+        self.circle_radius_m = radius_m
+        if not self.circle_keep_out_orbit_applied:
+            self.get_logger().info(
+                "Derived circle orbit from keep-out "
+                f"'{keep_out_name}': center=({self.circle_center_x_m:.3f}, "
+                f"{self.circle_center_y_m:.3f}) radius={self.circle_radius_m:.3f} m"
+            )
+            self.circle_keep_out_orbit_applied = True
+        return None
+
+    def choose_circle_entry_angle(
+        self,
+        start_xy: Tuple[float, float],
+    ) -> Tuple[Optional[float], Optional[float]]:
+        if self.perimeter_guard is None:
+            return 0.0, math.hypot(
+                start_xy[0] - (self.circle_center_x_m + self.circle_radius_m),
+                start_xy[1] - self.circle_center_y_m,
+            )
+
+        candidate_count = max(self.circle_entry_candidate_count, 8)
+        best_angle = None
+        best_distance = None
+        for idx in range(candidate_count):
+            angle_rad = (2.0 * math.pi * idx) / candidate_count
+            point_xy = self.circle_point_xy(angle_rad)
+            violation = self.perimeter_guard.segment_violation_reason(
+                start_xy,
+                point_xy,
+                sample_step_m=self.perimeter_segment_sample_step_m,
+                boundary_tolerance_m=self.perimeter_boundary_tolerance_m,
+                boundary_margin_m=self.perimeter_boundary_margin_m,
+                keep_out_margin_m=self.perimeter_keep_out_margin_m,
+            )
+            if violation is not None:
+                continue
+            distance_m = math.hypot(
+                point_xy[0] - start_xy[0],
+                point_xy[1] - start_xy[1],
+            )
+            if best_distance is None or distance_m < best_distance:
+                best_angle = angle_rad
+                best_distance = distance_m
+        return best_angle, best_distance
+
+    def load_perimeter_guard(self) -> None:
+        self.perimeter_guard = None
+        self.perimeter_guard_error = ""
+        if not self.enable_perimeter_guard:
+            self.get_logger().info("Perimeter guard disabled for goto demo.")
+            return
+        if not self.perimeter_config:
+            self.perimeter_guard_error = "perimeter_config is empty"
+            self.get_logger().error(
+                "Perimeter guard enabled but no perimeter_config was provided."
+            )
+            return
+        try:
+            self.perimeter_guard = PerimeterGuard.load_from_yaml(self.perimeter_config)
+        except Exception as exc:  # noqa: BLE001
+            self.perimeter_guard_error = str(exc)
+            self.get_logger().error(
+                f"Failed to load perimeter guard from {self.perimeter_config}: {exc}"
+            )
+            return
+
+        self.get_logger().info(
+            "Loaded perimeter guard: "
+            f"{os.path.basename(self.perimeter_guard.source_path)} "
+            f"frame={self.perimeter_guard.frame_id} "
+            f"keep_outs={len(self.perimeter_guard.keep_outs)}"
+        )
 
     def load_speed_profile(self) -> None:
         self.speed_profile = None
@@ -554,9 +818,7 @@ class PositionHoverDemoSequenceNode(Node):
             )
             return
         try:
-            self.speed_profile = Px4ParamProfile.load_from_yaml(
-                self.speed_profile_config
-            )
+            self.speed_profile = Px4ParamProfile.load_from_yaml(self.speed_profile_config)
         except Exception as exc:  # noqa: BLE001
             self.speed_profile_error = str(exc)
             self.get_logger().error(
@@ -596,15 +858,135 @@ class PositionHoverDemoSequenceNode(Node):
                 return param_name
         return None
 
-    def publish_manual(self, throttle_cmd: float) -> None:
-        msg = ManualControl()
-        msg.header.stamp = self.get_clock().now().to_msg()
-        msg.x = 0.0
-        msg.y = 0.0
-        msg.z = float(clamp(throttle_cmd, 0.0, 1000.0))
-        msg.r = 0.0
-        msg.buttons = 0
-        self.manual_pub.publish(msg)
+    def perimeter_start_violation_reason(
+        self,
+        start_xy: Tuple[float, float],
+    ) -> Optional[str]:
+        if not self.enable_perimeter_guard:
+            return None
+        if self.perimeter_guard is None:
+            return self.perimeter_guard_error or "perimeter guard is unavailable"
+        if not self.perimeter_guard.frame_matches(self.goal_frame_id):
+            return (
+                f"goal frame '{self.goal_frame_id}' does not match perimeter frame "
+                f"'{self.perimeter_guard.frame_id}'"
+            )
+
+        current_frame = self.current_frame_id()
+        if current_frame and not self.perimeter_guard.frame_matches(current_frame):
+            return (
+                f"local pose frame '{current_frame}' does not match perimeter frame "
+                f"'{self.perimeter_guard.frame_id}'"
+            )
+
+        start_reason = self.perimeter_guard.xy_violation_reason(
+            start_xy[0],
+            start_xy[1],
+            boundary_tolerance_m=self.perimeter_boundary_tolerance_m,
+            boundary_margin_m=self.perimeter_boundary_margin_m,
+            keep_out_margin_m=self.perimeter_keep_out_margin_m,
+        )
+        if start_reason is not None:
+            return f"start position is unsafe: {start_reason}"
+
+        if self.demo_mode == "circle":
+            keep_out_orbit_error = self.configure_circle_keep_out_orbit()
+            if keep_out_orbit_error is not None:
+                return keep_out_orbit_error
+            if self.circle_radius_m <= 0.0:
+                return "circle_radius_m must be > 0"
+            if self.circle_speed_mps <= 0.0:
+                return "circle_speed_mps must be > 0"
+            if self.circle_loops <= 0.0:
+                return "circle_loops must be > 0"
+
+            altitude_reason = self.perimeter_guard.goal_altitude_violation_reason(
+                self.circle_altitude_m
+            )
+            if altitude_reason is not None:
+                return altitude_reason
+
+            sample_count = max(self.circle_sample_count, 24)
+            for idx in range(sample_count):
+                angle_rad = (2.0 * math.pi * idx) / sample_count
+                point_xy = self.circle_point_xy(angle_rad)
+                circle_reason = self.perimeter_guard.xy_violation_reason(
+                    point_xy[0],
+                    point_xy[1],
+                    boundary_tolerance_m=self.perimeter_boundary_tolerance_m,
+                    boundary_margin_m=self.perimeter_boundary_margin_m,
+                    keep_out_margin_m=self.perimeter_keep_out_margin_m,
+                )
+                if circle_reason is not None:
+                    return f"circle orbit is unsafe at angle {angle_rad:.2f} rad: {circle_reason}"
+
+            entry_angle_rad, entry_distance_m = self.choose_circle_entry_angle(start_xy)
+            if entry_angle_rad is None:
+                return "no safe straight-line entry path to the circle was found"
+            if (
+                self.max_circle_entry_distance_from_start_m > 0.0
+                and entry_distance_m is not None
+                and entry_distance_m > self.max_circle_entry_distance_from_start_m
+            ):
+                return (
+                    f"circle entry is {entry_distance_m:.2f} m from start, exceeds "
+                    f"{self.max_circle_entry_distance_from_start_m:.2f} m limit"
+                )
+            self.circle_entry_angle_rad = entry_angle_rad
+            return None
+
+        goal_reason = self.perimeter_guard.xy_violation_reason(
+            self.goal_x_m,
+            self.goal_y_m,
+            boundary_tolerance_m=self.perimeter_boundary_tolerance_m,
+            boundary_margin_m=self.perimeter_boundary_margin_m,
+            keep_out_margin_m=self.perimeter_keep_out_margin_m,
+        )
+        if goal_reason is not None:
+            return f"goal position is unsafe: {goal_reason}"
+
+        altitude_reason = self.perimeter_guard.goal_altitude_violation_reason(
+            self.goal_z_m
+        )
+        if altitude_reason is not None:
+            return altitude_reason
+
+        path_reason = self.perimeter_guard.segment_violation_reason(
+            start_xy,
+            self.goal_xy(),
+            sample_step_m=self.perimeter_segment_sample_step_m,
+            boundary_tolerance_m=self.perimeter_boundary_tolerance_m,
+            boundary_margin_m=self.perimeter_boundary_margin_m,
+            keep_out_margin_m=self.perimeter_keep_out_margin_m,
+        )
+        if path_reason is not None:
+            return f"straight-line path to goal is unsafe: {path_reason}"
+        return None
+
+    def perimeter_runtime_violation_reason(self) -> Optional[str]:
+        if not self.enable_perimeter_guard or self.perimeter_guard is None:
+            return None
+
+        current_xy = self.current_xy()
+        xy_reason = self.perimeter_guard.xy_violation_reason(
+            current_xy[0],
+            current_xy[1],
+            boundary_tolerance_m=self.perimeter_boundary_tolerance_m,
+            boundary_margin_m=self.perimeter_boundary_margin_m,
+            keep_out_margin_m=self.perimeter_keep_out_margin_m,
+        )
+        if xy_reason is not None:
+            return xy_reason
+
+        return self.perimeter_guard.runtime_ceiling_violation_reason(
+            self.current_altitude_m(),
+            ceiling_tolerance_m=self.perimeter_ceiling_tolerance_m,
+        )
+
+    def publish_status(self) -> None:
+        msg = String()
+        msg.data = self.demo_state
+        self.status_pub.publish(msg)
 
     def startable(self) -> Tuple[bool, str]:
         if self.demo_state not in {"IDLE", "COMPLETE", "ABORT"}:
@@ -651,6 +1033,53 @@ class PositionHoverDemoSequenceNode(Node):
                 return False, "external pose source is not active"
         if self.latest_state.armed:
             return False, "refusing to start because the vehicle is already armed"
+        start_xy = self.current_xy()
+        if self.demo_mode == "goto":
+            goal_offset_m = math.hypot(
+                self.goal_x_m - start_xy[0],
+                self.goal_y_m - start_xy[1],
+            )
+            if (
+                self.max_goal_distance_from_start_m > 0.0
+                and goal_offset_m > self.max_goal_distance_from_start_m
+            ):
+                return (
+                    False,
+                    f"goal is {goal_offset_m:.2f} m from start, exceeds "
+                    f"{self.max_goal_distance_from_start_m:.2f} m limit",
+                )
+        else:
+            if self.circle_use_keep_out_orbit:
+                keep_out_orbit_error = self.configure_circle_keep_out_orbit()
+                if keep_out_orbit_error is not None:
+                    return False, keep_out_orbit_error
+            if self.circle_radius_m <= 0.0:
+                return False, "circle_radius_m must be > 0"
+            if self.circle_speed_mps <= 0.0:
+                return False, "circle_speed_mps must be > 0"
+            if self.circle_loops <= 0.0:
+                return False, "circle_loops must be > 0"
+            if not self.enable_perimeter_guard:
+                entry_angle_rad, entry_distance_m = self.choose_circle_entry_angle(start_xy)
+                self.circle_entry_angle_rad = entry_angle_rad
+                if (
+                    self.max_circle_entry_distance_from_start_m > 0.0
+                    and entry_distance_m is not None
+                    and entry_distance_m > self.max_circle_entry_distance_from_start_m
+                ):
+                    return (
+                        False,
+                        f"circle entry is {entry_distance_m:.2f} m from start, exceeds "
+                        f"{self.max_circle_entry_distance_from_start_m:.2f} m limit",
+                    )
+        perimeter_reason = self.perimeter_start_violation_reason(start_xy)
+        if perimeter_reason is not None:
+            return False, perimeter_reason
+        if self.demo_mode == "circle" and self.circle_entry_angle_rad is None:
+            entry_angle_rad, _ = self.choose_circle_entry_angle(start_xy)
+            self.circle_entry_angle_rad = entry_angle_rad
+            if self.circle_entry_angle_rad is None:
+                return False, "failed to choose a circle entry point"
         return True, "ready"
 
     def handle_start_request(
@@ -667,8 +1096,7 @@ class PositionHoverDemoSequenceNode(Node):
         self.takeoff_origin_xy = self.current_xy()
         self.takeoff_origin_altitude_m = self.current_altitude_m()
         self.touchdown_started_s = None
-        self.arm_request_sent = False
-        self.disarm_request_sent = False
+        self.goal_reached_started_s = None
         self.takeoff_request_sent = False
         self.takeoff_request_accepted = False
         self.pending_takeoff_target = None
@@ -691,19 +1119,15 @@ class PositionHoverDemoSequenceNode(Node):
         self.last_mode_request_time_s = 0.0
         self.next_param_pull_attempt_s = 0.0
         self.param_pull_attempt_count = 0
-
-        start_above_home_m = self.takeoff_origin_above_home_m()
-        if start_above_home_m is not None:
-            self.get_logger().info(
-                "Takeoff reference: "
-                f"start_z={self.takeoff_origin_altitude_m:.2f} m "
-                f"home_z={self.latest_home_position.position.z:.2f} m "
-                f"start_minus_home={start_above_home_m:.2f} m"
-            )
+        self.arm_request_sent = False
+        self.disarm_request_sent = False
+        self.offboard_setpoint = None
+        self.circle_started_s = None
+        self.circle_fixed_yaw_rad = None
 
         self.transition_to("SYNC_TAKEOFF_PARAM", "start requested")
         response.success = True
-        response.message = "position hover demo sequence started"
+        response.message = "position goto demo sequence started"
         return response
 
     def handle_abort_request(
@@ -726,8 +1150,14 @@ class PositionHoverDemoSequenceNode(Node):
         self.stage_started_s = self.now_s()
         if new_state == "TAKEOFF":
             self.last_takeoff_progress_log_s = 0.0
+        if new_state == "ORBIT":
+            self.circle_started_s = self.stage_started_s
+        elif new_state != "MOVE_TO_CIRCLE_ENTRY":
+            self.circle_started_s = None
         if new_state != "WAIT_TOUCHDOWN":
             self.touchdown_started_s = None
+        if new_state not in {"GOAL_HOLD", "ORBIT_HOLD"}:
+            self.goal_reached_started_s = None
         if reason:
             self.get_logger().info(f"State {old_state} -> {new_state}: {reason}")
         else:
@@ -747,8 +1177,6 @@ class PositionHoverDemoSequenceNode(Node):
     def stage_timeout_limit_s(self) -> Optional[float]:
         if self.demo_state in self.TERMINAL_STATES:
             return None
-        if self.demo_state == "HOVER":
-            return max(self.stage_timeout_s, self.hover_duration_s + 2.0)
         if self.demo_state == "SYNC_TAKEOFF_PARAM":
             return max(self.stage_timeout_s, self.param_sync_timeout_s)
         if self.demo_state == "SYNC_SPEED_PROFILE":
@@ -757,6 +1185,10 @@ class PositionHoverDemoSequenceNode(Node):
             return max(self.stage_timeout_s, 25.0)
         if self.demo_state == "RESTORE_SPEED_PROFILE":
             return max(self.stage_timeout_s, self.param_sync_timeout_s)
+        if self.demo_state in {"GOAL_HOLD", "ORBIT_HOLD"}:
+            return max(self.stage_timeout_s, self.goal_hold_duration_s + 2.0)
+        if self.demo_state == "ORBIT":
+            return max(self.stage_timeout_s, self.circle_total_duration_s() + 5.0)
         return self.stage_timeout_s
 
     def request_mode(self, mode_name: str) -> None:
@@ -1132,6 +1564,71 @@ class PositionHoverDemoSequenceNode(Node):
                     self.pending_param_value = None
                     self.pending_param_name = None
 
+    def make_pose_setpoint(
+        self,
+        x_m: float,
+        y_m: float,
+        z_m: float,
+        yaw_rad: float,
+    ) -> PoseStamped:
+        msg = PoseStamped()
+        msg.header.frame_id = self.goal_frame_id or "map"
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.pose.position.x = float(x_m)
+        msg.pose.position.y = float(y_m)
+        msg.pose.position.z = float(z_m)
+        qx, qy, qz, qw = quaternion_from_yaw(yaw_rad)
+        msg.pose.orientation.x = qx
+        msg.pose.orientation.y = qy
+        msg.pose.orientation.z = qz
+        msg.pose.orientation.w = qw
+        return msg
+
+    def current_hold_pose(self) -> PoseStamped:
+        pose = self.latest_pose
+        msg = PoseStamped()
+        msg.header.frame_id = pose.header.frame_id or self.goal_frame_id or "map"
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.pose = pose.pose
+        return msg
+
+    def goal_pose(self) -> PoseStamped:
+        yaw_rad = self.current_yaw_rad() if self.use_current_yaw_for_goal else self.goal_yaw_rad
+        return self.make_pose_setpoint(
+            self.goal_x_m,
+            self.goal_y_m,
+            self.goal_z_m,
+            yaw_rad,
+        )
+
+    def circle_pose(self, angle_rad: float) -> PoseStamped:
+        x_m, y_m = self.circle_point_xy(angle_rad)
+        yaw_rad = (
+            self.circle_fixed_yaw_rad
+            if self.circle_fixed_yaw_rad is not None
+            else self.current_yaw_rad()
+        )
+        return self.make_pose_setpoint(x_m, y_m, self.circle_altitude_m, yaw_rad)
+
+    def publish_setpoint_for_state(self) -> None:
+        if self.demo_state not in self.OFFBOARD_PUBLISH_STATES:
+            return
+        if self.offboard_setpoint is None:
+            return
+        msg = PoseStamped()
+        msg.header = self.offboard_setpoint.header
+        msg.pose = self.offboard_setpoint.pose
+        msg.header.stamp = self.get_clock().now().to_msg()
+        self.position_setpoint_pub.publish(msg)
+
+    def goal_position_error_m(self) -> Optional[float]:
+        if self.offboard_setpoint is None:
+            return None
+        dx = float(self.latest_pose.pose.position.x - self.offboard_setpoint.pose.position.x)
+        dy = float(self.latest_pose.pose.position.y - self.offboard_setpoint.pose.position.y)
+        dz = float(self.latest_pose.pose.position.z - self.offboard_setpoint.pose.position.z)
+        return math.sqrt(dx * dx + dy * dy + dz * dz)
+
     def run_safety_checks(self) -> None:
         if self.demo_state in self.TERMINAL_STATES:
             return
@@ -1167,9 +1664,11 @@ class PositionHoverDemoSequenceNode(Node):
             return
         if not self.pose_fresh():
             pose_age_s = self.now_s() - self.last_pose_time_s
-            self.enter_abort(
-                f"lost local pose updates (age {pose_age_s:.2f}s)"
-            )
+            self.enter_abort(f"lost local pose updates (age {pose_age_s:.2f}s)")
+            return
+        perimeter_reason = self.perimeter_runtime_violation_reason()
+        if perimeter_reason is not None:
+            self.enter_abort(f"perimeter violation: {perimeter_reason}")
             return
         if self.require_companion_active:
             if not self.companion_status_fresh():
@@ -1178,31 +1677,7 @@ class PositionHoverDemoSequenceNode(Node):
             if not self.companion_active:
                 self.enter_abort("external pose companion status is not active")
                 return
-        if (
-            self.takeoff_origin_xy is not None
-            and self.latest_state.armed
-            and self.max_horizontal_excursion_m > 0.0
-            and self.horizontal_excursion_m() > self.max_horizontal_excursion_m
-        ):
-            self.enter_abort(
-                f"horizontal excursion exceeded "
-                f"{self.max_horizontal_excursion_m:.2f} m"
-            )
-            return
-        if (
-            self.demo_state in {"SET_HOVER_MODE", "HOVER"}
-            and self.hover_mode == "POSCTL"
-            and self.mode_future is None
-            and not self.mode_matches("POSCTL")
-        ):
-            self.enter_abort(
-                f"mode mismatch during {self.demo_state}: {self.latest_state.mode}"
-            )
-            return
-        if (
-            self.demo_state == "TAKEOFF"
-            and not self.latest_state.armed
-        ):
+        if self.demo_state == "TAKEOFF" and not self.latest_state.armed:
             if self.arm_request_sent and self.mode_future is None:
                 self.enter_abort(
                     f"vehicle disarmed during takeoff while mode={self.latest_state.mode}"
@@ -1223,6 +1698,15 @@ class PositionHoverDemoSequenceNode(Node):
                     f"lost takeoff mode during climb: {self.latest_state.mode}"
                 )
                 return
+        if (
+            self.demo_state in {"GOTO", "GOAL_HOLD", "MOVE_TO_CIRCLE_ENTRY", "ORBIT", "ORBIT_HOLD"}
+            and self.mode_future is None
+            and not self.mode_matches(self.offboard_mode)
+        ):
+            self.enter_abort(
+                f"mode mismatch during {self.demo_state}: {self.latest_state.mode}"
+            )
+            return
 
         timeout_limit = self.stage_timeout_limit_s()
         if timeout_limit is not None and self.stage_elapsed_s() > timeout_limit:
@@ -1357,68 +1841,117 @@ class PositionHoverDemoSequenceNode(Node):
                 if self.takeoff_origin_altitude_m is not None
                 else 0.0
             )
-            current_above_home_m = self.current_altitude_above_home_m()
             if (
                 self.last_takeoff_progress_log_s == 0.0
                 or (self.now_s() - self.last_takeoff_progress_log_s) >= 1.0
             ):
-                progress_message = (
+                self.get_logger().info(
                     "Takeoff progress: "
                     f"delta_z={altitude_delta_m:.2f} m "
                     f"target_delta_z={self.takeoff_altitude_m:.2f} m "
                     f"mode={self.latest_state.mode} "
                     f"armed={self.latest_state.armed}"
                 )
-                if current_above_home_m is not None:
-                    progress_message += (
-                        f" local_minus_home={current_above_home_m:.2f} m"
-                    )
-                self.get_logger().info(progress_message)
                 self.last_takeoff_progress_log_s = self.now_s()
             if current_altitude_m >= (target_altitude_m - self.altitude_tolerance_m):
-                if self.mode_matches(self.hover_mode):
-                    self.transition_to("HOVER", "target altitude reached")
-                else:
-                    self.transition_to("SET_HOVER_MODE", "target altitude reached")
+                self.offboard_setpoint = self.current_hold_pose()
+                self.transition_to("WARMUP_OFFBOARD", "target altitude reached")
                 return
             if self.is_takeoff_handoff_mode():
                 shortfall_m = max(target_altitude_m - current_altitude_m, 0.0)
-                start_above_home_m = self.takeoff_origin_above_home_m()
                 if shortfall_m > self.altitude_tolerance_m:
-                    warn_message = (
+                    self.get_logger().warn(
                         "PX4 exited AUTO.TAKEOFF before the demo observed the "
                         f"target altitude; shortfall={shortfall_m:.2f} m "
-                        f"mode={self.latest_state.mode}"
+                        f"mode={self.latest_state.mode}. Accepting handoff."
                     )
-                    if current_above_home_m is not None and start_above_home_m is not None:
-                        warn_message += (
-                            f" local_minus_home={current_above_home_m:.2f} m"
-                            f" start_minus_home={start_above_home_m:.2f} m"
+                self.offboard_setpoint = self.current_hold_pose()
+                self.transition_to(
+                    "WARMUP_OFFBOARD",
+                    f"PX4 handed off to {self.latest_state.mode} during takeoff",
+                )
+            return
+
+        if self.demo_state == "WARMUP_OFFBOARD":
+            if self.offboard_setpoint is None:
+                self.offboard_setpoint = self.current_hold_pose()
+            if self.stage_elapsed_s() >= self.offboard_setpoint_warmup_s:
+                self.transition_to("SET_OFFBOARD_MODE", "offboard setpoint warmup complete")
+            return
+
+        if self.demo_state == "SET_OFFBOARD_MODE":
+            if self.mode_matches(self.offboard_mode):
+                if self.demo_mode == "circle":
+                    self.circle_fixed_yaw_rad = self.current_yaw_rad()
+                    self.offboard_setpoint = self.circle_entry_pose()
+                    if self.offboard_setpoint is None:
+                        self.enter_abort("circle entry pose is unavailable")
+                    else:
+                        self.transition_to(
+                            "MOVE_TO_CIRCLE_ENTRY",
+                            "OFFBOARD confirmed for circle demo",
                         )
-                    warn_message += ". Accepting hover handoff."
-                    self.get_logger().warn(warn_message)
-                if self.mode_matches(self.hover_mode):
-                    self.transition_to(
-                        "HOVER",
-                        f"PX4 handed off to {self.latest_state.mode} during takeoff",
-                    )
                 else:
-                    self.transition_to(
-                        "SET_HOVER_MODE",
-                        f"PX4 handed off to {self.latest_state.mode} during takeoff",
-                    )
-            return
-
-        if self.demo_state == "SET_HOVER_MODE":
-            if self.mode_matches(self.hover_mode):
-                self.transition_to("HOVER", "hover mode confirmed")
+                    self.offboard_setpoint = self.goal_pose()
+                    self.transition_to("GOTO", "OFFBOARD confirmed")
             elif self.mode_future is None and self.mode_request_retry_ready():
-                self.request_mode(self.hover_mode)
+                self.request_mode(self.offboard_mode)
             return
 
-        if self.demo_state == "HOVER":
-            if self.stage_elapsed_s() >= self.hover_duration_s:
-                self.transition_to("SET_LAND_MODE", "hover complete")
+        if self.demo_state == "MOVE_TO_CIRCLE_ENTRY":
+            error_m = self.goal_position_error_m()
+            if error_m is not None and error_m <= self.goal_position_tolerance_m:
+                if self.circle_entry_angle_rad is None:
+                    self.enter_abort("circle entry angle is unavailable")
+                    return
+                self.offboard_setpoint = self.circle_pose(self.circle_entry_angle_rad)
+                self.transition_to("ORBIT", "circle entry reached")
+            return
+
+        if self.demo_state == "GOTO":
+            error_m = self.goal_position_error_m()
+            if error_m is not None and error_m <= self.goal_position_tolerance_m:
+                self.transition_to("GOAL_HOLD", "goal position reached")
+            return
+
+        if self.demo_state == "GOAL_HOLD":
+            error_m = self.goal_position_error_m()
+            if error_m is None:
+                return
+            if error_m > self.goal_position_tolerance_m:
+                self.transition_to("GOTO", "goal hold broken")
+                return
+            if self.stage_elapsed_s() >= self.goal_hold_duration_s:
+                self.transition_to("SET_LAND_MODE", "goal hold complete")
+            return
+
+        if self.demo_state == "ORBIT":
+            if self.circle_entry_angle_rad is None:
+                self.enter_abort("circle entry angle is unavailable")
+                return
+            total_duration_s = self.circle_total_duration_s()
+            if total_duration_s <= 0.0:
+                self.enter_abort("circle duration is invalid")
+                return
+            progress = min(max(self.stage_elapsed_s() / total_duration_s, 0.0), 1.0)
+            angle_rad = self.circle_entry_angle_rad + (
+                self.circle_direction_sign() * self.circle_total_angle_rad() * progress
+            )
+            self.offboard_setpoint = self.circle_pose(angle_rad)
+            if self.stage_elapsed_s() >= total_duration_s:
+                self.transition_to("ORBIT_HOLD", "circle complete")
+            return
+
+        if self.demo_state == "ORBIT_HOLD":
+            if self.circle_entry_angle_rad is None:
+                self.enter_abort("circle entry angle is unavailable")
+                return
+            final_angle_rad = self.circle_entry_angle_rad + (
+                self.circle_direction_sign() * self.circle_total_angle_rad()
+            )
+            self.offboard_setpoint = self.circle_pose(final_angle_rad)
+            if self.stage_elapsed_s() >= self.goal_hold_duration_s:
+                self.transition_to("SET_LAND_MODE", "orbit hold complete")
             return
 
         if self.demo_state == "SET_LAND_MODE":
@@ -1441,7 +1974,9 @@ class PositionHoverDemoSequenceNode(Node):
                         "vehicle auto-disarmed after landing",
                     )
                 else:
-                    self.transition_to("COMPLETE", "vehicle auto-disarmed after landing")
+                    self.transition_to(
+                        "COMPLETE", "vehicle auto-disarmed after landing"
+                    )
                 return
             if self.current_altitude_m() <= self.touchdown_threshold_altitude_m():
                 if self.touchdown_started_s is None:
@@ -1607,26 +2142,17 @@ class PositionHoverDemoSequenceNode(Node):
                 )
             return
 
-    def publish_manual_for_state(self) -> None:
-        if self.demo_state == "ARMING":
-            self.publish_manual(throttle_cmd=0.0)
-            return
-        if self.hover_mode != "POSCTL":
-            return
-        if self.demo_state in {"SET_HOVER_MODE", "HOVER"}:
-            self.publish_manual(self.manual_hover_throttle_center)
-
     def timer_callback(self) -> None:
         self.poll_service_futures()
         self.run_safety_checks()
         self.step_state_machine()
-        self.publish_manual_for_state()
+        self.publish_setpoint_for_state()
         self.publish_status()
 
 
 def main(args=None) -> None:
     rclpy.init(args=args)
-    node = PositionHoverDemoSequenceNode()
+    node = PositionGotoDemoSequenceNode()
 
     try:
         rclpy.spin(node)

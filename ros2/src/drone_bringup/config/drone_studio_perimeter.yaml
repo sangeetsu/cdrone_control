@@ -1,0 +1,65 @@
+version: 1
+name: drone_studio
+frame_id: map
+source_pose_topic: /mavros/local_position/pose
+finalized_from: perimeter.yaml
+finalized_at_utc: '2026-04-13T01:05:30+00:00'
+
+notes:
+  - boundary XY was sampled on the floor and is the intended safe inner fly boundary
+  - pillar XY was sampled at elevated marker height because floor detection was wavy
+  - pillar Z is intentionally ignored for enforcement; the pillar keep-out is XY-only
+  - the flight ceiling is 2.5 m above the measured floor reference from the boundary samples
+
+floor_reference_m:
+  sampled_floor_z_mean_m: 0.1436
+  sampled_floor_z_min_m: 0.1314
+  sampled_floor_z_max_m: 0.1511
+
+altitude_limits_m:
+  min_z_m: 0.35
+  max_z_m: 2.6436
+  min_height_above_floor_m: 0.2064
+  max_height_above_floor_m: 2.5
+
+boundary_polygon_xy_m:
+  - name: north_west
+    x_m: -12.8963
+    y_m: 12.3315
+  - name: north_east
+    x_m: 5.2392
+    y_m: 12.7477
+  - name: south_east
+    x_m: 3.8063
+    y_m: -4.0075
+  - name: south_west
+    x_m: -14.2857
+    y_m: -4.3622
+
+keep_out_polygons_xy_m:
+  - name: studio_pillar
+    enforce_xy_only: true
+    vertices_xy_m:
+      - name: pillar_nw
+        x_m: -7.6159
+        y_m: 6.3784
+      - name: pillar_ne
+        x_m: -3.4622
+        y_m: 6.1128
+      - name: pillar_se
+        x_m: -3.6881
+        y_m: 2.5966
+      - name: pillar_sw
+        x_m: -7.5636
+        y_m: 2.4560
+
+geometry_summary:
+  boundary_area_m2: 302.399
+  pillar_keep_out_area_m2: 14.937
+  min_pillar_vertex_to_boundary_m: 5.756
+
+recommended_policy:
+  reject_goals_outside_boundary: true
+  reject_goals_inside_keep_out: true
+  block_motion_toward_violation: true
+  hold_zero_velocity_on_violation: true
