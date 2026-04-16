@@ -20,6 +20,7 @@
     <exec_depend>tf2_geometry_msgs</exec_depend>
     <exec_depend>tf2_ros</exec_depend>
     <exec_depend>drone_control_pkg</exec_depend>
+    <exec_depend>drone_vision_pkg</exec_depend>
     <exec_depend>ros2_poselib</exec_depend>
 
     <test_depend>ament_lint_auto</test_depend>

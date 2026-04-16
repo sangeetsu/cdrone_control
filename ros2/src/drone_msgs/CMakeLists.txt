@@ -12,6 +12,8 @@ find_package(builtin_interfaces REQUIRED)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/TargetTrack.msg"
   "msg/TargetTrackArray.msg"
+  "msg/WorldTargetTrack.msg"
+  "msg/WorldTargetTrackArray.msg"
   "msg/EngagementState.msg"
   "msg/LightCommand.msg"
   "msg/FlightStatus.msg"

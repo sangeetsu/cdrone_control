@@ -14,7 +14,7 @@ The intended sequence is:
 
 1. prove hover still works
 2. prove a short safe goto south of the pillar
-3. prove a longer goto to a safer east-side interior point
+3. prove a longer goto to the south-side staging point for the pillar orbit
 4. only then try the circle demo
 
 ## Assumptions
@@ -94,8 +94,8 @@ Terminal 1:
 
 ```bash
 ros2 launch drone_bringup position_hover_demo.launch.py \
-  takeoff_altitude_m:=0.7 \
-  hover_duration_s:=3.0 \
+  takeoff_altitude_m:=1.5 \
+  hover_duration_s:=30.0 \
   use_speed_profile:=true
 ```
 
@@ -174,23 +174,23 @@ Expected result:
 - hold
 - land
 
-## Phase 3: Longer Goto To A Safer East-Side Interior Point
+## Phase 3: Longer Goto To The Circle Staging Point
 
-Use this updated target instead of the old east-edge quarter point:
+Use the south-side staging point for the pillar-centered orbit:
 
-- `goal_x_m:=-0.14`
-- `goal_y_m:=0.19`
+- `goal_x_m:=-5.62`
+- `goal_y_m:=0.40`
 
-This point is still south of the pillar, is interior to the perimeter, and stages well for the circle demo.
+This point is south of the pillar keep-out, stays comfortably inside the studio boundary, and lines up with the current circle demo geometry. Keep the indoor speed profile enabled for this phase.
 
 Terminal 1:
 
 ```bash
 ros2 launch drone_bringup position_goto_demo.launch.py \
-  goal_x_m:=-0.14 \
-  goal_y_m:=0.19 \
+  goal_x_m:=-5.62 \
+  goal_y_m:=0.40 \
   goal_z_m:=2.0 \
-  max_goal_distance_from_start_m:=16.0 \
+  max_goal_distance_from_start_m:=8.0 \
   use_speed_profile:=true \
   perimeter_boundary_margin_m:=1.0 \
   perimeter_keep_out_margin_m:=0.3
@@ -220,7 +220,7 @@ Expected result:
 
 - take off
 - switch to OFFBOARD
-- fly to the east-side interior point at `2.0 m`
+- fly to the south-side staging point at `2.0 m`
 - hold
 - land near that point
 
@@ -234,11 +234,18 @@ The cleanest setup is:
 2. leave the drone where it landed
 3. start the circle demo from that new position
 
-The default circle center is already perimeter-checked and sits in safe space:
+The circle is derived from the pillar keep-out, not from a free-space hardcoded center. With the current studio geometry it comes out to approximately:
 
-- center `(-0.1357, 0.1878)`
-- radius `3.0 m`
+- center `(-5.6181, 4.4087)`
+- radius `4.0055 m`
+- pillar clearance `1.2 m`
 - altitude `2.0 m`
+
+Before you call the start service, check the launch console for a line like:
+
+- `Circle plan: source=keep-out 'studio_pillar' center=(-5.618, 4.409) radius=4.006 m`
+
+If the printed center is near `(-0.136, 0.188)` or the radius is near `3.0 m`, stop and do not fly that run.
 
 For the first real flight, use a slower circle speed than the default:
 
@@ -250,6 +257,10 @@ Terminal 1:
 ros2 launch drone_bringup position_circle_demo.launch.py \
   circle_altitude_m:=2.0 \
   circle_speed_mps:=0.5 \
+  circle_use_keep_out_orbit:=true \
+  circle_keep_out_name:=studio_pillar \
+  circle_keep_out_clearance_m:=1.2 \
+  max_circle_entry_distance_from_start_m:=8.0 \
   use_speed_profile:=true \
   perimeter_boundary_margin_m:=1.0 \
   perimeter_keep_out_margin_m:=0.3

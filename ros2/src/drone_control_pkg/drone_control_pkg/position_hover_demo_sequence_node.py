@@ -87,6 +87,9 @@ class PositionHoverDemoSequenceNode(Node):
         self.declare_parameter("takeoff_altitude_m", 0.7)
         self.declare_parameter("takeoff_rate_m_s", 0.5)
         self.declare_parameter("takeoff_strategy", "AUTO_MODE")
+        self.declare_parameter("auto_takeoff_fallback_enabled", True)
+        self.declare_parameter("auto_takeoff_fallback_timeout_s", 3.0)
+        self.declare_parameter("auto_takeoff_fallback_min_delta_m", 0.05)
         self.declare_parameter("hover_duration_s", 5.0)
         self.declare_parameter("hover_mode", "HOLD")
         self.declare_parameter("altitude_tolerance_m", 0.10)
@@ -133,6 +136,15 @@ class PositionHoverDemoSequenceNode(Node):
         self.takeoff_rate_m_s = float(self.get_parameter("takeoff_rate_m_s").value)
         self.takeoff_strategy = normalize_takeoff_strategy(
             str(self.get_parameter("takeoff_strategy").value)
+        )
+        self.auto_takeoff_fallback_enabled = bool(
+            self.get_parameter("auto_takeoff_fallback_enabled").value
+        )
+        self.auto_takeoff_fallback_timeout_s = float(
+            self.get_parameter("auto_takeoff_fallback_timeout_s").value
+        )
+        self.auto_takeoff_fallback_min_delta_m = float(
+            self.get_parameter("auto_takeoff_fallback_min_delta_m").value
         )
         self.hover_duration_s = float(self.get_parameter("hover_duration_s").value)
         self.hover_mode = normalize_hover_mode(
@@ -292,6 +304,7 @@ class PositionHoverDemoSequenceNode(Node):
         self.speed_profile_original_values: dict[str, float] = {}
         self.speed_profile_applied_names: set[str] = set()
         self.speed_profile_changed_names: set[str] = set()
+        self.speed_profile_skipped_names: set[str] = set()
         self.arm_request_sent = False
         self.disarm_request_sent = False
         self.connection_lost_since_s: Optional[float] = None
@@ -581,12 +594,16 @@ class PositionHoverDemoSequenceNode(Node):
             return True
         return all(
             name in self.speed_profile_applied_names
+            or name in self.speed_profile_skipped_names
             for name in self.speed_profile_param_names
         )
 
     def next_speed_profile_param_to_apply(self) -> Optional[str]:
         for param_name in self.speed_profile_param_names:
-            if param_name not in self.speed_profile_applied_names:
+            if (
+                param_name not in self.speed_profile_applied_names
+                and param_name not in self.speed_profile_skipped_names
+            ):
                 return param_name
         return None
 
@@ -686,6 +703,7 @@ class PositionHoverDemoSequenceNode(Node):
         self.speed_profile_original_values = {}
         self.speed_profile_applied_names = set()
         self.speed_profile_changed_names = set()
+        self.speed_profile_skipped_names = set()
         self.connection_lost_since_s = None
         self.connection_loss_warned = False
         self.last_mode_request_time_s = 0.0
@@ -896,6 +914,17 @@ class PositionHoverDemoSequenceNode(Node):
             f"Requested {resolved_param_name}={float(value):.2f}"
         )
 
+    def skip_speed_profile_param(self, param_name: str, reason: str) -> None:
+        if param_name in self.speed_profile_skipped_names:
+            return
+        self.speed_profile_skipped_names.add(param_name)
+        self.speed_profile_original_values.pop(param_name, None)
+        self.speed_profile_changed_names.discard(param_name)
+        self.speed_profile_applied_names.discard(param_name)
+        self.get_logger().warn(
+            f"Skipping speed profile parameter {param_name}: {reason}"
+        )
+
     def poll_service_futures(self) -> None:
         if self.mode_future is not None and self.mode_future.done():
             mode_name = self.pending_mode_name or "unknown"
@@ -914,17 +943,50 @@ class PositionHoverDemoSequenceNode(Node):
         if self.arm_future is not None and self.arm_future.done():
             arm_value = bool(self.pending_arm_value)
             action = "arm" if arm_value else "disarm"
+            allow_landing_disarm_handoff = (
+                not arm_value
+                and self.demo_state in {"WAIT_TOUCHDOWN", "DISARMING"}
+                and (
+                    self.is_land_mode()
+                    or self.current_altitude_m()
+                    <= self.touchdown_threshold_altitude_m()
+                )
+            )
             try:
                 response = self.arm_future.result()
                 if not response.success:
-                    self.enter_abort(
-                        f"{action} request was rejected "
-                        f"(result {response.result}, mode={self.latest_state.mode})"
-                    )
+                    if self.latest_state.armed == arm_value:
+                        self.get_logger().warn(
+                            f"{action.capitalize()} request reported failure "
+                            f"(result {response.result}) but the vehicle is already "
+                            f"{'armed' if arm_value else 'disarmed'}; continuing."
+                        )
+                    elif allow_landing_disarm_handoff:
+                        self.get_logger().warn(
+                            "Disarm request reported failure "
+                            f"(result {response.result}) while PX4 is landing; "
+                            "continuing to wait for auto-disarm."
+                        )
+                    else:
+                        self.enter_abort(
+                            f"{action} request was rejected "
+                            f"(result {response.result}, mode={self.latest_state.mode})"
+                        )
                 else:
                     self.get_logger().info(f"{action.capitalize()} request accepted")
             except Exception as exc:
-                self.enter_abort(f"{action} request failed: {exc}")
+                if self.latest_state.armed == arm_value:
+                    self.get_logger().warn(
+                        f"{action.capitalize()} request raised after the vehicle was "
+                        f"already {'armed' if arm_value else 'disarmed'}: {exc}"
+                    )
+                elif allow_landing_disarm_handoff:
+                    self.get_logger().warn(
+                        "Disarm request raised while PX4 is landing; continuing to "
+                        f"wait for auto-disarm: {exc}"
+                    )
+                else:
+                    self.enter_abort(f"{action} request failed: {exc}")
             finally:
                 self.arm_future = None
                 self.pending_arm_value = None
@@ -933,10 +995,20 @@ class PositionHoverDemoSequenceNode(Node):
             try:
                 response = self.takeoff_future.result()
                 if not response.success:
-                    self.enter_abort(
-                        "local takeoff request was rejected "
-                        f"(result {response.result})"
-                    )
+                    if (
+                        self.demo_state == "TAKEOFF"
+                        and self.takeoff_strategy == "AUTO_MODE"
+                    ):
+                        self.get_logger().warn(
+                            "Local takeoff fallback was rejected "
+                            f"(result {response.result}); "
+                            "continuing to monitor AUTO.TAKEOFF."
+                        )
+                    else:
+                        self.enter_abort(
+                            "local takeoff request was rejected "
+                            f"(result {response.result})"
+                        )
                 else:
                     self.takeoff_request_accepted = True
                     target = self.pending_takeoff_target
@@ -948,7 +1020,16 @@ class PositionHoverDemoSequenceNode(Node):
                             f"x={target[0]:.2f} y={target[1]:.2f} z={target[2]:.2f}"
                         )
             except Exception as exc:
-                self.enter_abort(f"local takeoff request failed: {exc}")
+                if (
+                    self.demo_state == "TAKEOFF"
+                    and self.takeoff_strategy == "AUTO_MODE"
+                ):
+                    self.get_logger().warn(
+                        "Local takeoff fallback raised; continuing to monitor "
+                        f"AUTO.TAKEOFF: {exc}"
+                    )
+                else:
+                    self.enter_abort(f"local takeoff request failed: {exc}")
             finally:
                 self.takeoff_future = None
 
@@ -1012,13 +1093,15 @@ class PositionHoverDemoSequenceNode(Node):
                         self.takeoff_param_ready = True
                 elif future_kind == "PROFILE_GET_ORIGINAL":
                     if not response.values:
-                        self.schedule_param_pull_retry(
-                            f"{param_name} not returned yet"
+                        self.skip_speed_profile_param(
+                            param_name,
+                            "it was not returned by MAVROS",
                         )
                         return
                     if not parameter_value_is_declared_numeric(response.values[0]):
-                        self.schedule_param_pull_retry(
-                            f"{param_name} is not declared on MAVROS yet"
+                        self.skip_speed_profile_param(
+                            param_name,
+                            "it is not declared on MAVROS",
                         )
                         return
                     original_value = parameter_value_to_float(response.values[0])
@@ -1068,8 +1151,9 @@ class PositionHoverDemoSequenceNode(Node):
                             else "no response"
                         )
                         if "undeclared" in str(reason).lower():
-                            self.schedule_param_pull_retry(
-                                f"{param_name} not declared yet during set"
+                            self.skip_speed_profile_param(
+                                param_name,
+                                f"set failed because it is not declared: {reason}",
                             )
                             return
                         self.enter_abort(f"failed to set {param_name}: {reason}")
@@ -1375,6 +1459,22 @@ class PositionHoverDemoSequenceNode(Node):
                     )
                 self.get_logger().info(progress_message)
                 self.last_takeoff_progress_log_s = self.now_s()
+            if (
+                self.takeoff_strategy == "AUTO_MODE"
+                and self.auto_takeoff_fallback_enabled
+                and not self.takeoff_request_sent
+                and self.takeoff_future is None
+                and self.stage_elapsed_s() >= self.auto_takeoff_fallback_timeout_s
+                and altitude_delta_m < self.auto_takeoff_fallback_min_delta_m
+            ):
+                self.takeoff_request_sent = True
+                self.get_logger().warn(
+                    "AUTO.TAKEOFF has not produced climb after "
+                    f"{self.stage_elapsed_s():.1f}s "
+                    f"(delta_z={altitude_delta_m:.2f} m); "
+                    "requesting local takeoff fallback."
+                )
+                self.request_takeoff()
             if current_altitude_m >= (target_altitude_m - self.altitude_tolerance_m):
                 if self.mode_matches(self.hover_mode):
                     self.transition_to("HOVER", "target altitude reached")

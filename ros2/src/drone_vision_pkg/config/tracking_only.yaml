@@ -1,0 +1,30 @@
+realsense_tracker_node:
+  ros__parameters:
+    source_mode: direct
+    tracker_rate_hz: 10.0
+    device_id: 0
+    model_path: ""
+    model_input_size: 640
+    detection_conf_threshold: 0.40
+    norfair_distance_threshold: 80.0
+    track_hit_counter_max: 12
+    max_valid_depth_m: 20.0
+    depth_window_px: 5
+    publish_world_tracks: true
+    world_frame: map
+    camera_offset_body_m: [0.0, 0.0, 0.0]
+    camera_rpy_body_rad: [0.0, 0.0, 0.0]
+    align_depth_to_color: true
+    direct_color_width: 848
+    direct_color_height: 480
+    direct_color_fps: 15
+    direct_depth_width: 848
+    direct_depth_height: 480
+    direct_depth_fps: 15
+    color_topic: /camera/color/image_raw
+    depth_topic: /camera/aligned_depth_to_color/image_raw
+    camera_info_topic: /camera/color/camera_info
+    pose_topic: /vrpn_mocap/RigidBody3/pose
+    tracks_topic: ""
+    world_tracks_topic: ""
+    perception_status_topic: ""

@@ -1,0 +1,15 @@
+camera_namespace: camera
+camera_name: camera
+enable_color: true
+enable_depth: true
+enable_infra1: false
+enable_infra2: false
+enable_gyro: false
+enable_accel: false
+enable_sync: true
+pointcloud.enable: false
+align_depth.enable: true
+publish_tf: false
+initial_reset: false
+rgb_camera.color_profile: 848x480x15
+depth_module.depth_profile: 848x480x15

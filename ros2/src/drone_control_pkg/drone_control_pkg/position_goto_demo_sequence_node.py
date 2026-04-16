@@ -182,14 +182,14 @@ class PositionGotoDemoSequenceNode(Node):
         self.declare_parameter("goal_position_tolerance_m", 0.15)
         self.declare_parameter("goal_hold_duration_s", 2.0)
         self.declare_parameter("max_goal_distance_from_start_m", 2.0)
-        self.declare_parameter("circle_center_x_m", -0.1357)
-        self.declare_parameter("circle_center_y_m", 0.1878)
-        self.declare_parameter("circle_radius_m", 3.0)
+        self.declare_parameter("circle_center_x_m", 0.0)
+        self.declare_parameter("circle_center_y_m", 0.0)
+        self.declare_parameter("circle_radius_m", 0.0)
         self.declare_parameter("circle_altitude_m", 2.0)
-        self.declare_parameter("circle_speed_mps", 0.8)
+        self.declare_parameter("circle_speed_mps", 0.5)
         self.declare_parameter("circle_loops", 1.0)
         self.declare_parameter("circle_clockwise", False)
-        self.declare_parameter("circle_use_keep_out_orbit", False)
+        self.declare_parameter("circle_use_keep_out_orbit", True)
         self.declare_parameter("circle_keep_out_name", "studio_pillar")
         self.declare_parameter("circle_keep_out_clearance_m", 1.2)
         self.declare_parameter("circle_sample_count", 180)
@@ -445,6 +445,7 @@ class PositionGotoDemoSequenceNode(Node):
         self.speed_profile_original_values: dict[str, float] = {}
         self.speed_profile_applied_names: set[str] = set()
         self.speed_profile_changed_names: set[str] = set()
+        self.speed_profile_skipped_names: set[str] = set()
         self.arm_request_sent = False
         self.disarm_request_sent = False
         self.connection_lost_since_s: Optional[float] = None
@@ -709,6 +710,11 @@ class PositionGotoDemoSequenceNode(Node):
         )
         return self.make_pose_setpoint(x_m, y_m, self.circle_altitude_m, yaw_rad)
 
+    def circle_entry_xy(self) -> Optional[Tuple[float, float]]:
+        if self.circle_entry_angle_rad is None:
+            return None
+        return self.circle_point_xy(self.circle_entry_angle_rad)
+
     def configure_circle_keep_out_orbit(self) -> Optional[str]:
         if not self.circle_use_keep_out_orbit:
             return None
@@ -777,6 +783,35 @@ class PositionGotoDemoSequenceNode(Node):
                 best_distance = distance_m
         return best_angle, best_distance
 
+    def log_circle_plan(
+        self,
+        start_xy: Tuple[float, float],
+        entry_distance_m: Optional[float] = None,
+    ) -> None:
+        entry_xy = self.circle_entry_xy()
+        entry_text = "unavailable"
+        if entry_xy is not None:
+            entry_text = f"({entry_xy[0]:.3f}, {entry_xy[1]:.3f})"
+        distance_text = "unknown"
+        if entry_distance_m is not None:
+            distance_text = f"{entry_distance_m:.2f} m"
+        source = (
+            f"keep-out '{self.circle_keep_out_name}'"
+            if self.circle_use_keep_out_orbit
+            else "explicit circle_center/circle_radius parameters"
+        )
+        self.get_logger().info(
+            "Circle plan: "
+            f"source={source} "
+            f"center=({self.circle_center_x_m:.3f}, {self.circle_center_y_m:.3f}) "
+            f"radius={self.circle_radius_m:.3f} m "
+            f"entry={entry_text} "
+            f"entry_distance={distance_text} "
+            f"altitude={self.circle_altitude_m:.2f} m "
+            f"speed={self.circle_speed_mps:.2f} m/s "
+            f"start=({start_xy[0]:.3f}, {start_xy[1]:.3f})"
+        )
+
     def load_perimeter_guard(self) -> None:
         self.perimeter_guard = None
         self.perimeter_guard_error = ""
@@ -843,12 +878,16 @@ class PositionGotoDemoSequenceNode(Node):
             return True
         return all(
             name in self.speed_profile_applied_names
+            or name in self.speed_profile_skipped_names
             for name in self.speed_profile_param_names
         )
 
     def next_speed_profile_param_to_apply(self) -> Optional[str]:
         for param_name in self.speed_profile_param_names:
-            if param_name not in self.speed_profile_applied_names:
+            if (
+                param_name not in self.speed_profile_applied_names
+                and param_name not in self.speed_profile_skipped_names
+            ):
                 return param_name
         return None
 
@@ -933,6 +972,7 @@ class PositionGotoDemoSequenceNode(Node):
                     f"{self.max_circle_entry_distance_from_start_m:.2f} m limit"
                 )
             self.circle_entry_angle_rad = entry_angle_rad
+            self.log_circle_plan(start_xy, entry_distance_m)
             return None
 
         goal_reason = self.perimeter_guard.xy_violation_reason(
@@ -1114,6 +1154,7 @@ class PositionGotoDemoSequenceNode(Node):
         self.speed_profile_original_values = {}
         self.speed_profile_applied_names = set()
         self.speed_profile_changed_names = set()
+        self.speed_profile_skipped_names = set()
         self.connection_lost_since_s = None
         self.connection_loss_warned = False
         self.last_mode_request_time_s = 0.0
@@ -1328,6 +1369,17 @@ class PositionGotoDemoSequenceNode(Node):
             f"Requested {resolved_param_name}={float(value):.2f}"
         )
 
+    def skip_speed_profile_param(self, param_name: str, reason: str) -> None:
+        if param_name in self.speed_profile_skipped_names:
+            return
+        self.speed_profile_skipped_names.add(param_name)
+        self.speed_profile_original_values.pop(param_name, None)
+        self.speed_profile_changed_names.discard(param_name)
+        self.speed_profile_applied_names.discard(param_name)
+        self.get_logger().warn(
+            f"Skipping speed profile parameter {param_name}: {reason}"
+        )
+
     def poll_service_futures(self) -> None:
         if self.mode_future is not None and self.mode_future.done():
             mode_name = self.pending_mode_name or "unknown"
@@ -1346,17 +1398,50 @@ class PositionGotoDemoSequenceNode(Node):
         if self.arm_future is not None and self.arm_future.done():
             arm_value = bool(self.pending_arm_value)
             action = "arm" if arm_value else "disarm"
+            allow_landing_disarm_handoff = (
+                not arm_value
+                and self.demo_state in {"WAIT_TOUCHDOWN", "DISARMING"}
+                and (
+                    self.is_land_mode()
+                    or self.current_altitude_m()
+                    <= self.touchdown_threshold_altitude_m()
+                )
+            )
             try:
                 response = self.arm_future.result()
                 if not response.success:
-                    self.enter_abort(
-                        f"{action} request was rejected "
-                        f"(result {response.result}, mode={self.latest_state.mode})"
-                    )
+                    if self.latest_state.armed == arm_value:
+                        self.get_logger().warn(
+                            f"{action.capitalize()} request reported failure "
+                            f"(result {response.result}) but the vehicle is already "
+                            f"{'armed' if arm_value else 'disarmed'}; continuing."
+                        )
+                    elif allow_landing_disarm_handoff:
+                        self.get_logger().warn(
+                            "Disarm request reported failure "
+                            f"(result {response.result}) while PX4 is landing; "
+                            "continuing to wait for auto-disarm."
+                        )
+                    else:
+                        self.enter_abort(
+                            f"{action} request was rejected "
+                            f"(result {response.result}, mode={self.latest_state.mode})"
+                        )
                 else:
                     self.get_logger().info(f"{action.capitalize()} request accepted")
             except Exception as exc:
-                self.enter_abort(f"{action} request failed: {exc}")
+                if self.latest_state.armed == arm_value:
+                    self.get_logger().warn(
+                        f"{action.capitalize()} request raised after the vehicle was "
+                        f"already {'armed' if arm_value else 'disarmed'}: {exc}"
+                    )
+                elif allow_landing_disarm_handoff:
+                    self.get_logger().warn(
+                        "Disarm request raised while PX4 is landing; continuing to "
+                        f"wait for auto-disarm: {exc}"
+                    )
+                else:
+                    self.enter_abort(f"{action} request failed: {exc}")
             finally:
                 self.arm_future = None
                 self.pending_arm_value = None
@@ -1444,13 +1529,15 @@ class PositionGotoDemoSequenceNode(Node):
                         self.takeoff_param_ready = True
                 elif future_kind == "PROFILE_GET_ORIGINAL":
                     if not response.values:
-                        self.schedule_param_pull_retry(
-                            f"{param_name} not returned yet"
+                        self.skip_speed_profile_param(
+                            param_name,
+                            "it was not returned by MAVROS",
                         )
                         return
                     if not parameter_value_is_declared_numeric(response.values[0]):
-                        self.schedule_param_pull_retry(
-                            f"{param_name} is not declared on MAVROS yet"
+                        self.skip_speed_profile_param(
+                            param_name,
+                            "it is not declared on MAVROS",
                         )
                         return
                     original_value = parameter_value_to_float(response.values[0])
@@ -1500,8 +1587,9 @@ class PositionGotoDemoSequenceNode(Node):
                             else "no response"
                         )
                         if "undeclared" in str(reason).lower():
-                            self.schedule_param_pull_retry(
-                                f"{param_name} not declared yet during set"
+                            self.skip_speed_profile_param(
+                                param_name,
+                                f"set failed because it is not declared: {reason}",
                             )
                             return
                         self.enter_abort(f"failed to set {param_name}: {reason}")

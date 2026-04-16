@@ -23,7 +23,8 @@ docker exec -u admin "${CONTAINER_NAME}" /bin/bash -lc \
 docker exec -d -u admin -w /workspaces/isaac_ros-dev "${CONTAINER_NAME}" /bin/bash -lc \
   "source /opt/ros/humble/setup.bash && \
    ros2 launch isaac_ros_visual_slam isaac_ros_visual_slam_realsense.launch.py \
-   > ${LOG_PATH} 2>&1"
+   enable_color:=true enable_depth:=true \ 
+> ${LOG_PATH} 2>&1"
 
 # NVIDIA documents that the D455 IR stream on Jetson can start capped around
 # 15 FPS. On this Jetson the reliable workaround is to re-apply the RealSense
