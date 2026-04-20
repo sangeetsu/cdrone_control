@@ -1,7 +1,5 @@
 from __future__ import annotations
 
-import math
-from dataclasses import dataclass
 from typing import Dict, Optional
 
 import rclpy
@@ -13,57 +11,13 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool
 
+from drone_control_pkg.follow_utils import (
+    TrackSnapshot,
+    compute_follow_command,
+    score_track,
+    track_is_valid,
+)
 from drone_control_pkg.topic_utils import cdrone_topic, join_topic
-
-
-def clamp(value: float, min_v: float, max_v: float) -> float:
-    return max(min(value, max_v), min_v)
-
-
-def apply_deadband(value: float, deadband: float) -> float:
-    return 0.0 if abs(value) <= max(deadband, 0.0) else value
-
-
-def target_bearing_rad(track: "TrackSnapshot") -> float:
-    return math.atan2(track.y_b_m, max(track.x_b_m, 1e-3))
-
-
-def score_track(track: "TrackSnapshot") -> float:
-    position_norm = math.sqrt(
-        track.x_b_m * track.x_b_m
-        + track.y_b_m * track.y_b_m
-        + track.z_b_m * track.z_b_m
-    )
-    radial_v = -(
-        track.x_b_m * track.vx_b_mps
-        + track.y_b_m * track.vy_b_mps
-        + track.z_b_m * track.vz_b_mps
-    ) / (position_norm + 1e-3)
-    inbound_component = max(0.0, radial_v)
-    distance_component = 1.0 / (track.distance_m + 0.1)
-    confidence_component = max(track.confidence, 0.0)
-    return (
-        0.55 * inbound_component
-        + 0.30 * distance_component
-        + 0.15 * confidence_component
-    )
-
-
-@dataclass
-class TrackSnapshot:
-    track_id: int
-    x_b_m: float
-    y_b_m: float
-    z_b_m: float
-    vx_b_mps: float
-    vy_b_mps: float
-    vz_b_mps: float
-    distance_m: float
-    confidence: float
-    bbox_area_px: float
-    inbound: bool
-    last_seen_s: float
-
 
 class TargetFollowControllerNode(Node):
     def __init__(self) -> None:
@@ -355,17 +309,14 @@ class TargetFollowControllerNode(Node):
     def track_is_valid(self, track: TrackSnapshot, now_s: float) -> bool:
         if now_s - track.last_seen_s > self.track_timeout_s:
             return False
-        if track.confidence < self.min_track_confidence:
-            return False
-        if track.distance_m > self.max_target_distance_m:
-            return False
-        if self.require_target_in_front and track.x_b_m <= 0.0:
-            return False
-        if abs(track.y_b_m) > self.max_abs_target_y_m:
-            return False
-        if abs(track.z_b_m) > self.max_abs_target_z_m:
-            return False
-        return True
+        return track_is_valid(
+            track,
+            min_track_confidence=self.min_track_confidence,
+            max_target_distance_m=self.max_target_distance_m,
+            require_target_in_front=self.require_target_in_front,
+            max_abs_target_y_m=self.max_abs_target_y_m,
+            max_abs_target_z_m=self.max_abs_target_z_m,
+        )
 
     def select_target(self, now_s: float) -> Optional[TrackSnapshot]:
         if self.active_track_id is not None:
@@ -430,32 +381,28 @@ class TargetFollowControllerNode(Node):
             self.last_status = status
 
     def publish_follow_command(self, track: TrackSnapshot) -> None:
-        err_forward = apply_deadband(
-            track.x_b_m - self.follow_distance_m,
-            self.follow_distance_tolerance_m,
+        command = compute_follow_command(
+            track,
+            follow_distance_m=self.follow_distance_m,
+            follow_distance_tolerance_m=self.follow_distance_tolerance_m,
+            lateral_deadband_m=self.lateral_deadband_m,
+            vertical_deadband_m=self.vertical_deadband_m,
+            yaw_deadband_rad=self.yaw_deadband_rad,
+            kp_xy=self.kp_xy,
+            kp_z=self.kp_z,
+            kp_yaw=self.kp_yaw,
+            max_vel_xy_mps=self.max_vel_xy_mps,
+            max_vel_z_mps=self.max_vel_z_mps,
+            max_yaw_rate_rps=self.max_yaw_rate_rps,
+            min_safe_distance_m=self.min_safe_distance_m,
         )
-        err_lateral = apply_deadband(track.y_b_m, self.lateral_deadband_m)
-        err_vertical = apply_deadband(track.z_b_m, self.vertical_deadband_m)
-        yaw_error = apply_deadband(target_bearing_rad(track), self.yaw_deadband_rad)
-
-        vx = clamp(self.kp_xy * err_forward, -self.max_vel_xy_mps, self.max_vel_xy_mps)
-        vy = clamp(self.kp_xy * err_lateral, -self.max_vel_xy_mps, self.max_vel_xy_mps)
-        vz = clamp(self.kp_z * err_vertical, -self.max_vel_z_mps, self.max_vel_z_mps)
-        yaw_rate = clamp(
-            self.kp_yaw * yaw_error,
-            -self.max_yaw_rate_rps,
-            self.max_yaw_rate_rps,
-        )
-
-        if track.distance_m < self.min_safe_distance_m and vx > 0.0:
-            vx = 0.0
 
         cmd = TwistStamped()
         cmd.header.stamp = self.get_clock().now().to_msg()
-        cmd.twist.linear.x = vx
-        cmd.twist.linear.y = vy
-        cmd.twist.linear.z = vz
-        cmd.twist.angular.z = yaw_rate
+        cmd.twist.linear.x = command.vx
+        cmd.twist.linear.y = command.vy
+        cmd.twist.linear.z = command.vz
+        cmd.twist.angular.z = command.yaw_rate
         self.cmd_pub.publish(cmd)
 
         self.publish_status(

@@ -11,4 +11,3 @@ parameters:
   MPC_Z_V_AUTO_DN: 0.5
   MPC_Z_VEL_MAX_DN: 0.5
   MPC_LAND_SPEED: 0.35
-  MPC_TKO_SPEED: 0.6

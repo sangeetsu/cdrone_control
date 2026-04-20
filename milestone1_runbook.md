@@ -198,7 +198,7 @@ ros2 launch drone_bringup position_goto_demo.launch.py \
   goal_x_m:=-5.62 \
   goal_y_m:=0.40 \
   goal_z_m:=2.0 \
-  max_goal_distance_from_start_m:=8.0 \
+  max_goal_distance_from_start_m:=12.0 \
   use_speed_profile:=false \
   perimeter_boundary_margin_m:=1.0 \
   perimeter_keep_out_margin_m:=0.3

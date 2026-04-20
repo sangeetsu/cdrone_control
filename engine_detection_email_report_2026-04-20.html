@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html><head><meta charset="utf-8">
+<title>RealSense Bench Check of 16_k_and_drone_studio_realsense_images_model.engine</title>
+<style>
+body { font-family: Arial, sans-serif; margin: 0.75in; color: #111; line-height: 1.35; }
+h1 { font-size: 22pt; margin: 0 0 8pt 0; }
+p.topnote { font-size: 11pt; margin: 0 0 16pt 0; }
+h2 { font-size: 15pt; margin: 24pt 0 8pt 0; page-break-after: avoid; }
+img.figure { width: 6.5in; max-width: 100%; display: block; margin: 8pt 0 8pt 0; border: 1px solid #ccc; }
+p.caption { font-size: 11pt; margin: 0 0 18pt 0; }
+</style></head><body>
+<h1>RealSense Bench Check of 16_k_and_drone_studio_realsense_images_model.engine</h1>
+<p class="topnote">Ground truth came from mocap. In the April 20, 2026 static-depth ladder, this new engine tracked cleanly through 2.4 m, lost follow readiness by 3.6 m, collapsed sharply at 4.8 m, and stayed unreliable at 6.0 m and 7.2 m. The 6.0 m rerun did recover intermittent detections, but coverage and error were still far outside the follow gate.</p>
+<h2>Overview Plot: Tracking Coverage vs Ground-Truth Range</h2>
+<img class="figure" src="file:///home/jetson/cdrone_control/email_frames_2026-04-20/07_range_vs_tracking_fraction.png" alt="Overview Plot: Tracking Coverage vs Ground-Truth Range">
+<p class="caption">Coverage stays essentially full through 3.6 m, then collapses sharply at 4.8 m. The 6.0 m rerun shows only partial recovery, and 7.2 m is effectively unusable.<br><span style="font-size:9pt;color:#555;">Source image: /home/jetson/cdrone_control/email_frames_2026-04-20/07_range_vs_tracking_fraction.png</span></p>
+<h2>Overview Plot: Error vs Ground-Truth Range</h2>
+<img class="figure" src="file:///home/jetson/cdrone_control/email_frames_2026-04-20/08_range_vs_error_p90.png" alt="Overview Plot: Error vs Ground-Truth Range">
+<p class="caption">P90 world-position error is acceptable at short range, grows past the follow gate by 3.6 m, and becomes very large once coverage breaks down.<br><span style="font-size:9pt;color:#555;">Source image: /home/jetson/cdrone_control/email_frames_2026-04-20/08_range_vs_error_p90.png</span></p>
+<h2>1.2 m clean detection</h2>
+<img class="figure" src="file:///home/jetson/cdrone_control/email_frames_2026-04-20/01_1p2m_detected.jpg" alt="1.2 m clean detection">
+<p class="caption">Short-range detection is stable and comfortably inside the follow gate. Ground-truth range: 1.342 m. Ground-truth forward depth: 1.326 m. Detector hit rate across the full run: 100.0%. World-track hit rate across the full run: 99.8%. Follow-usable hit rate across the full run: 99.8%. Mean estimated depth from the tracker: 1.158 m. P90 world-position error: 0.203 m.<br><span style="font-size:9pt;color:#555;">Source image: /home/jetson/cdrone_control/email_frames_2026-04-20/01_1p2m_detected.jpg</span></p>
+<h2>2.4 m clean detection</h2>
+<img class="figure" src="file:///home/jetson/cdrone_control/email_frames_2026-04-20/02_2p4m_detected.jpg" alt="2.4 m clean detection">
+<p class="caption">Tracking is still stable here and remains follow-ready. Ground-truth range: 2.516 m. Ground-truth forward depth: 2.503 m. Detector hit rate across the full run: 95.2%. World-track hit rate across the full run: 99.7%. Follow-usable hit rate across the full run: 99.7%. Mean estimated depth from the tracker: 2.416 m. P90 world-position error: 0.224 m.<br><span style="font-size:9pt;color:#555;">Source image: /home/jetson/cdrone_control/email_frames_2026-04-20/02_2p4m_detected.jpg</span></p>
+<h2>3.6 m still detected but no longer follow-ready</h2>
+<img class="figure" src="file:///home/jetson/cdrone_control/email_frames_2026-04-20/03_3p6m_detected_not_follow_ready.jpg" alt="3.6 m still detected but no longer follow-ready">
+<p class="caption">Coverage is still high, but error has grown beyond the follow gate. Ground-truth range: 3.736 m. Ground-truth forward depth: 3.730 m. Detector hit rate across the full run: 100.0%. World-track hit rate across the full run: 99.7%. Follow-usable hit rate across the full run: 99.7%. Mean estimated depth from the tracker: 3.769 m. P90 world-position error: 0.327 m.<br><span style="font-size:9pt;color:#555;">Source image: /home/jetson/cdrone_control/email_frames_2026-04-20/03_3p6m_detected_not_follow_ready.jpg</span></p>
+<h2>4.8 m near-collapse with sparse tracks</h2>
+<img class="figure" src="file:///home/jetson/cdrone_control/email_frames_2026-04-20/04_4p8m_sparse_tracks.jpg" alt="4.8 m near-collapse with sparse tracks">
+<p class="caption">Only brief detections remained at this depth, with world tracks appearing only sporadically. Ground-truth range: 4.969 m. Ground-truth forward depth: 4.962 m. Detector hit rate across the full run: 7.1%. World-track hit rate across the full run: 2.6%. Follow-usable hit rate across the full run: 2.6%. There was no estimated depth and no position error in this window because the detector never produced a valid world track.<br><span style="font-size:9pt;color:#555;">Source image: /home/jetson/cdrone_control/email_frames_2026-04-20/04_4p8m_sparse_tracks.jpg</span></p>
+<h2>6.0 m intermittent detections but unusable</h2>
+<img class="figure" src="file:///home/jetson/cdrone_control/email_frames_2026-04-20/05_6p0m_partial_tracks.jpg" alt="6.0 m intermittent detections but unusable">
+<p class="caption">The rerun recovered some detections, but coverage and error stayed far outside the follow gate. Ground-truth range: 6.170 m. Ground-truth forward depth: 6.161 m. Detector hit rate across the full run: 31.3%. World-track hit rate across the full run: 41.5%. Follow-usable hit rate across the full run: 41.5%. Mean estimated depth from the tracker: 6.697 m. P90 world-position error: 0.896 m.<br><span style="font-size:9pt;color:#555;">Source image: /home/jetson/cdrone_control/email_frames_2026-04-20/05_6p0m_partial_tracks.jpg</span></p>
+<h2>7.2 m mostly failed tracking</h2>
+<img class="figure" src="file:///home/jetson/cdrone_control/email_frames_2026-04-20/06_7p2m_sparse_tracks.jpg" alt="7.2 m mostly failed tracking">
+<p class="caption">Detections still appear occasionally, but usable tracks are effectively gone. Ground-truth range: 7.414 m. Ground-truth forward depth: 7.401 m. Detector hit rate across the full run: 16.2%. World-track hit rate across the full run: 9.6%. Follow-usable hit rate across the full run: 0.0%. Mean estimated depth from the tracker: 8.755 m. P90 world-position error: 1.900 m.<br><span style="font-size:9pt;color:#555;">Source image: /home/jetson/cdrone_control/email_frames_2026-04-20/06_7p2m_sparse_tracks.jpg</span></p>
+</body></html>

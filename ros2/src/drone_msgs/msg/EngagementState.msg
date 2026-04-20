@@ -12,3 +12,6 @@ float32 active_distance_m
 float32 active_bearing_rad
 bool target_visible
 float32 dwell_remaining_s
+float32 dwell_elapsed_s
+int32 completed_targets_count
+int32 required_targets_count

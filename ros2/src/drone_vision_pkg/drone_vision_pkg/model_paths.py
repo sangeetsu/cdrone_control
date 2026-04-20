@@ -5,13 +5,15 @@ from pathlib import Path
 
 
 DEFAULT_MODEL_CANDIDATES = (
+    "16_k_and_drone_studio_realsense_images_model.engine",
     "best_large_640_100e_77k_fp16.engine",
+    "16_k_and_drone_studio_realsense_images_model.pt",
     "best_large_640_100e_77k.pt",
 )
 
 
 def _candidate_roots() -> tuple[Path, ...]:
-    repo_root = Path(__file__).resolve().parents[4]
+    repo_root = _repo_root()
 
     env_root = os.environ.get("CDRONE_YOLO_ROOT", "").strip()
     roots = [
@@ -21,6 +23,31 @@ def _candidate_roots() -> tuple[Path, ...]:
         repo_root / "third_party" / "cdrone_yolo",
     ]
     return tuple(root for root in roots if root is not None)
+
+
+def _candidate_model_paths() -> tuple[Path, ...]:
+    repo_root = _repo_root()
+    candidates: list[Path] = []
+
+    # Prefer models checked into this repo for bench reruns.
+    for model_name in DEFAULT_MODEL_CANDIDATES:
+        candidates.append(repo_root / "models" / model_name)
+
+    for root in _candidate_roots():
+        for model_name in DEFAULT_MODEL_CANDIDATES:
+            candidates.append(root / "models" / model_name)
+
+    return tuple(candidates)
+
+
+def _repo_root() -> Path:
+    current = Path(__file__).resolve()
+    for ancestor in current.parents:
+        if (ancestor / "ros2").is_dir() and (ancestor / "models").is_dir():
+            return ancestor
+
+    # Source-tree fallback for older layouts.
+    return current.parents[4]
 
 
 def resolve_model_path(requested_path: str) -> str:
@@ -41,11 +68,9 @@ def resolve_model_path(requested_path: str) -> str:
             f"{path}"
         )
 
-    for root in _candidate_roots():
-        for model_name in DEFAULT_MODEL_CANDIDATES:
-            candidate = root / "models" / model_name
-            if candidate.exists():
-                return str(candidate)
+    for candidate in _candidate_model_paths():
+        if candidate.exists():
+            return str(candidate)
 
     raise FileNotFoundError(
         "Could not auto-resolve a detector model. Set model_path explicitly or "

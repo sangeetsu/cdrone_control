@@ -1,0 +1,54 @@
+milestone3_demo_sequence_node:
+  ros__parameters:
+    scenario_id: milestone3_demo_v1
+    required_completion_count: 1
+    takeoff_altitude_m: 1.5
+    takeoff_rate_m_s: 0.5
+    dwell_time_s: 3.0
+    offboard_warmup_s: 1.5
+    stage_hover_duration_s: 2.0
+
+    require_mavros_connected: true
+    require_companion_active: true
+    land_on_complete: true
+    land_on_abort: true
+
+    publish_zero_on_block: true
+    block_target_on_perimeter_violation: true
+
+    state_timeout_s: 3.0
+    local_pose_timeout_s: 0.5
+    companion_status_timeout_s: 0.5
+    track_timeout_s: 0.5
+    track_gc_s: 2.5
+
+    min_track_confidence: 0.35
+    max_target_distance_m: 6.0
+    require_target_in_front: true
+    max_abs_target_y_m: 4.0
+    max_abs_target_z_m: 2.5
+    min_safe_distance_m: 1.0
+
+    follow_distance_m: 1.5
+    follow_distance_tolerance_m: 0.2
+    lateral_deadband_m: 0.15
+    vertical_deadband_m: 0.15
+    yaw_deadband_rad: 0.08
+
+    kp_xy: 0.45
+    kp_z: 0.30
+    kp_yaw: 0.80
+    max_vel_xy_mps: 0.6
+    max_vel_z_mps: 0.3
+    max_yaw_rate_rps: 0.4
+
+    enable_perimeter_guard: true
+    perimeter_segment_sample_step_m: 0.10
+    perimeter_boundary_tolerance_m: 0.05
+    perimeter_boundary_margin_m: 1.0
+    perimeter_keep_out_margin_m: 0.3
+    perimeter_ceiling_tolerance_m: 0.05
+    projected_path_horizon_s: 0.75
+
+    use_speed_profile: true
+    restore_speed_profile_on_exit: true

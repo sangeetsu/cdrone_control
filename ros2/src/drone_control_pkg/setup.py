@@ -42,6 +42,10 @@ setup(
             "drone_control_pkg.position_hover_demo_sequence_node:main",
             "position_goto_demo_sequence_node = "
             "drone_control_pkg.position_goto_demo_sequence_node:main",
+            "milestone2_demo_sequence_node = "
+            "drone_control_pkg.milestone2_demo_sequence_node:main",
+            "milestone3_demo_sequence_node = "
+            "drone_control_pkg.milestone3_demo_sequence_node:main",
             "bench_vision_pose_node = drone_control_pkg.bench_vision_pose_node:main",
             "external_pose_adapter_node = "
             "drone_control_pkg.external_pose_adapter_node:main",

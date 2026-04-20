@@ -105,13 +105,24 @@ Pass criteria:
 
 Use one `experiment_tag` per scenario.
 
+For the current static-depth rerun, pin the detector explicitly so the run
+manifest records the new engine rather than falling back to the older default
+candidate:
+
+```bash
+MODEL_PATH=/home/jetson/cdrone_control/models/16_k_and_drone_studio_realsense_images_model.engine
+test -f "$MODEL_PATH"
+```
+
 Example launch:
 
 ```bash
 source /opt/ros/humble/setup.bash
 source /home/jetson/cdrone_control/ros2/install/setup.bash
+MODEL_PATH=/home/jetson/cdrone_control/models/16_k_and_drone_studio_realsense_images_model.engine
 ros2 launch drone_bringup tracking_only.launch.py \
-  experiment_tag:=static_depth_3m
+  experiment_tag:=static_depth_1p2m \
+  model_path:="$MODEL_PATH"
 ```
 
 Expected startup signs:
@@ -134,6 +145,7 @@ Healthy signs:
 - `tracker_fps` is near `10`
 - `inference_latency_ms` is stable enough for repeated runs
 - world tracks appear when the target drone is visible
+- `run_manifest.json` records the intended `model_path`
 
 ## Finding the Active Run Directory
 
@@ -167,7 +179,7 @@ Healthy signs:
 Keep these fixed across the whole benchmark set:
 
 - same tracker config
-- same detector model
+- same detector model, pinned with the same explicit `model_path`
 - same camera settings
 - same lighting region
 - same pose topics
@@ -185,18 +197,16 @@ Procedure:
 1. Launch with `experiment_tag:=static_depth_<distance>m`
 2. Place the target centered in the frame
 3. Hold at each depth for `20 s`
-4. Repeat for `1.5, 2, 3, 4, 5, 6, 7, 8 m`
+4. Repeat for `1.2, 2.4, 3.6, 4.8, 6.0, 7.2 m`
 
 Recommended tags:
 
-- `static_depth_1p5m`
-- `static_depth_2m`
-- `static_depth_3m`
-- `static_depth_4m`
-- `static_depth_5m`
-- `static_depth_6m`
-- `static_depth_7m`
-- `static_depth_8m`
+- `static_depth_1p2m`
+- `static_depth_2p4m`
+- `static_depth_3p6m`
+- `static_depth_4p8m`
+- `static_depth_6p0m`
+- `static_depth_7p2m`
 
 ### Scenario 2: Axial Motion
 
@@ -457,8 +467,10 @@ For each run, record:
 source /opt/ros/humble/setup.bash
 source /home/jetson/cdrone_control/ros2/install/setup.bash
 
+MODEL_PATH=/home/jetson/cdrone_control/models/16_k_and_drone_studio_realsense_images_model.engine
 ros2 launch drone_bringup tracking_only.launch.py \
-  experiment_tag:=static_depth_3m
+  experiment_tag:=static_depth_1p2m \
+  model_path:="$MODEL_PATH"
 ```
 
 After the `20 s` hold completes, stop the node and run:

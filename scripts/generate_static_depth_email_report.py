@@ -30,6 +30,7 @@ class RunSpec:
     section_title: str
     note: str
     figure_name: str
+    representative_image_src: Path | None = None
 
 
 @dataclass
@@ -41,9 +42,9 @@ class RunMetrics:
     track_window_rows_matched: int
     truth_range_mean_m: float | None
     truth_depth_mean_m: float | None
-    detection_fraction_window: float
-    world_track_fraction_window: float
-    controller_valid_fraction_window: float
+    detection_fraction_full_run: float
+    world_track_fraction_full_run: float
+    controller_valid_fraction_full_run: float
     estimated_distance_mean_m: float | None
     estimated_depth_mean_m: float | None
     error_p90_m_window: float | None
@@ -82,19 +83,21 @@ def parse_args() -> argparse.Namespace:
 
 
 def parse_run_spec(value: str) -> RunSpec:
-    parts = [part.strip() for part in value.split("|", 4)]
-    if len(parts) != 5:
+    parts = [part.strip() for part in value.split("|")]
+    if len(parts) not in {5, 6}:
         raise ValueError(
-            "Run spec must have exactly 5 pipe-delimited fields: "
-            "label|run_dir|section_title|note|figure_name"
+            "Run spec must have 5 or 6 pipe-delimited fields: "
+            "label|run_dir|section_title|note|figure_name[|representative_image]"
         )
-    label, run_dir, section_title, note, figure_name = parts
+    label, run_dir, section_title, note, figure_name = parts[:5]
+    representative_image = Path(parts[5]) if len(parts) == 6 and parts[5] else None
     return RunSpec(
         label=label,
         run_dir=Path(run_dir),
         section_title=section_title,
         note=note,
         figure_name=figure_name,
+        representative_image_src=representative_image,
     )
 
 
@@ -197,31 +200,32 @@ def summarize_run(spec: RunSpec, window_size_frames: int) -> RunMetrics:
             if start_time <= timestamp <= end_time:
                 track_window.append(row)
 
+    frame_count = len(frames)
     frame_window_len = len(frame_window)
     detection_fraction = (
         sum(
             1
-            for row in frame_window
+            for row in frames
             if (optional_float(row.get("detections_count")) or 0.0) > 0.0
         )
-        / frame_window_len
-        if frame_window_len
+        / frame_count
+        if frame_count
         else 0.0
     )
     world_track_fraction = (
         sum(
             1
-            for row in frame_window
+            for row in frames
             if (optional_float(row.get("world_tracks_count")) or 0.0) > 0.0
         )
-        / frame_window_len
-        if frame_window_len
+        / frame_count
+        if frame_count
         else 0.0
     )
     controller_valid_fraction = (
-        sum(1 for row in frame_window if optional_bool(row.get("has_controller_valid_track")))
-        / frame_window_len
-        if frame_window_len
+        sum(1 for row in frames if optional_bool(row.get("has_controller_valid_track")))
+        / frame_count
+        if frame_count
         else 0.0
     )
 
@@ -235,15 +239,17 @@ def summarize_run(spec: RunSpec, window_size_frames: int) -> RunMetrics:
         track_window_rows_matched=len(track_window),
         truth_range_mean_m=safe_mean(extract_series(frame_window, "truth_range_m")),
         truth_depth_mean_m=safe_mean(extract_series(frame_window, "truth_depth_z_m")),
-        detection_fraction_window=detection_fraction,
-        world_track_fraction_window=world_track_fraction,
-        controller_valid_fraction_window=controller_valid_fraction,
+        detection_fraction_full_run=detection_fraction,
+        world_track_fraction_full_run=world_track_fraction,
+        controller_valid_fraction_full_run=controller_valid_fraction,
         estimated_distance_mean_m=safe_mean(extract_series(track_window, "distance_m")),
         estimated_depth_mean_m=safe_mean(extract_series(track_window, "depth_z_m")),
         error_p90_m_window=percentile(error_values, 0.9),
         error_mean_m_window=safe_mean(error_values),
         ready_for_follow_overall=load_ready_for_follow(spec.run_dir),
-        representative_image_src=pick_representative_image(spec.run_dir),
+        representative_image_src=(
+            spec.representative_image_src or pick_representative_image(spec.run_dir)
+        ),
     )
 
 
@@ -280,9 +286,9 @@ def write_summary_csv(metrics: list[RunMetrics], summary_csv_path: Path) -> None
                 "track_window_rows_matched",
                 "truth_range_mean_m",
                 "truth_depth_mean_m",
-                "detection_fraction_window",
-                "world_track_fraction_window",
-                "controller_valid_fraction_window",
+                "detection_fraction_full_run",
+                "world_track_fraction_full_run",
+                "controller_valid_fraction_full_run",
                 "estimated_distance_mean_m",
                 "estimated_depth_mean_m",
                 "error_p90_m_window",
@@ -302,9 +308,9 @@ def write_summary_csv(metrics: list[RunMetrics], summary_csv_path: Path) -> None
                     item.track_window_rows_matched,
                     item.truth_range_mean_m,
                     item.truth_depth_mean_m,
-                    item.detection_fraction_window,
-                    item.world_track_fraction_window,
-                    item.controller_valid_fraction_window,
+                    item.detection_fraction_full_run,
+                    item.world_track_fraction_full_run,
+                    item.controller_valid_fraction_full_run,
                     item.estimated_distance_mean_m,
                     item.estimated_depth_mean_m,
                     item.error_p90_m_window,
@@ -390,10 +396,12 @@ def build_run_caption(item: RunMetrics) -> str:
     common = (
         f"{prefix} Ground-truth range: {format_float(item.truth_range_mean_m)} m. "
         f"Ground-truth forward depth: {format_float(item.truth_depth_mean_m)} m. "
-        f"Detector hit rate in the final steady window: "
-        f"{format_percent(item.detection_fraction_window)}. "
-        f"World-track hit rate: {format_percent(item.world_track_fraction_window)}. "
-        f"Follow-usable hit rate: {format_percent(item.controller_valid_fraction_window)}."
+        f"Detector hit rate across the full run: "
+        f"{format_percent(item.detection_fraction_full_run)}. "
+        f"World-track hit rate across the full run: "
+        f"{format_percent(item.world_track_fraction_full_run)}. "
+        f"Follow-usable hit rate across the full run: "
+        f"{format_percent(item.controller_valid_fraction_full_run)}."
     )
 
     if item.error_p90_m_window is None:
@@ -602,6 +610,9 @@ def write_markdown_writeup(
         "",
         f"## {summary_heading}",
         "",
+        "Hit fractions below are computed across the full run. "
+        "Range, depth, and error metrics use the final steady window.",
+        "",
         "| Nominal hold | Run ID | Ground-truth range mean (m) | Ground-truth depth mean (m) | Detection fraction | World-track fraction | Controller-valid fraction | Estimated depth mean (m) | P90 error (m) | Notes |",
         "| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | --- |",
     ]
@@ -615,9 +626,9 @@ def write_markdown_writeup(
                     f"`{item.spec.run_dir.name}`",
                     format_float(item.truth_range_mean_m),
                     format_float(item.truth_depth_mean_m),
-                    f"{item.detection_fraction_window:.3f}",
-                    f"{item.world_track_fraction_window:.3f}",
-                    f"{item.controller_valid_fraction_window:.3f}",
+                    f"{item.detection_fraction_full_run:.3f}",
+                    f"{item.world_track_fraction_full_run:.3f}",
+                    f"{item.controller_valid_fraction_full_run:.3f}",
                     format_float(item.estimated_depth_mean_m),
                     format_float(item.error_p90_m_window),
                     item.spec.note,
@@ -663,15 +674,15 @@ def main() -> None:
     email_frames_dir = Path(args.email_frames_dir)
     assets_dir.mkdir(parents=True, exist_ok=True)
 
-    summary_csv_path = assets_dir / "static_depth_ladder_window_summary.csv"
+    summary_csv_path = assets_dir / "static_depth_ladder_summary.csv"
     coverage_plot_path = assets_dir / "range_vs_tracking_fraction.png"
     error_plot_path = assets_dir / "range_vs_error_p90.png"
 
     write_summary_csv(metrics, summary_csv_path)
     make_line_plot(
         metrics,
-        y_getter=lambda item: item.world_track_fraction_window,
-        ylabel="World-track fraction in final steady window",
+        y_getter=lambda item: item.world_track_fraction_full_run,
+        ylabel="World-track fraction across full run",
         title="Tracking Coverage vs Ground-Truth Range",
         output_path=coverage_plot_path,
         color="#0b6e4f",

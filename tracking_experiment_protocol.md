@@ -11,8 +11,10 @@ From `cdrone_control/ros2`:
 ```bash
 source /opt/ros/humble/setup.bash
 source /home/jetson/cdrone_control/ros2/install/setup.bash
+MODEL_PATH=/home/jetson/cdrone_control/models/16_k_and_drone_studio_realsense_images_model.engine
 ros2 launch drone_bringup tracking_only.launch.py \
-  experiment_tag:=static_depth_3m
+  experiment_tag:=static_depth_1p2m \
+  model_path:="$MODEL_PATH"
 ```
 
 Artifacts will be written under the configured
@@ -37,7 +39,7 @@ Generate the offline report after each run:
 source /opt/ros/humble/setup.bash
 source /home/jetson/cdrone_control/ros2/install/setup.bash
 world_track_compare_report \
-  --run-dir /home/jetson/output_dump/20260416_180000_static_depth_3m
+  --run-dir /home/jetson/output_dump/20260417_004544_static_depth_1p2m
 ```
 
 By default the report is written to:
@@ -59,13 +61,18 @@ The report outputs:
 
 Run one experiment tag per scenario:
 
-1. Static depth ladder at `1.5, 2, 3, 4, 5, 6, 7, 8 m`, `20 s` each.
+1. Static depth ladder at `1.2, 2.4, 3.6, 4.8, 6.0, 7.2 m`, `20 s` each.
 2. Axial approach and retreat `8 -> 2 m` and `2 -> 8 m`, `3` repeats.
 3. Lateral sweeps at `3, 5, 7 m`, `3` repeats each.
 4. Reacquisition with partial occlusion and re-entry at `3-5 m`, `3` repeats.
 
 Keep the tracker config, detector model, lighting region, and pose topics fixed
 across all runs in the benchmark set.
+
+For the current rerun with the new engine under this repo, keep
+`model_path:=/home/jetson/cdrone_control/models/16_k_and_drone_studio_realsense_images_model.engine`
+fixed across the entire ladder so `run_manifest.json` captures the intended
+model.
 
 ## What To Check
 
