@@ -21,6 +21,14 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "pose_topic", default_value="/vrpn_mocap/RigidBody3/pose"
             ),
+            DeclareLaunchArgument(
+                "publish_world_track_compare", default_value="true"
+            ),
+            DeclareLaunchArgument(
+                "compare_pose_topic", default_value="/vrpn_mocap/RigidBody2/pose"
+            ),
+            DeclareLaunchArgument("world_track_compare_topic", default_value=""),
+            DeclareLaunchArgument("experiment_tag", default_value=""),
             DeclareLaunchArgument("model_path", default_value=""),
             DeclareLaunchArgument(
                 "tracker_config_file",
@@ -39,6 +47,14 @@ def generate_launch_description():
                     "drone_id": LaunchConfiguration("drone_id"),
                     "source_mode": LaunchConfiguration("source_mode"),
                     "pose_topic": LaunchConfiguration("pose_topic"),
+                    "publish_world_track_compare": LaunchConfiguration(
+                        "publish_world_track_compare"
+                    ),
+                    "compare_pose_topic": LaunchConfiguration("compare_pose_topic"),
+                    "world_track_compare_topic": LaunchConfiguration(
+                        "world_track_compare_topic"
+                    ),
+                    "experiment_tag": LaunchConfiguration("experiment_tag"),
                     "model_path": LaunchConfiguration("model_path"),
                     "tracker_config_file": LaunchConfiguration("tracker_config_file"),
                 }.items(),

@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import csv
 from dataclasses import dataclass
+import json
+from pathlib import Path
 import time
 
 import numpy as np
@@ -22,9 +25,22 @@ from rclpy.qos import (
     qos_profile_sensor_data,
 )
 from sensor_msgs.msg import CameraInfo, Image
+from std_msgs.msg import String
 
 from drone_vision_pkg.model_paths import resolve_model_path
 from drone_vision_pkg.projection import RealsenseProjection
+from drone_vision_pkg.world_track_compare_common import (
+    FRAMES_CSV_FIELDNAMES,
+    FRAMES_CSV_FILENAME,
+    RUN_MANIFEST_FILENAME,
+    TRACKS_CSV_FIELDNAMES,
+    TRACKS_CSV_FILENAME_DEFAULT,
+    ControllerTrackSample,
+    csv_value,
+    make_run_id,
+    sanitize_experiment_tag,
+    select_best_controller_track,
+)
 
 try:
     from cv_bridge import CvBridge
@@ -119,6 +135,49 @@ def compute_mean_depth(
     return float(np.median(crop[mask]))
 
 
+def bbox_to_dict(
+    bbox: list[float] | tuple[float, float, float, float] | None,
+) -> dict[str, float] | None:
+    if bbox is None or len(bbox) != 4:
+        return None
+    return {
+        "x1": float(bbox[0]),
+        "y1": float(bbox[1]),
+        "x2": float(bbox[2]),
+        "y2": float(bbox[3]),
+    }
+
+
+def point_to_dict(
+    point: np.ndarray | list[float] | tuple[float, float] | None,
+) -> dict[str, float] | None:
+    if point is None or len(point) != 2:
+        return None
+    return {"x": float(point[0]), "y": float(point[1])}
+
+
+def point3_to_dict(
+    point: np.ndarray | list[float] | tuple[float, float, float] | None,
+) -> dict[str, float] | None:
+    if point is None or len(point) != 3:
+        return None
+    return {
+        "x": float(point[0]),
+        "y": float(point[1]),
+        "z": float(point[2]),
+    }
+
+
+def isoformat_wall_time(timestamp_s: float) -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z", time.localtime(timestamp_s))
+
+
+def dict_or_empty(value: object) -> dict[str, object]:
+    if isinstance(value, dict):
+        return value
+    return {}
+
+
 def yolo_boxes_to_detections(boxes) -> list[Detection]:
     if boxes is None or boxes.xyxy is None:
         return []
@@ -162,6 +221,18 @@ class RealsenseTrackerNode(Node):
         self.declare_parameter("max_valid_depth_m", 20.0)
         self.declare_parameter("depth_window_px", 5)
         self.declare_parameter("publish_world_tracks", True)
+        self.declare_parameter("publish_world_track_compare", False)
+        self.declare_parameter("save_world_track_compare_frames", True)
+        self.declare_parameter("save_world_track_compare_csv", True)
+        self.declare_parameter("save_world_track_compare_frame_csv", True)
+        self.declare_parameter("world_track_compare_frame_dump_interval_s", 3.0)
+        self.declare_parameter("world_track_compare_csv_dump_interval_s", 3.0)
+        self.declare_parameter("world_track_compare_frame_dump_dir", "output_dump")
+        self.declare_parameter(
+            "world_track_compare_csv_filename",
+            TRACKS_CSV_FILENAME_DEFAULT,
+        )
+        self.declare_parameter("experiment_tag", "")
         self.declare_parameter("world_frame", "map")
         self.declare_parameter("camera_offset_body_m", [0.0, 0.0, 0.0])
         self.declare_parameter("camera_rpy_body_rad", [0.0, 0.0, 0.0])
@@ -171,8 +242,10 @@ class RealsenseTrackerNode(Node):
         )
         self.declare_parameter("camera_info_topic", "/camera/color/camera_info")
         self.declare_parameter("pose_topic", "")
+        self.declare_parameter("compare_pose_topic", "/vrpn_mocap/RigidBody2/pose")
         self.declare_parameter("tracks_topic", "")
         self.declare_parameter("world_tracks_topic", "")
+        self.declare_parameter("world_track_compare_topic", "")
         self.declare_parameter("perception_status_topic", "")
         self.declare_parameter("align_depth_to_color", True)
         self.declare_parameter("direct_color_width", 848)
@@ -201,6 +274,57 @@ class RealsenseTrackerNode(Node):
         self.publish_world_tracks = bool(
             self.get_parameter("publish_world_tracks").value
         )
+        self.publish_world_track_compare = bool(
+            self.get_parameter("publish_world_track_compare").value
+        )
+        self.save_world_track_compare_frames = bool(
+            self.get_parameter("save_world_track_compare_frames").value
+        )
+        self.save_world_track_compare_csv = bool(
+            self.get_parameter("save_world_track_compare_csv").value
+        )
+        self.save_world_track_compare_frame_csv = bool(
+            self.get_parameter("save_world_track_compare_frame_csv").value
+        )
+        self.world_track_compare_frame_dump_interval_s = float(
+            self.get_parameter("world_track_compare_frame_dump_interval_s").value
+        )
+        self.world_track_compare_csv_dump_interval_s = float(
+            self.get_parameter("world_track_compare_csv_dump_interval_s").value
+        )
+        self.world_track_compare_root_dir = Path(
+            str(
+                self.get_parameter("world_track_compare_frame_dump_dir").value
+            ).strip()
+            or "output_dump"
+        )
+        self.world_track_compare_tracks_csv_filename = (
+            str(self.get_parameter("world_track_compare_csv_filename").value).strip()
+            or TRACKS_CSV_FILENAME_DEFAULT
+        )
+        self.experiment_tag = sanitize_experiment_tag(
+            str(self.get_parameter("experiment_tag").value)
+        )
+        self.run_started_wall_time_s = time.time()
+        self.world_track_compare_run_id = make_run_id(
+            started_wall_time_s=self.run_started_wall_time_s,
+            experiment_tag=self.experiment_tag,
+        )
+        self.world_track_compare_run_dir = (
+            self.world_track_compare_root_dir / self.world_track_compare_run_id
+        )
+        self.world_track_compare_tracks_csv_path = (
+            self.world_track_compare_run_dir
+            / str(
+                self.world_track_compare_tracks_csv_filename
+            )
+        )
+        self.world_track_compare_frames_csv_path = (
+            self.world_track_compare_run_dir / FRAMES_CSV_FILENAME
+        )
+        self.world_track_compare_manifest_path = (
+            self.world_track_compare_run_dir / RUN_MANIFEST_FILENAME
+        )
         self.world_frame = str(self.get_parameter("world_frame").value)
         self.align_depth_to_color = bool(
             self.get_parameter("align_depth_to_color").value
@@ -218,6 +342,9 @@ class RealsenseTrackerNode(Node):
         self.direct_depth_fps = int(self.get_parameter("direct_depth_fps").value)
         pose_topic = str(self.get_parameter("pose_topic").value).strip()
         self.pose_topic = pose_topic or external_pose_input_topic(self.drone_id)
+        self.compare_pose_topic = str(
+            self.get_parameter("compare_pose_topic").value
+        ).strip()
         self.tracks_topic = (
             str(self.get_parameter("tracks_topic").value).strip()
             or cdrone_topic(self.drone_id, "perception/tracks")
@@ -225,6 +352,10 @@ class RealsenseTrackerNode(Node):
         self.world_tracks_topic = (
             str(self.get_parameter("world_tracks_topic").value).strip()
             or cdrone_topic(self.drone_id, "perception/world_tracks")
+        )
+        self.world_track_compare_topic = (
+            str(self.get_parameter("world_track_compare_topic").value).strip()
+            or cdrone_topic(self.drone_id, "perception/world_track_compare")
         )
         self.perception_status_topic = (
             str(self.get_parameter("perception_status_topic").value).strip()
@@ -283,12 +414,24 @@ class RealsenseTrackerNode(Node):
         self.last_inference_ms = 0.0
         self.last_wait_warn_s = 0.0
         self.last_pose_warn_s = 0.0
+        self.last_compare_pose_warn_s = 0.0
         self.last_intrinsics_warn_s = 0.0
+        self.last_compare_frame_warn_s = 0.0
+        self.last_frame_dump_s = 0.0
+        self.last_csv_dump_s = 0.0
+        self.csv_buffer_started_s = 0.0
+        self.world_track_compare_tracks_csv_ready = False
+        self.world_track_compare_frames_csv_ready = False
+        self.pending_world_track_compare_track_rows: list[list[object]] = []
+        self.pending_world_track_compare_frame_rows: list[list[object]] = []
+        self.world_track_compare_frame_count = 0
+        self.world_track_compare_track_count = 0
         self.prev_body_positions: dict[int, tuple[np.ndarray, float]] = {}
         self.prev_world_positions: dict[int, tuple[np.ndarray, float]] = {}
         self.rs_pipeline = None
         self.rs_align = None
         self.depth_scale_m = 0.001
+        self.latest_compare_pose: PoseStamped | None = None
 
         best_effort_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -325,10 +468,31 @@ class RealsenseTrackerNode(Node):
                 self.pose_callback,
                 best_effort_qos,
             )
+        if self.publish_world_track_compare:
+            self.create_subscription(
+                PoseStamped,
+                self.compare_pose_topic,
+                self.compare_pose_callback,
+                best_effort_qos,
+            )
+            if (
+                self.save_world_track_compare_frames
+                or self.save_world_track_compare_csv
+                or self.save_world_track_compare_frame_csv
+            ):
+                self._ensure_output_dump_dir()
+            if self.save_world_track_compare_csv:
+                self._ensure_world_track_compare_tracks_csv_ready()
+            if self.save_world_track_compare_frame_csv:
+                self._ensure_world_track_compare_frames_csv_ready()
+            self._write_world_track_compare_manifest()
 
         self.tracks_pub = self.create_publisher(TargetTrackArray, self.tracks_topic, 10)
         self.world_tracks_pub = self.create_publisher(
             WorldTargetTrackArray, self.world_tracks_topic, 10
+        )
+        self.world_track_compare_pub = self.create_publisher(
+            String, self.world_track_compare_topic, 10
         )
         self.status_pub = self.create_publisher(
             PerceptionStatus, self.perception_status_topic, 10
@@ -336,19 +500,55 @@ class RealsenseTrackerNode(Node):
         self.timer = self.create_timer(
             1.0 / max(self.tracker_rate_hz, 1.0), self.process_latest_frame
         )
+        world_track_compare_enabled = (
+            self.publish_world_track_compare
+            and (
+                self.save_world_track_compare_frames
+                or self.save_world_track_compare_csv
+                or self.save_world_track_compare_frame_csv
+            )
+        )
+        tracks_csv_log_path = (
+            self.world_track_compare_tracks_csv_path
+            if self.publish_world_track_compare and self.save_world_track_compare_csv
+            else "disabled"
+        )
+        world_track_compare_topic = (
+            self.world_track_compare_topic
+            if self.publish_world_track_compare
+            else "disabled"
+        )
+        frames_csv_log_path = (
+            self.world_track_compare_frames_csv_path
+            if (
+                self.publish_world_track_compare
+                and self.save_world_track_compare_frame_csv
+            )
+            else "disabled"
+        )
 
         self.get_logger().info(
             "RealSense tracker started: "
             f"source_mode={self.source_mode}, model={self.model_path}, "
             f"tracks={self.tracks_topic}, "
             f"world_tracks={self.world_tracks_topic}, "
-            f"pose={self.pose_topic if self.publish_world_tracks else 'disabled'}"
+            f"pose={self.pose_topic if self.publish_world_tracks else 'disabled'}, "
+            "world_track_compare="
+            f"{world_track_compare_topic}, "
+            "run_dir="
+            f"{self.world_track_compare_run_dir if world_track_compare_enabled else 'disabled'}, "
+            "tracks_csv="
+            f"{tracks_csv_log_path}, "
+            "frames_csv="
+            f"{frames_csv_log_path}"
         )
 
     def now_s(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9
 
     def destroy_node(self) -> bool:
+        self._flush_world_track_compare_csv(force=True)
+        self._write_world_track_compare_manifest(completed=True)
         if self.rs_pipeline is not None:
             try:
                 self.rs_pipeline.stop()
@@ -372,6 +572,9 @@ class RealsenseTrackerNode(Node):
 
     def pose_callback(self, msg: PoseStamped) -> None:
         self.projector.update_pose(msg)
+
+    def compare_pose_callback(self, msg: PoseStamped) -> None:
+        self.latest_compare_pose = msg
 
     def process_latest_frame(self) -> None:
         frame: np.ndarray | None = None
@@ -424,8 +627,12 @@ class RealsenseTrackerNode(Node):
         tracked_objects = self.tracker.update(detections)
         now_msg = self.get_clock().now().to_msg()
         process_time_s = self.now_s()
+        tracker_fps = 0.0
+        if self.last_process_s > 0.0:
+            tracker_fps = 1.0 / max(process_time_s - self.last_process_s, 1e-3)
+        self.last_process_s = process_time_s
 
-        body_tracks = self._build_body_tracks(
+        body_tracks, body_track_debug = self._build_body_tracks(
             tracked_objects=tracked_objects,
             frame=frame,
             depth_frame=depth_frame,
@@ -448,11 +655,22 @@ class RealsenseTrackerNode(Node):
         world_array.frame_id = self.projector.frame_id
         world_array.tracks = world_tracks
         self.world_tracks_pub.publish(world_array)
-
-        tracker_fps = 0.0
-        if self.last_process_s > 0.0:
-            tracker_fps = 1.0 / max(process_time_s - self.last_process_s, 1e-3)
-        self.last_process_s = process_time_s
+        compare_payload = self._publish_world_track_compare(
+            world_tracks=world_tracks,
+            body_tracks=body_tracks,
+            stamp_msg=now_msg,
+            body_track_debug=body_track_debug,
+            detections_count=len(detections),
+            active_tracks_count=len(tracked_objects),
+            tracker_fps=tracker_fps,
+        )
+        self._maybe_dump_world_track_compare_frame(
+            frame=frame,
+            compare_payload=compare_payload,
+            now_s=process_time_s,
+        )
+        self._maybe_append_world_track_compare_tracks_csv(compare_payload)
+        self._maybe_append_world_track_compare_frames_csv(compare_payload)
 
         status = PerceptionStatus()
         status.stamp = now_msg
@@ -555,16 +773,17 @@ class RealsenseTrackerNode(Node):
         depth_frame: np.ndarray | None,
         stamp_msg,
         now_s: float,
-    ) -> list[TargetTrack]:
+    ) -> tuple[list[TargetTrack], dict[int, dict[str, object]]]:
         if not self.projector.has_intrinsics():
             self._warn_throttled(
                 "Camera intrinsics have not arrived yet. Body/world tracks are "
                 f"waiting on {self.camera_info_topic}.",
                 attr_name="last_intrinsics_warn_s",
             )
-            return []
+            return [], {}
 
         track_messages: list[TargetTrack] = []
+        track_debug: dict[int, dict[str, object]] = {}
         active_track_ids: set[int] = set()
 
         for tracked_object in tracked_objects:
@@ -572,6 +791,7 @@ class RealsenseTrackerNode(Node):
             if detection is None:
                 continue
             track_id = int(tracked_object.id)
+            yolo_centroid = np.asarray(detection.points, dtype=np.float32)
             centroid = get_centroid(
                 tracked_object.estimate
                 if getattr(tracked_object, "estimate", None) is not None
@@ -605,6 +825,22 @@ class RealsenseTrackerNode(Node):
             distance_m = float(np.linalg.norm(body_point_m))
             bbox_area_px = float(detection.data.get("bbox_area_px", 0.0))
             confidence = float(detection.data.get("confidence", 0.0))
+            yolo_bbox_raw = detection.data.get("bbox")
+            yolo_bbox = (
+                [float(value) for value in yolo_bbox_raw]
+                if isinstance(yolo_bbox_raw, list) and len(yolo_bbox_raw) == 4
+                else None
+            )
+            norfair_bbox = None
+            if yolo_bbox is not None:
+                bbox_width_px = yolo_bbox[2] - yolo_bbox[0]
+                bbox_height_px = yolo_bbox[3] - yolo_bbox[1]
+                norfair_bbox = [
+                    float(centroid[0]) - bbox_width_px / 2.0,
+                    float(centroid[1]) - bbox_height_px / 2.0,
+                    float(centroid[0]) + bbox_width_px / 2.0,
+                    float(centroid[1]) + bbox_height_px / 2.0,
+                ]
 
             msg = TargetTrack()
             msg.stamp = stamp_msg
@@ -620,10 +856,19 @@ class RealsenseTrackerNode(Node):
             msg.bbox_area_px = bbox_area_px
             msg.inbound = velocity.inbound
             track_messages.append(msg)
+            track_debug[track_id] = {
+                "body_position_m": point3_to_dict(body_point_m),
+                "body_velocity_mps": point3_to_dict(velocity.vector_mps),
+                "yolo_bbox_px": bbox_to_dict(yolo_bbox),
+                "norfair_bbox_px": bbox_to_dict(norfair_bbox),
+                "yolo_centroid_px": point_to_dict(yolo_centroid),
+                "norfair_centroid_px": point_to_dict(centroid),
+                "depth_z_m": float(depth_m),
+            }
             active_track_ids.add(track_id)
 
         self._garbage_collect_history(self.prev_body_positions, active_track_ids)
-        return track_messages
+        return track_messages, track_debug
 
     def _build_world_tracks(
         self,
@@ -718,6 +963,828 @@ class RealsenseTrackerNode(Node):
             return
         setattr(self, attr_name, now_s)
         self.get_logger().warn(message)
+
+    def _ensure_output_dump_dir(self) -> None:
+        try:
+            self.world_track_compare_root_dir.mkdir(parents=True, exist_ok=True)
+            self.world_track_compare_run_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            self.save_world_track_compare_frames = False
+            self.save_world_track_compare_csv = False
+            self.save_world_track_compare_frame_csv = False
+            self.get_logger().warn(
+                "Disabling world-track compare outputs because the output "
+                f"directory could not be created: {exc}"
+            )
+
+    def _ensure_world_track_compare_csv_ready(
+        self,
+        *,
+        path: Path,
+        header: list[str],
+        ready_attr: str,
+        enabled_attr: str,
+        log_label: str,
+    ) -> bool:
+        if not bool(getattr(self, enabled_attr, False)):
+            return False
+        if bool(getattr(self, ready_attr, False)):
+            return True
+        try:
+            file_exists = path.exists()
+            with path.open("a", newline="", encoding="utf-8") as handle:
+                writer = csv.writer(handle)
+                if not file_exists or path.stat().st_size == 0:
+                    writer.writerow(header)
+            setattr(self, ready_attr, True)
+            return True
+        except OSError as exc:
+            setattr(self, enabled_attr, False)
+            self.get_logger().warn(
+                f"Disabling {log_label} because the file "
+                f"could not be prepared: {exc}"
+            )
+            return False
+
+    def _ensure_world_track_compare_tracks_csv_ready(self) -> bool:
+        return self._ensure_world_track_compare_csv_ready(
+            path=self.world_track_compare_tracks_csv_path,
+            header=TRACKS_CSV_FIELDNAMES,
+            ready_attr="world_track_compare_tracks_csv_ready",
+            enabled_attr="save_world_track_compare_csv",
+            log_label="world-track compare track CSV logging",
+        )
+
+    def _ensure_world_track_compare_frames_csv_ready(self) -> bool:
+        return self._ensure_world_track_compare_csv_ready(
+            path=self.world_track_compare_frames_csv_path,
+            header=FRAMES_CSV_FIELDNAMES,
+            ready_attr="world_track_compare_frames_csv_ready",
+            enabled_attr="save_world_track_compare_frame_csv",
+            log_label="world-track compare frame CSV logging",
+        )
+
+    def _write_world_track_compare_manifest(self, completed: bool = False) -> None:
+        if not self.publish_world_track_compare:
+            return
+        if (
+            not self.save_world_track_compare_frames
+            and not self.save_world_track_compare_csv
+            and not self.save_world_track_compare_frame_csv
+        ):
+            return
+        if not self.world_track_compare_run_dir.exists():
+            return
+
+        completed_at = time.time() if completed else None
+        manifest = {
+            "run_id": self.world_track_compare_run_id,
+            "experiment_tag": self.experiment_tag,
+            "started_at_wall": isoformat_wall_time(self.run_started_wall_time_s),
+            "completed_at_wall": (
+                isoformat_wall_time(completed_at)
+                if completed_at is not None
+                else None
+            ),
+            "output_root_dir": str(self.world_track_compare_root_dir),
+            "run_dir": str(self.world_track_compare_run_dir),
+            "files": {
+                "manifest": str(self.world_track_compare_manifest_path),
+                "tracks_csv": (
+                    str(self.world_track_compare_tracks_csv_path)
+                    if self.save_world_track_compare_csv
+                    else None
+                ),
+                "frames_csv": (
+                    str(self.world_track_compare_frames_csv_path)
+                    if self.save_world_track_compare_frame_csv
+                    else None
+                ),
+                "frame_glob": (
+                    str(self.world_track_compare_run_dir / "world_track_compare_*.jpg")
+                    if self.save_world_track_compare_frames
+                    else None
+                ),
+            },
+            "tracker": {
+                "source_mode": self.source_mode,
+                "model_path": str(self.model_path),
+                "tracker_rate_hz": float(self.tracker_rate_hz),
+                "model_input_size": int(self.model_input_size),
+                "detection_conf_threshold": float(self.conf_threshold),
+                "norfair_distance_threshold": float(
+                    self.norfair_distance_threshold
+                ),
+                "track_hit_counter_max": int(self.track_hit_counter_max),
+                "max_valid_depth_m": float(self.max_valid_depth_m),
+                "depth_window_px": int(self.depth_window_px),
+                "world_frame": self.projector.frame_id,
+                "color_topic": self.color_topic,
+                "depth_topic": self.depth_topic,
+                "camera_info_topic": self.camera_info_topic,
+                "pose_topic": self.pose_topic,
+                "compare_pose_topic": self.compare_pose_topic,
+                "tracks_topic": self.tracks_topic,
+                "world_tracks_topic": self.world_tracks_topic,
+                "world_track_compare_topic": self.world_track_compare_topic,
+                "perception_status_topic": self.perception_status_topic,
+            },
+            "camera": {
+                "align_depth_to_color": bool(self.align_depth_to_color),
+                "direct_color_width": int(self.direct_color_width),
+                "direct_color_height": int(self.direct_color_height),
+                "direct_color_fps": int(self.direct_color_fps),
+                "direct_depth_width": int(self.direct_depth_width),
+                "direct_depth_height": int(self.direct_depth_height),
+                "direct_depth_fps": int(self.direct_depth_fps),
+                "depth_scale_m": float(self.depth_scale_m),
+            },
+            "counts": {
+                "frame_rows": int(self.world_track_compare_frame_count),
+                "track_rows": int(self.world_track_compare_track_count),
+            },
+        }
+        try:
+            with self.world_track_compare_manifest_path.open(
+                "w",
+                encoding="utf-8",
+            ) as handle:
+                json.dump(manifest, handle, indent=2, sort_keys=True)
+        except OSError as exc:
+            self.get_logger().warn(
+                f"Failed to write world-track compare manifest: {exc}"
+            )
+
+    def _controller_track_sample(
+        self, track: TargetTrack
+    ) -> ControllerTrackSample:
+        return ControllerTrackSample(
+            track_id=int(track.track_id),
+            x_b_m=float(track.x_b_m),
+            y_b_m=float(track.y_b_m),
+            z_b_m=float(track.z_b_m),
+            vx_b_mps=float(track.vx_b_mps),
+            vy_b_mps=float(track.vy_b_mps),
+            vz_b_mps=float(track.vz_b_mps),
+            distance_m=float(track.distance_m),
+            confidence=float(track.confidence),
+            bbox_area_px=float(track.bbox_area_px),
+            inbound=bool(track.inbound),
+        )
+
+    def _publish_world_track_compare(
+        self,
+        world_tracks: list[WorldTargetTrack],
+        body_tracks: list[TargetTrack],
+        stamp_msg,
+        body_track_debug: dict[int, dict[str, object]],
+        detections_count: int,
+        active_tracks_count: int,
+        tracker_fps: float,
+    ) -> dict[str, object] | None:
+        if not self.publish_world_track_compare:
+            return None
+
+        compare_pose = self.latest_compare_pose
+        ownship_pose_available = self.projector.has_pose()
+        best_track, best_track_score = select_best_controller_track(
+            [self._controller_track_sample(track) for track in body_tracks]
+        )
+        payload: dict[str, object] = {
+            "run_id": self.world_track_compare_run_id,
+            "experiment_tag": self.experiment_tag,
+            "stamp": {
+                "sec": int(stamp_msg.sec),
+                "nanosec": int(stamp_msg.nanosec),
+            },
+            "world_frame_id": self.projector.frame_id,
+            "reference_pose_topic": self.compare_pose_topic,
+            "reference_pose_available": compare_pose is not None,
+            "ownship_pose_available": ownship_pose_available,
+            "frame_match": None,
+            "truth_range_m": None,
+            "truth_depth_z_m": None,
+            "detections_count": int(detections_count),
+            "active_tracks_count": int(active_tracks_count),
+            "world_tracks_count": int(len(world_tracks)),
+            "tracker_fps": float(tracker_fps),
+            "inference_latency_ms": float(self.last_inference_ms),
+            "has_controller_valid_track": best_track is not None,
+            "best_track_id": None if best_track is None else int(best_track.track_id),
+            "best_track_score": (
+                None if best_track_score is None else float(best_track_score)
+            ),
+            "best_track_confidence": (
+                None if best_track is None else float(best_track.confidence)
+            ),
+            "best_track_distance_m": (
+                None if best_track is None else float(best_track.distance_m)
+            ),
+            "comparisons": [],
+        }
+
+        if compare_pose is None:
+            if world_tracks:
+                self._warn_throttled(
+                    "World-track comparison is enabled but no reference pose has "
+                    f"arrived yet on {self.compare_pose_topic}.",
+                    attr_name="last_compare_pose_warn_s",
+                )
+            msg = String()
+            msg.data = json.dumps(payload)
+            self.world_track_compare_pub.publish(msg)
+            return payload
+
+        reference_frame_id = (
+            str(compare_pose.header.frame_id).strip() or self.projector.frame_id
+        )
+        reference_position = np.array(
+            [
+                float(compare_pose.pose.position.x),
+                float(compare_pose.pose.position.y),
+                float(compare_pose.pose.position.z),
+            ],
+            dtype=np.float64,
+        )
+        payload["reference_frame_id"] = reference_frame_id
+        payload["reference_position_m"] = {
+            "x": float(reference_position[0]),
+            "y": float(reference_position[1]),
+            "z": float(reference_position[2]),
+        }
+        payload["frame_match"] = reference_frame_id == self.projector.frame_id
+        reference_body_position = None
+        reference_camera_position = None
+        if payload["frame_match"] and ownship_pose_available:
+            reference_body_position = self.projector.world_to_body(reference_position)
+            reference_camera_position = self.projector.world_to_camera(
+                reference_position
+            )
+        payload["truth_body_position_m"] = point3_to_dict(reference_body_position)
+        if reference_camera_position is not None:
+            payload["truth_range_m"] = float(
+                np.linalg.norm(reference_camera_position)
+            )
+            payload["truth_depth_z_m"] = float(reference_camera_position[2])
+
+        if reference_frame_id != self.projector.frame_id and world_tracks:
+            self._warn_throttled(
+                "World-track comparison is using different frame_ids: "
+                f"world_tracks='{self.projector.frame_id}' vs "
+                f"reference='{reference_frame_id}'.",
+                attr_name="last_compare_frame_warn_s",
+            )
+
+        comparisons: list[dict[str, object]] = []
+        for world_track in world_tracks:
+            debug_info = body_track_debug.get(int(world_track.track_id), {})
+            body_position = debug_info.get("body_position_m")
+            delta = np.array(
+                [
+                    float(world_track.x_m) - reference_position[0],
+                    float(world_track.y_m) - reference_position[1],
+                    float(world_track.z_m) - reference_position[2],
+                ],
+                dtype=np.float64,
+            )
+            body_delta = None
+            if (
+                isinstance(body_position, dict)
+                and reference_body_position is not None
+            ):
+                body_delta = {
+                    "x": float(body_position.get("x", 0.0))
+                    - float(reference_body_position[0]),
+                    "y": float(body_position.get("y", 0.0))
+                    - float(reference_body_position[1]),
+                    "z": float(body_position.get("z", 0.0))
+                    - float(reference_body_position[2]),
+                }
+            comparisons.append(
+                {
+                    "track_id": int(world_track.track_id),
+                    "track_position_m": {
+                        "x": float(world_track.x_m),
+                        "y": float(world_track.y_m),
+                        "z": float(world_track.z_m),
+                    },
+                    "delta_m": {
+                        "x": float(delta[0]),
+                        "y": float(delta[1]),
+                        "z": float(delta[2]),
+                    },
+                    "delta_norm_m": float(np.linalg.norm(delta)),
+                    "body_position_m": body_position,
+                    "truth_body_position_m": point3_to_dict(reference_body_position),
+                    "body_delta_m": body_delta,
+                    "truth_range_m": payload.get("truth_range_m"),
+                    "truth_depth_z_m": payload.get("truth_depth_z_m"),
+                    "confidence": float(world_track.confidence),
+                    "distance_m": float(world_track.distance_m),
+                    "bbox_area_px": float(world_track.bbox_area_px),
+                    "yolo_bbox_px": debug_info.get("yolo_bbox_px"),
+                    "norfair_bbox_px": debug_info.get("norfair_bbox_px"),
+                    "yolo_centroid_px": debug_info.get("yolo_centroid_px"),
+                    "norfair_centroid_px": debug_info.get("norfair_centroid_px"),
+                    "depth_z_m": float(debug_info.get("depth_z_m", 0.0)),
+                }
+            )
+        payload["comparisons"] = comparisons
+
+        msg = String()
+        msg.data = json.dumps(payload)
+        self.world_track_compare_pub.publish(msg)
+        return payload
+
+    def _maybe_dump_world_track_compare_frame(
+        self,
+        frame: np.ndarray,
+        compare_payload: dict[str, object] | None,
+        now_s: float,
+    ) -> None:
+        if (
+            not self.publish_world_track_compare
+            or not self.save_world_track_compare_frames
+            or compare_payload is None
+        ):
+            return
+        if (
+            now_s - self.last_frame_dump_s
+            < self.world_track_compare_frame_dump_interval_s
+        ):
+            return
+
+        annotated = frame.copy()
+        comparisons = compare_payload.get("comparisons", [])
+        if isinstance(comparisons, list):
+            for comparison in comparisons:
+                if not isinstance(comparison, dict):
+                    continue
+                track_id = int(comparison.get("track_id", -1))
+                yolo_bbox = comparison.get("yolo_bbox_px")
+                if isinstance(yolo_bbox, dict):
+                    x1 = int(round(float(yolo_bbox.get("x1", 0.0))))
+                    y1 = int(round(float(yolo_bbox.get("y1", 0.0))))
+                    x2 = int(round(float(yolo_bbox.get("x2", 0.0))))
+                    y2 = int(round(float(yolo_bbox.get("y2", 0.0))))
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                    cv2.putText(
+                        annotated,
+                        f"YOLO {track_id}",
+                        (x1, max(18, y1 - 8)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.55,
+                        (0, 255, 0),
+                        2,
+                        cv2.LINE_AA,
+                    )
+
+                norfair_bbox = comparison.get("norfair_bbox_px")
+                if isinstance(norfair_bbox, dict):
+                    x1 = int(round(float(norfair_bbox.get("x1", 0.0))))
+                    y1 = int(round(float(norfair_bbox.get("y1", 0.0))))
+                    x2 = int(round(float(norfair_bbox.get("x2", 0.0))))
+                    y2 = int(round(float(norfair_bbox.get("y2", 0.0))))
+                    cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 255), 2)
+                    cv2.putText(
+                        annotated,
+                        f"Norfair {track_id}",
+                        (x1, min(annotated.shape[0] - 10, y2 + 20)),
+                        cv2.FONT_HERSHEY_SIMPLEX,
+                        0.55,
+                        (0, 255, 255),
+                        2,
+                        cv2.LINE_AA,
+                    )
+
+                for point_key, color in (
+                    ("yolo_centroid_px", (0, 255, 0)),
+                    ("norfair_centroid_px", (0, 255, 255)),
+                ):
+                    point = comparison.get(point_key)
+                    if not isinstance(point, dict):
+                        continue
+                    center = (
+                        int(round(float(point.get("x", 0.0)))),
+                        int(round(float(point.get("y", 0.0)))),
+                    )
+                    cv2.circle(annotated, center, 4, color, thickness=-1)
+
+        overlay_lines = self._world_track_compare_overlay_lines(compare_payload)
+        line_height_px = 26
+        margin_px = 12
+        overlay_height_px = margin_px * 2 + max(1, len(overlay_lines)) * line_height_px
+        overlay_width_px = min(annotated.shape[1] - margin_px * 2, 720)
+        cv2.rectangle(
+            annotated,
+            (margin_px, margin_px),
+            (margin_px + overlay_width_px, margin_px + overlay_height_px),
+            (0, 0, 0),
+            thickness=-1,
+        )
+        cv2.rectangle(
+            annotated,
+            (margin_px, margin_px),
+            (margin_px + overlay_width_px, margin_px + overlay_height_px),
+            (0, 255, 255),
+            thickness=2,
+        )
+        y_px = margin_px + 22
+        for line in overlay_lines:
+            cv2.putText(
+                annotated,
+                line,
+                (margin_px + 10, y_px),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.6,
+                (255, 255, 255),
+                2,
+                cv2.LINE_AA,
+            )
+            y_px += line_height_px
+
+        stamp = compare_payload.get("stamp", {})
+        sec = int(stamp.get("sec", 0)) if isinstance(stamp, dict) else 0
+        nanosec = int(stamp.get("nanosec", 0)) if isinstance(stamp, dict) else 0
+        filename = f"world_track_compare_{sec}_{nanosec:09d}.jpg"
+        output_path = self.world_track_compare_run_dir / filename
+        if cv2.imwrite(str(output_path), annotated):
+            self.last_frame_dump_s = now_s
+        else:
+            self.get_logger().warn(
+                f"Failed to save world-track comparison frame to {output_path}"
+            )
+
+    def _track_compare_rows_from_payload(
+        self, compare_payload: dict[str, object] | None
+    ) -> list[list[object]]:
+        if compare_payload is None:
+            return []
+
+        stamp = compare_payload.get("stamp", {})
+        if not isinstance(stamp, dict):
+            return []
+        stamp_sec = int(stamp.get("sec", 0))
+        stamp_nanosec = int(stamp.get("nanosec", 0))
+        timestamp_s = float(stamp_sec) + float(stamp_nanosec) / 1e9
+
+        run_id = str(compare_payload.get("run_id", ""))
+        experiment_tag = str(compare_payload.get("experiment_tag", ""))
+        world_frame_id = str(compare_payload.get("world_frame_id", ""))
+        reference_frame_id = str(compare_payload.get("reference_frame_id", ""))
+        reference_position = compare_payload.get("reference_position_m", {})
+        reference_body_position = compare_payload.get("truth_body_position_m", {})
+        reference_available = bool(
+            compare_payload.get("reference_pose_available", False)
+        )
+        ownship_pose_available = bool(
+            compare_payload.get("ownship_pose_available", False)
+        )
+        frame_match = compare_payload.get("frame_match")
+        world_tracks_count = int(compare_payload.get("world_tracks_count", 0))
+        tracker_fps = float(compare_payload.get("tracker_fps", 0.0))
+        inference_latency_ms = float(
+            compare_payload.get("inference_latency_ms", 0.0)
+        )
+        truth_range_m = compare_payload.get("truth_range_m")
+        truth_depth_z_m = compare_payload.get("truth_depth_z_m")
+
+        comparisons = compare_payload.get("comparisons", [])
+        if not isinstance(comparisons, list) or not comparisons:
+            return []
+
+        rows: list[list[object]] = []
+        for comparison in comparisons:
+            if not isinstance(comparison, dict):
+                continue
+            track_position = dict_or_empty(comparison.get("track_position_m"))
+            delta = dict_or_empty(comparison.get("delta_m"))
+            yolo_bbox = dict_or_empty(comparison.get("yolo_bbox_px"))
+            norfair_bbox = dict_or_empty(comparison.get("norfair_bbox_px"))
+            yolo_centroid = dict_or_empty(comparison.get("yolo_centroid_px"))
+            norfair_centroid = dict_or_empty(
+                comparison.get("norfair_centroid_px")
+            )
+            body_position = dict_or_empty(comparison.get("body_position_m"))
+            body_delta = dict_or_empty(comparison.get("body_delta_m"))
+            rows.append(
+                [
+                    run_id,
+                    experiment_tag,
+                    stamp_sec,
+                    stamp_nanosec,
+                    f"{timestamp_s:.9f}",
+                    int(comparison.get("track_id", -1)),
+                    world_frame_id,
+                    reference_frame_id,
+                    int(reference_available),
+                    int(ownship_pose_available),
+                    csv_value(None if frame_match is None else int(bool(frame_match))),
+                    world_tracks_count,
+                    tracker_fps,
+                    inference_latency_ms,
+                    float(track_position.get("x", 0.0)),
+                    float(track_position.get("y", 0.0)),
+                    float(track_position.get("z", 0.0)),
+                    float(reference_position.get("x", 0.0))
+                    if isinstance(reference_position, dict)
+                    else "",
+                    float(reference_position.get("y", 0.0))
+                    if isinstance(reference_position, dict)
+                    else "",
+                    float(reference_position.get("z", 0.0))
+                    if isinstance(reference_position, dict)
+                    else "",
+                    float(delta.get("x", 0.0)),
+                    float(delta.get("y", 0.0)),
+                    float(delta.get("z", 0.0)),
+                    float(comparison.get("delta_norm_m", 0.0)),
+                    float(body_position.get("x", 0.0)),
+                    float(body_position.get("y", 0.0)),
+                    float(body_position.get("z", 0.0)),
+                    float(reference_body_position.get("x", 0.0))
+                    if isinstance(reference_body_position, dict)
+                    else "",
+                    float(reference_body_position.get("y", 0.0))
+                    if isinstance(reference_body_position, dict)
+                    else "",
+                    float(reference_body_position.get("z", 0.0))
+                    if isinstance(reference_body_position, dict)
+                    else "",
+                    csv_value(
+                        float(body_delta.get("x", 0.0))
+                        if isinstance(body_delta, dict)
+                        else None
+                    ),
+                    csv_value(
+                        float(body_delta.get("y", 0.0))
+                        if isinstance(body_delta, dict)
+                        else None
+                    ),
+                    csv_value(
+                        float(body_delta.get("z", 0.0))
+                        if isinstance(body_delta, dict)
+                        else None
+                    ),
+                    csv_value(
+                        float(truth_range_m) if truth_range_m is not None else None
+                    ),
+                    csv_value(
+                        float(truth_depth_z_m)
+                        if truth_depth_z_m is not None
+                        else None
+                    ),
+                    float(comparison.get("confidence", 0.0)),
+                    float(comparison.get("distance_m", 0.0)),
+                    float(comparison.get("bbox_area_px", 0.0)),
+                    float(yolo_bbox.get("x1", 0.0)),
+                    float(yolo_bbox.get("y1", 0.0)),
+                    float(yolo_bbox.get("x2", 0.0)),
+                    float(yolo_bbox.get("y2", 0.0)),
+                    float(norfair_bbox.get("x1", 0.0)),
+                    float(norfair_bbox.get("y1", 0.0)),
+                    float(norfair_bbox.get("x2", 0.0)),
+                    float(norfair_bbox.get("y2", 0.0)),
+                    float(yolo_centroid.get("x", 0.0)),
+                    float(yolo_centroid.get("y", 0.0)),
+                    float(norfair_centroid.get("x", 0.0)),
+                    float(norfair_centroid.get("y", 0.0)),
+                    float(comparison.get("depth_z_m", 0.0)),
+                ]
+            )
+        return rows
+
+    def _frame_compare_row_from_payload(
+        self, compare_payload: dict[str, object] | None
+    ) -> list[object] | None:
+        if compare_payload is None:
+            return None
+
+        stamp = compare_payload.get("stamp", {})
+        if not isinstance(stamp, dict):
+            return None
+        stamp_sec = int(stamp.get("sec", 0))
+        stamp_nanosec = int(stamp.get("nanosec", 0))
+        timestamp_s = float(stamp_sec) + float(stamp_nanosec) / 1e9
+        frame_match = compare_payload.get("frame_match")
+        return [
+            str(compare_payload.get("run_id", "")),
+            str(compare_payload.get("experiment_tag", "")),
+            stamp_sec,
+            stamp_nanosec,
+            f"{timestamp_s:.9f}",
+            str(compare_payload.get("world_frame_id", "")),
+            str(compare_payload.get("reference_frame_id", "")),
+            int(bool(compare_payload.get("reference_pose_available", False))),
+            int(bool(compare_payload.get("ownship_pose_available", False))),
+            csv_value(None if frame_match is None else int(bool(frame_match))),
+            csv_value(compare_payload.get("truth_range_m")),
+            csv_value(compare_payload.get("truth_depth_z_m")),
+            int(compare_payload.get("detections_count", 0)),
+            int(compare_payload.get("active_tracks_count", 0)),
+            int(compare_payload.get("world_tracks_count", 0)),
+            int(bool(compare_payload.get("has_controller_valid_track", False))),
+            csv_value(compare_payload.get("best_track_id")),
+            csv_value(compare_payload.get("best_track_score")),
+            csv_value(compare_payload.get("best_track_confidence")),
+            csv_value(compare_payload.get("best_track_distance_m")),
+            float(compare_payload.get("tracker_fps", 0.0)),
+            float(compare_payload.get("inference_latency_ms", 0.0)),
+        ]
+
+    def _maybe_append_world_track_compare_tracks_csv(
+        self, compare_payload: dict[str, object] | None
+    ) -> None:
+        if not self.save_world_track_compare_csv or compare_payload is None:
+            return
+        rows = self._track_compare_rows_from_payload(compare_payload)
+        if not rows:
+            return
+        self.pending_world_track_compare_track_rows.extend(rows)
+        self.world_track_compare_track_count += len(rows)
+        now_s = self.now_s()
+        if self.csv_buffer_started_s <= 0.0:
+            self.csv_buffer_started_s = now_s
+        self._flush_world_track_compare_csv(now_s=now_s)
+
+    def _maybe_append_world_track_compare_frames_csv(
+        self, compare_payload: dict[str, object] | None
+    ) -> None:
+        if not self.save_world_track_compare_frame_csv or compare_payload is None:
+            return
+        row = self._frame_compare_row_from_payload(compare_payload)
+        if row is None:
+            return
+        self.pending_world_track_compare_frame_rows.append(row)
+        self.world_track_compare_frame_count += 1
+        now_s = self.now_s()
+        if self.csv_buffer_started_s <= 0.0:
+            self.csv_buffer_started_s = now_s
+        self._flush_world_track_compare_csv(now_s=now_s)
+
+    def _flush_world_track_compare_csv(
+        self,
+        *,
+        now_s: float | None = None,
+        force: bool = False,
+    ) -> None:
+        if not self.save_world_track_compare_csv:
+            self.pending_world_track_compare_track_rows.clear()
+        if not self.save_world_track_compare_frame_csv:
+            self.pending_world_track_compare_frame_rows.clear()
+        if (
+            not self.pending_world_track_compare_track_rows
+            and not self.pending_world_track_compare_frame_rows
+        ):
+            if force:
+                self.csv_buffer_started_s = 0.0
+            return
+
+        if not force:
+            current_time_s = self.now_s() if now_s is None else now_s
+            if self.csv_buffer_started_s <= 0.0:
+                self.csv_buffer_started_s = current_time_s
+                return
+            if (
+                    current_time_s - self.csv_buffer_started_s
+                < self.world_track_compare_csv_dump_interval_s
+            ):
+                return
+        else:
+            current_time_s = self.now_s() if now_s is None else now_s
+
+        wrote_rows = False
+        if (
+            self.pending_world_track_compare_track_rows
+            and self._ensure_world_track_compare_tracks_csv_ready()
+        ):
+            try:
+                with self.world_track_compare_tracks_csv_path.open(
+                    "a",
+                    newline="",
+                    encoding="utf-8",
+                ) as handle:
+                    writer = csv.writer(handle)
+                    writer.writerows(self.pending_world_track_compare_track_rows)
+                self.pending_world_track_compare_track_rows.clear()
+                wrote_rows = True
+            except OSError as exc:
+                self.save_world_track_compare_csv = False
+                self.get_logger().warn(
+                    "Disabling world-track compare track CSV logging because "
+                    f"appending failed: {exc}"
+                )
+        if (
+            self.pending_world_track_compare_frame_rows
+            and self._ensure_world_track_compare_frames_csv_ready()
+        ):
+            try:
+                with self.world_track_compare_frames_csv_path.open(
+                    "a",
+                    newline="",
+                    encoding="utf-8",
+                ) as handle:
+                    writer = csv.writer(handle)
+                    writer.writerows(self.pending_world_track_compare_frame_rows)
+                self.pending_world_track_compare_frame_rows.clear()
+                wrote_rows = True
+            except OSError as exc:
+                self.save_world_track_compare_frame_csv = False
+                self.get_logger().warn(
+                    "Disabling world-track compare frame CSV logging because "
+                    f"appending failed: {exc}"
+                )
+        if wrote_rows:
+            self.last_csv_dump_s = current_time_s
+        if (
+            not self.pending_world_track_compare_track_rows
+            and not self.pending_world_track_compare_frame_rows
+        ):
+            self.csv_buffer_started_s = 0.0
+
+    def _world_track_compare_overlay_lines(
+        self, compare_payload: dict[str, object]
+    ) -> list[str]:
+        lines = [
+            "world_track_compare  "
+            f"run={compare_payload.get('run_id', 'unknown')}  "
+            f"frame={compare_payload.get('world_frame_id', 'map')}",
+        ]
+        reference_available = bool(
+            compare_payload.get("reference_pose_available", False)
+        )
+        if not reference_available:
+            lines.append("reference pose unavailable")
+            return lines
+
+        reference_position = compare_payload.get("reference_position_m", {})
+        if isinstance(reference_position, dict):
+            lines.append(
+                "RigidBody2 ref "
+                f"x={float(reference_position.get('x', 0.0)):.3f} "
+                f"y={float(reference_position.get('y', 0.0)):.3f} "
+                f"z={float(reference_position.get('z', 0.0)):.3f}"
+            )
+        if compare_payload.get("truth_range_m") is not None:
+            lines.append(
+                "truth "
+                f"range={float(compare_payload.get('truth_range_m', 0.0)):.2f}m  "
+                f"depth_z={float(compare_payload.get('truth_depth_z_m', 0.0)):.2f}m"
+            )
+        lines.append(
+            "counts "
+            f"det={int(compare_payload.get('detections_count', 0))}  "
+            f"trk={int(compare_payload.get('active_tracks_count', 0))}  "
+            f"world={int(compare_payload.get('world_tracks_count', 0))}  "
+            "ctrl_valid="
+            f"{int(bool(compare_payload.get('has_controller_valid_track', False)))}"
+        )
+
+        comparisons = compare_payload.get("comparisons", [])
+        if not isinstance(comparisons, list) or not comparisons:
+            lines.append("no world tracks available")
+            return lines
+
+        for comparison in comparisons:
+            if not isinstance(comparison, dict):
+                continue
+            delta = comparison.get("delta_m", {})
+            track_position = comparison.get("track_position_m", {})
+            yolo_centroid = comparison.get("yolo_centroid_px", {})
+            norfair_centroid = comparison.get("norfair_centroid_px", {})
+            if (
+                not isinstance(delta, dict)
+                or not isinstance(track_position, dict)
+                or not isinstance(yolo_centroid, dict)
+                or not isinstance(norfair_centroid, dict)
+            ):
+                continue
+            lines.append(
+                f"track {int(comparison.get('track_id', -1))}  "
+                f"err={float(comparison.get('delta_norm_m', 0.0)):.3f}m  "
+                f"gt=({float(reference_position.get('x', 0.0)):.2f},"
+                f"{float(reference_position.get('y', 0.0)):.2f},"
+                f"{float(reference_position.get('z', 0.0)):.2f})"
+            )
+            lines.append(
+                "calc="
+                f"({float(track_position.get('x', 0.0)):.2f},"
+                f"{float(track_position.get('y', 0.0)):.2f},"
+                f"{float(track_position.get('z', 0.0)):.2f})  "
+                f"d=({float(delta.get('x', 0.0)):+.2f},"
+                f"{float(delta.get('y', 0.0)):+.2f},"
+                f"{float(delta.get('z', 0.0)):+.2f})"
+            )
+            lines.append(
+                "yolo_xy="
+                f"({float(yolo_centroid.get('x', 0.0)):.1f},"
+                f"{float(yolo_centroid.get('y', 0.0)):.1f})  "
+                "norfair_xy="
+                f"({float(norfair_centroid.get('x', 0.0)):.1f},"
+                f"{float(norfair_centroid.get('y', 0.0)):.1f})  "
+                f"depth_z={float(comparison.get('depth_z_m', 0.0)):.2f}m"
+            )
+        return lines
 
 
 def main(args=None) -> None:

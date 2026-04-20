@@ -88,6 +88,14 @@ What you want to see:
 - companion status is present
 - local pose rate is healthy
 
+Before any hover or goto test, restore the validated FCU baseline:
+
+```bash
+/home/jetson/cdrone_control/scripts/restore_hover_baseline_params.sh
+```
+
+Do not enable the indoor speed profile for now. On the current FCU/hardware combination, `use_speed_profile:=true` can stall takeoff even though arming succeeds. If a run was started with `use_speed_profile:=true` or was interrupted during parameter restore, rerun the baseline restore script before the next flight.
+
 ## Phase 1: Hover Demo
 
 Terminal 1:
@@ -96,7 +104,7 @@ Terminal 1:
 ros2 launch drone_bringup position_hover_demo.launch.py \
   takeoff_altitude_m:=1.5 \
   hover_duration_s:=30.0 \
-  use_speed_profile:=true
+  use_speed_profile:=false
 ```
 
 Terminal 2:
@@ -141,7 +149,7 @@ ros2 launch drone_bringup position_goto_demo.launch.py \
   goal_y_m:=-2.5 \
   goal_z_m:=2.0 \
   max_goal_distance_from_start_m:=3.0 \
-  use_speed_profile:=true \
+  use_speed_profile:=false \
   perimeter_boundary_margin_m:=1.0 \
   perimeter_keep_out_margin_m:=0.3
 ```
@@ -181,7 +189,7 @@ Use the south-side staging point for the pillar-centered orbit:
 - `goal_x_m:=-5.62`
 - `goal_y_m:=0.40`
 
-This point is south of the pillar keep-out, stays comfortably inside the studio boundary, and lines up with the current circle demo geometry. Keep the indoor speed profile enabled for this phase.
+This point is south of the pillar keep-out, stays comfortably inside the studio boundary, and lines up with the current circle demo geometry. Keep the baseline FCU parameters in place for this phase.
 
 Terminal 1:
 
@@ -191,7 +199,7 @@ ros2 launch drone_bringup position_goto_demo.launch.py \
   goal_y_m:=0.40 \
   goal_z_m:=2.0 \
   max_goal_distance_from_start_m:=8.0 \
-  use_speed_profile:=true \
+  use_speed_profile:=false \
   perimeter_boundary_margin_m:=1.0 \
   perimeter_keep_out_margin_m:=0.3
 ```
@@ -261,7 +269,7 @@ ros2 launch drone_bringup position_circle_demo.launch.py \
   circle_keep_out_name:=studio_pillar \
   circle_keep_out_clearance_m:=1.2 \
   max_circle_entry_distance_from_start_m:=8.0 \
-  use_speed_profile:=true \
+  use_speed_profile:=false \
   perimeter_boundary_margin_m:=1.0 \
   perimeter_keep_out_margin_m:=0.3
 ```

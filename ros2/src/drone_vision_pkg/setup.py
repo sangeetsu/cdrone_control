@@ -31,6 +31,8 @@ setup(
     entry_points={
         "console_scripts": [
             "realsense_tracker_node = drone_vision_pkg.realsense_tracker_node:main",
+            "world_track_compare_report = "
+            "drone_vision_pkg.world_track_compare_report:main",
         ],
     },
 )

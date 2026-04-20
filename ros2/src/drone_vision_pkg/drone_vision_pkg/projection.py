@@ -162,6 +162,11 @@ class RealsenseProjection:
     def camera_to_body_frame(self, camera_point_m: np.ndarray) -> np.ndarray:
         return self.camera_to_body_rotation @ camera_point_m + self.camera_offset_body_m
 
+    def body_to_camera_frame(self, body_point_m: np.ndarray) -> np.ndarray:
+        centered_body_point = np.asarray(body_point_m, dtype=np.float64)
+        centered_body_point = centered_body_point - self.camera_offset_body_m
+        return self.camera_to_body_rotation.T @ centered_body_point
+
     def pixel_depth_to_body(
         self,
         x_px: float,
@@ -188,3 +193,16 @@ class RealsenseProjection:
         if not self.has_pose():
             return None
         return self.drone_position_m + self.world_from_body_rotation @ body_point_m
+
+    def world_to_body(self, world_point_m: np.ndarray) -> np.ndarray | None:
+        if not self.has_pose():
+            return None
+        centered_world_point = np.asarray(world_point_m, dtype=np.float64)
+        centered_world_point = centered_world_point - self.drone_position_m
+        return self.world_from_body_rotation.T @ centered_world_point
+
+    def world_to_camera(self, world_point_m: np.ndarray) -> np.ndarray | None:
+        body_point_m = self.world_to_body(world_point_m)
+        if body_point_m is None:
+            return None
+        return self.body_to_camera_frame(body_point_m)
