@@ -109,6 +109,25 @@ def launch_setup(context, *args, **kwargs):
             "experiment_tag": LaunchConfiguration("experiment_tag"),
             "model_path": LaunchConfiguration("model_path"),
             "tracker_config_file": LaunchConfiguration("tracker_config_file"),
+            "enable_reid": LaunchConfiguration("tracker_enable_reid"),
+            "reid_histogram_bins": LaunchConfiguration(
+                "tracker_reid_histogram_bins"
+            ),
+            "reid_distance_threshold": LaunchConfiguration(
+                "tracker_reid_distance_threshold"
+            ),
+            "reid_hit_counter_max": LaunchConfiguration(
+                "tracker_reid_hit_counter_max"
+            ),
+            "enable_motion_estimator": LaunchConfiguration(
+                "tracker_enable_motion_estimator"
+            ),
+            "publish_track_hold_s": LaunchConfiguration(
+                "tracker_publish_track_hold_s"
+            ),
+            "publish_track_hold_max_extrapolation_m": LaunchConfiguration(
+                "tracker_publish_track_hold_max_extrapolation_m"
+            ),
         }.items(),
     )
 
@@ -230,6 +249,34 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "tracker_config_file",
                 default_value=default_tracker_config,
+            ),
+            DeclareLaunchArgument(
+                "tracker_enable_reid",
+                default_value="true",
+            ),
+            DeclareLaunchArgument(
+                "tracker_reid_histogram_bins",
+                default_value="32",
+            ),
+            DeclareLaunchArgument(
+                "tracker_reid_distance_threshold",
+                default_value="0.20",
+            ),
+            DeclareLaunchArgument(
+                "tracker_reid_hit_counter_max",
+                default_value="30",
+            ),
+            DeclareLaunchArgument(
+                "tracker_enable_motion_estimator",
+                default_value="true",
+            ),
+            DeclareLaunchArgument(
+                "tracker_publish_track_hold_s",
+                default_value="0.5",
+            ),
+            DeclareLaunchArgument(
+                "tracker_publish_track_hold_max_extrapolation_m",
+                default_value="0.25",
             ),
             DeclareLaunchArgument(
                 "demo_config",

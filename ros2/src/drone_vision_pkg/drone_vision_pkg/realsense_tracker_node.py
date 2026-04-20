@@ -29,6 +29,12 @@ from std_msgs.msg import String
 
 from drone_vision_pkg.model_paths import resolve_model_path
 from drone_vision_pkg.projection import RealsenseProjection
+from drone_vision_pkg.tracker_resilience import (
+    BodyTrackState,
+    compute_lab_histogram_embedding,
+    select_held_track_states,
+    tracked_object_reid_distance,
+)
 from drone_vision_pkg.world_track_compare_common import (
     FRAMES_CSV_FIELDNAMES,
     FRAMES_CSV_FILENAME,
@@ -62,6 +68,11 @@ try:
 except Exception:  # pragma: no cover - platform specific
     Detection = None
     Tracker = None
+
+try:
+    from norfair.camera_motion import MotionEstimator
+except Exception:  # pragma: no cover - platform specific
+    MotionEstimator = None
 
 try:
     from ultralytics import YOLO
@@ -178,7 +189,13 @@ def dict_or_empty(value: object) -> dict[str, object]:
     return {}
 
 
-def yolo_boxes_to_detections(boxes) -> list[Detection]:
+def yolo_boxes_to_detections(
+    boxes,
+    *,
+    frame: np.ndarray | None = None,
+    enable_reid: bool = False,
+    reid_histogram_bins: int = 32,
+) -> list[Detection]:
     if boxes is None or boxes.xyxy is None:
         return []
     xyxy = boxes.xyxy.cpu().numpy()
@@ -202,6 +219,12 @@ def yolo_boxes_to_detections(boxes) -> list[Detection]:
                 },
             )
         )
+        if enable_reid and frame is not None:
+            detections[-1].embedding = compute_lab_histogram_embedding(
+                frame,
+                [x1, y1, x2, y2],
+                bins_per_channel=reid_histogram_bins,
+            )
     return detections
 
 
@@ -218,6 +241,13 @@ class RealsenseTrackerNode(Node):
         self.declare_parameter("detection_conf_threshold", 0.4)
         self.declare_parameter("norfair_distance_threshold", 80.0)
         self.declare_parameter("track_hit_counter_max", 12)
+        self.declare_parameter("enable_reid", False)
+        self.declare_parameter("reid_histogram_bins", 32)
+        self.declare_parameter("reid_distance_threshold", 0.20)
+        self.declare_parameter("reid_hit_counter_max", 30)
+        self.declare_parameter("enable_motion_estimator", False)
+        self.declare_parameter("publish_track_hold_s", 0.0)
+        self.declare_parameter("publish_track_hold_max_extrapolation_m", 0.25)
         self.declare_parameter("max_valid_depth_m", 20.0)
         self.declare_parameter("depth_window_px", 5)
         self.declare_parameter("publish_world_tracks", True)
@@ -268,6 +298,25 @@ class RealsenseTrackerNode(Node):
         )
         self.track_hit_counter_max = int(
             self.get_parameter("track_hit_counter_max").value
+        )
+        self.enable_reid = bool(self.get_parameter("enable_reid").value)
+        self.reid_histogram_bins = int(
+            self.get_parameter("reid_histogram_bins").value
+        )
+        self.reid_distance_threshold = float(
+            self.get_parameter("reid_distance_threshold").value
+        )
+        self.reid_hit_counter_max = int(
+            self.get_parameter("reid_hit_counter_max").value
+        )
+        self.enable_motion_estimator = bool(
+            self.get_parameter("enable_motion_estimator").value
+        )
+        self.publish_track_hold_s = float(
+            self.get_parameter("publish_track_hold_s").value
+        )
+        self.publish_track_hold_max_extrapolation_m = float(
+            self.get_parameter("publish_track_hold_max_extrapolation_m").value
         )
         self.max_valid_depth_m = float(self.get_parameter("max_valid_depth_m").value)
         self.depth_window_px = int(self.get_parameter("depth_window_px").value)
@@ -400,11 +449,11 @@ class RealsenseTrackerNode(Node):
             world_frame=self.world_frame,
         )
         self.model = YOLO(self.model_path, task="detect")
-        self.tracker = Tracker(
-            distance_function="euclidean",
-            distance_threshold=self.norfair_distance_threshold,
-            initialization_delay=1,
-            hit_counter_max=self.track_hit_counter_max,
+        self.tracker = self._build_tracker()
+        self.motion_estimator = (
+            MotionEstimator()
+            if self.enable_motion_estimator and MotionEstimator is not None
+            else None
         )
 
         self.latest_color_msg: Image | None = None
@@ -428,6 +477,8 @@ class RealsenseTrackerNode(Node):
         self.world_track_compare_track_count = 0
         self.prev_body_positions: dict[int, tuple[np.ndarray, float]] = {}
         self.prev_world_positions: dict[int, tuple[np.ndarray, float]] = {}
+        self.cached_body_tracks: dict[int, BodyTrackState] = {}
+        self.cached_body_track_debug: dict[int, dict[str, object]] = {}
         self.rs_pipeline = None
         self.rs_align = None
         self.depth_scale_m = 0.001
@@ -533,6 +584,9 @@ class RealsenseTrackerNode(Node):
             f"tracks={self.tracks_topic}, "
             f"world_tracks={self.world_tracks_topic}, "
             f"pose={self.pose_topic if self.publish_world_tracks else 'disabled'}, "
+            f"reid={'on' if self.enable_reid else 'off'}, "
+            f"motion_estimator={'on' if self.motion_estimator is not None else 'off'}, "
+            f"track_hold_s={max(self.publish_track_hold_s, 0.0):.2f}, "
             "world_track_compare="
             f"{world_track_compare_topic}, "
             "run_dir="
@@ -542,6 +596,39 @@ class RealsenseTrackerNode(Node):
             "frames_csv="
             f"{frames_csv_log_path}"
         )
+        if self.enable_motion_estimator and self.motion_estimator is None:
+            self.get_logger().warn(
+                "Motion estimator was enabled, but norfair.camera_motion.MotionEstimator "
+                "is unavailable. Continuing without camera motion compensation."
+            )
+
+    def _build_tracker(self) -> Tracker:
+        tracker_kwargs = {
+            "distance_function": "euclidean",
+            "distance_threshold": self.norfair_distance_threshold,
+            "initialization_delay": 1,
+            "hit_counter_max": self.track_hit_counter_max,
+        }
+        if self.enable_reid:
+            tracker_kwargs.update(
+                {
+                    "reid_distance_function": tracked_object_reid_distance,
+                    "reid_distance_threshold": self.reid_distance_threshold,
+                    "reid_hit_counter_max": self.reid_hit_counter_max,
+                }
+            )
+        try:
+            return Tracker(**tracker_kwargs)
+        except TypeError:
+            tracker_kwargs.pop("reid_distance_function", None)
+            tracker_kwargs.pop("reid_distance_threshold", None)
+            tracker_kwargs.pop("reid_hit_counter_max", None)
+            if self.enable_reid:
+                self.get_logger().warn(
+                    "Installed Norfair build does not support Re-ID arguments. "
+                    "Continuing with the base tracker only."
+                )
+            return Tracker(**tracker_kwargs)
 
     def now_s(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9
@@ -623,8 +710,22 @@ class RealsenseTrackerNode(Node):
         )
         self.last_inference_ms = (time.perf_counter() - infer_start_s) * 1000.0
 
-        detections = yolo_boxes_to_detections(results[0].boxes if results else None)
-        tracked_objects = self.tracker.update(detections)
+        detections = yolo_boxes_to_detections(
+            results[0].boxes if results else None,
+            frame=frame,
+            enable_reid=self.enable_reid,
+            reid_histogram_bins=self.reid_histogram_bins,
+        )
+        coord_transformations = None
+        if self.motion_estimator is not None:
+            coord_transformations = self.motion_estimator.update(frame)
+        if coord_transformations is not None:
+            tracked_objects = self.tracker.update(
+                detections,
+                coord_transformations=coord_transformations,
+            )
+        else:
+            tracked_objects = self.tracker.update(detections)
         now_msg = self.get_clock().now().to_msg()
         process_time_s = self.now_s()
         tracker_fps = 0.0
@@ -680,7 +781,7 @@ class RealsenseTrackerNode(Node):
         status.left_detections = int(len(detections))
         status.right_detections = 0
         status.paired_detections = 0
-        status.active_tracks = int(len(tracked_objects))
+        status.active_tracks = int(len(body_tracks))
         self.status_pub.publish(status)
 
     def _start_direct_pipeline(self) -> None:
@@ -784,13 +885,17 @@ class RealsenseTrackerNode(Node):
 
         track_messages: list[TargetTrack] = []
         track_debug: dict[int, dict[str, object]] = {}
-        active_track_ids: set[int] = set()
+        norfair_active_track_ids: set[int] = set()
 
         for tracked_object in tracked_objects:
+            raw_track_id = getattr(tracked_object, "id", None)
+            if raw_track_id is None:
+                continue
+            track_id = int(raw_track_id)
+            norfair_active_track_ids.add(track_id)
             detection = tracked_object.last_detection
             if detection is None:
                 continue
-            track_id = int(tracked_object.id)
             yolo_centroid = np.asarray(detection.points, dtype=np.float32)
             centroid = get_centroid(
                 tracked_object.estimate
@@ -864,11 +969,118 @@ class RealsenseTrackerNode(Node):
                 "yolo_centroid_px": point_to_dict(yolo_centroid),
                 "norfair_centroid_px": point_to_dict(centroid),
                 "depth_z_m": float(depth_m),
+                "held_track": False,
+                "held_track_age_s": 0.0,
             }
-            active_track_ids.add(track_id)
 
-        self._garbage_collect_history(self.prev_body_positions, active_track_ids)
+        self._cache_fresh_body_tracks(track_messages, track_debug, now_s=now_s)
+        track_messages, track_debug = self._append_held_body_tracks(
+            body_tracks=track_messages,
+            body_track_debug=track_debug,
+            active_track_ids=norfair_active_track_ids,
+            stamp_msg=stamp_msg,
+            now_s=now_s,
+        )
+        self._garbage_collect_history(self.prev_body_positions, norfair_active_track_ids)
         return track_messages, track_debug
+
+    def _message_to_body_track_state(
+        self,
+        track: TargetTrack,
+        *,
+        now_s: float,
+    ) -> BodyTrackState:
+        return BodyTrackState(
+            track_id=int(track.track_id),
+            x_b_m=float(track.x_b_m),
+            y_b_m=float(track.y_b_m),
+            z_b_m=float(track.z_b_m),
+            vx_b_mps=float(track.vx_b_mps),
+            vy_b_mps=float(track.vy_b_mps),
+            vz_b_mps=float(track.vz_b_mps),
+            confidence=float(track.confidence),
+            bbox_area_px=float(track.bbox_area_px),
+            inbound=bool(track.inbound),
+            last_seen_s=float(now_s),
+        )
+
+    def _body_track_state_to_msg(self, state: BodyTrackState, stamp_msg) -> TargetTrack:
+        msg = TargetTrack()
+        msg.stamp = stamp_msg
+        msg.track_id = int(state.track_id)
+        msg.x_b_m = float(state.x_b_m)
+        msg.y_b_m = float(state.y_b_m)
+        msg.z_b_m = float(state.z_b_m)
+        msg.vx_b_mps = float(state.vx_b_mps)
+        msg.vy_b_mps = float(state.vy_b_mps)
+        msg.vz_b_mps = float(state.vz_b_mps)
+        msg.distance_m = float(
+            np.linalg.norm(np.array([state.x_b_m, state.y_b_m, state.z_b_m]))
+        )
+        msg.confidence = float(state.confidence)
+        msg.bbox_area_px = float(state.bbox_area_px)
+        msg.inbound = bool(state.inbound)
+        return msg
+
+    def _cache_fresh_body_tracks(
+        self,
+        body_tracks: list[TargetTrack],
+        body_track_debug: dict[int, dict[str, object]],
+        *,
+        now_s: float,
+    ) -> None:
+        fresh_track_ids: set[int] = set()
+        for body_track in body_tracks:
+            track_id = int(body_track.track_id)
+            fresh_track_ids.add(track_id)
+            self.cached_body_tracks[track_id] = self._message_to_body_track_state(
+                body_track,
+                now_s=now_s,
+            )
+            self.cached_body_track_debug[track_id] = dict(
+                body_track_debug.get(track_id, {})
+            )
+
+        cache_keep_window_s = max(self.publish_track_hold_s, 0.0) + 1.0
+        for track_id in list(self.cached_body_tracks.keys()):
+            if track_id in fresh_track_ids:
+                continue
+            track_age_s = max(
+                float(now_s) - float(self.cached_body_tracks[track_id].last_seen_s),
+                0.0,
+            )
+            if track_age_s > cache_keep_window_s:
+                self.cached_body_tracks.pop(track_id, None)
+                self.cached_body_track_debug.pop(track_id, None)
+
+    def _append_held_body_tracks(
+        self,
+        *,
+        body_tracks: list[TargetTrack],
+        body_track_debug: dict[int, dict[str, object]],
+        active_track_ids: set[int],
+        stamp_msg,
+        now_s: float,
+    ) -> tuple[list[TargetTrack], dict[int, dict[str, object]]]:
+        held_tracks = select_held_track_states(
+            active_track_ids=active_track_ids,
+            fresh_track_ids={int(track.track_id) for track in body_tracks},
+            cached_tracks=self.cached_body_tracks,
+            now_s=now_s,
+            hold_window_s=self.publish_track_hold_s,
+            max_extrapolation_m=self.publish_track_hold_max_extrapolation_m,
+        )
+        for track_id, held_state in held_tracks.items():
+            body_tracks.append(self._body_track_state_to_msg(held_state, stamp_msg))
+            held_age_s = max(
+                float(now_s) - float(self.cached_body_tracks[track_id].last_seen_s),
+                0.0,
+            )
+            held_debug = dict(self.cached_body_track_debug.get(track_id, {}))
+            held_debug["held_track"] = True
+            held_debug["held_track_age_s"] = float(held_age_s)
+            body_track_debug[track_id] = held_debug
+        return body_tracks, body_track_debug
 
     def _build_world_tracks(
         self,
@@ -1076,6 +1288,15 @@ class RealsenseTrackerNode(Node):
                     self.norfair_distance_threshold
                 ),
                 "track_hit_counter_max": int(self.track_hit_counter_max),
+                "enable_reid": bool(self.enable_reid),
+                "reid_histogram_bins": int(self.reid_histogram_bins),
+                "reid_distance_threshold": float(self.reid_distance_threshold),
+                "reid_hit_counter_max": int(self.reid_hit_counter_max),
+                "enable_motion_estimator": bool(self.enable_motion_estimator),
+                "publish_track_hold_s": float(self.publish_track_hold_s),
+                "publish_track_hold_max_extrapolation_m": float(
+                    self.publish_track_hold_max_extrapolation_m
+                ),
                 "max_valid_depth_m": float(self.max_valid_depth_m),
                 "depth_window_px": int(self.depth_window_px),
                 "world_frame": self.projector.frame_id,

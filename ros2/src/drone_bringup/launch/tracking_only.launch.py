@@ -30,6 +30,22 @@ def generate_launch_description():
             DeclareLaunchArgument("world_track_compare_topic", default_value=""),
             DeclareLaunchArgument("experiment_tag", default_value=""),
             DeclareLaunchArgument("model_path", default_value=""),
+            DeclareLaunchArgument("enable_reid", default_value="false"),
+            DeclareLaunchArgument("reid_histogram_bins", default_value="32"),
+            DeclareLaunchArgument(
+                "reid_distance_threshold",
+                default_value="0.20",
+            ),
+            DeclareLaunchArgument("reid_hit_counter_max", default_value="30"),
+            DeclareLaunchArgument(
+                "enable_motion_estimator",
+                default_value="false",
+            ),
+            DeclareLaunchArgument("publish_track_hold_s", default_value="0.0"),
+            DeclareLaunchArgument(
+                "publish_track_hold_max_extrapolation_m",
+                default_value="0.25",
+            ),
             DeclareLaunchArgument(
                 "tracker_config_file",
                 default_value=os.path.join(
@@ -56,6 +72,25 @@ def generate_launch_description():
                     ),
                     "experiment_tag": LaunchConfiguration("experiment_tag"),
                     "model_path": LaunchConfiguration("model_path"),
+                    "enable_reid": LaunchConfiguration("enable_reid"),
+                    "reid_histogram_bins": LaunchConfiguration(
+                        "reid_histogram_bins"
+                    ),
+                    "reid_distance_threshold": LaunchConfiguration(
+                        "reid_distance_threshold"
+                    ),
+                    "reid_hit_counter_max": LaunchConfiguration(
+                        "reid_hit_counter_max"
+                    ),
+                    "enable_motion_estimator": LaunchConfiguration(
+                        "enable_motion_estimator"
+                    ),
+                    "publish_track_hold_s": LaunchConfiguration(
+                        "publish_track_hold_s"
+                    ),
+                    "publish_track_hold_max_extrapolation_m": LaunchConfiguration(
+                        "publish_track_hold_max_extrapolation_m"
+                    ),
                     "tracker_config_file": LaunchConfiguration("tracker_config_file"),
                 }.items(),
             ),
