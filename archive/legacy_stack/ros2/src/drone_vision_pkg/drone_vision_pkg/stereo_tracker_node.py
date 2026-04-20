@@ -26,6 +26,12 @@ try:
 except Exception:  # pragma: no cover - platform specific
     get_cutout = None
 
+try: 
+    from norfair.camera_motion import MotionEstimator
+except Exception:  # pragma: no cover - platform specific
+    MotionEstimator = None
+
+
 try:
     from ultralytics import YOLO
 except Exception:  # pragma: no cover - platform specific
@@ -133,6 +139,7 @@ class StereoTrackerNode(Node):
         self._load_calibration(self.calibration_path)
         self.model = YOLO(self.model_path)
         self.tracker = self._build_tracker()
+        self.motion_estimator = MotionEstimator() if MotionEstimator is not None else None
 
         self.left_cap = self._open_capture(self.left_sensor_id, self.left_url)
         self.right_cap = self._open_capture(self.right_sensor_id, self.right_url)
@@ -158,11 +165,11 @@ class StereoTrackerNode(Node):
                 initialization_delay=1,
                 hit_counter_max=15,
 
-                reid_distance_function=embedding_distance,
+                reid_distance_function=self.embedding_distance,
                 reid_distance_threshold=20,
                 reid_hit_counter_max=30
             )
-        except TypeError:
+        except (TypeError, NameError):
             return Tracker(
                 distance_function="euclidean",
                 distance_threshold=self.norfair_distance_threshold,
@@ -404,8 +411,15 @@ class StereoTrackerNode(Node):
                 detection.embedding = self.get_hist(cut)
             else:
                 detection.embedding = None
+
+        coord_transform = None
+        if self.motion_estimator is not None:
+            coord_transform = self.motion_estimator.update(rect_left)
     
-        tracked = self.tracker.update(detections_3d)
+        if coord_transform is not None:
+            tracked = self.tracker.update(detections_3d, coord_transformations=coord_transform)
+        else:
+            tracked = self.tracker.update(detections_3d)
         self._publish_tracks(tracked)
         self._publish_perception_status(
             left_count=len(left_dets),
