@@ -21,6 +21,11 @@ except Exception:  # pragma: no cover - platform specific
     Detection = None
     Tracker = None
 
+try: 
+    from norfair.utils import get_cutout
+except Exception:  # pragma: no cover - platform specific
+    get_cutout = None
+
 try:
     from ultralytics import YOLO
 except Exception:  # pragma: no cover - platform specific
@@ -152,7 +157,10 @@ class StereoTrackerNode(Node):
                 distance_threshold=self.norfair_distance_threshold,
                 initialization_delay=1,
                 hit_counter_max=15,
-                reid_hit_counter_max=30,
+
+                reid_distance_function=embedding_distance,
+                reid_distance_threshold=20,
+                reid_hit_counter_max=30
             )
         except TypeError:
             return Tracker(
@@ -309,6 +317,38 @@ class StereoTrackerNode(Node):
         msg.active_tracks = int(active_tracks)
         self.perception_status_pub.publish(msg)
 
+    def get_hist(self, image):
+        hist = cv2.calcHist(
+            [cv2.cvtColor(image, cv2.COLOR_BGR2Lab)],
+            [0, 1],
+            None,
+            [128, 128],
+            [0, 256, 0, 256],
+        )
+        return cv2.normalize(hist, hist).flatten()
+
+    def embedding_distance(self, matched_not_init_trackers, unmatched_trackers):
+        snd_embedding = unmatched_trackers.last_detection.embedding
+
+        if snd_embedding is None:
+            for detection in reversed(unmatched_trackers.past_detections):
+                if detection.embedding is not None:
+                    snd_embedding = detection.embedding
+                    break
+            else:
+                return 1
+
+        for detection_fst in matched_not_init_trackers.past_detections:
+            if detection_fst.embedding is None:
+                continue
+
+            distance = 1 - cv2.compareHist(
+                snd_embedding, detection_fst.embedding, cv2.HISTCMP_CORREL
+            )
+            if distance < 0.5:
+                return distance
+        return 1
+        
     def process_frame(self) -> None:
         start_t = time.perf_counter()
         ok_left, left = self.left_cap.read()
@@ -358,6 +398,13 @@ class StereoTrackerNode(Node):
                 )
             )
 
+        for detection in detections_3d:
+            cut = get_cutout(points=detection.points, image=rect_left)
+            if cut.shape[0] > 0 and cut.shape[1] > 0:
+                detection.embedding = self.get_hist(cut)
+            else:
+                detection.embedding = None
+    
         tracked = self.tracker.update(detections_3d)
         self._publish_tracks(tracked)
         self._publish_perception_status(
