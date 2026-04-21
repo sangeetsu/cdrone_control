@@ -48,9 +48,7 @@ The manual recovery script still exists if a run is interrupted during cleanup:
 Main launch:
 
 ```bash
-MODEL_PATH=/home/jetson/cdrone_control/models/16_k_and_drone_studio_realsense_images_model.engine
 ros2 launch drone_bringup milestone3_demo.launch.py \
-  model_path:="$MODEL_PATH" \
   required_completion_count:=1
 ```
 

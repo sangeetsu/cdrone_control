@@ -29,6 +29,9 @@ from drone_control_pkg.milestone2_demo_logic import (
     select_sequential_target,
     update_dwell_progress,
 )
+from drone_control_pkg.milestone3_state_logic import (
+    requires_runtime_tracking_guards,
+)
 from drone_control_pkg.perimeter_utils import PerimeterGuard
 from drone_control_pkg.px4_param_profile import Px4ParamProfile
 from drone_control_pkg.topic_utils import cdrone_topic, join_topic
@@ -1645,6 +1648,12 @@ class Milestone3DemoSequenceNode(Node):
                 self.enter_abort(
                     f"FCU disconnected for {disconnect_elapsed_s:.2f}s"
                 )
+            return
+
+        if not requires_runtime_tracking_guards(
+            self.demo_state,
+            armed=bool(self.latest_state.armed),
+        ):
             return
 
         if not self.pose_fresh():
