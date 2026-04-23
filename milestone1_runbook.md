@@ -8,7 +8,7 @@ This runbook is for the first flight-test pass of:
 
 The active identity values come from
 `ros2/src/drone_bringup/config/droneid_config.yaml`. The examples below reflect
-the current `cdrone4` branch defaults.
+the current `cdrone3` branch defaults.
 
 The studio geometry plot for these coordinates is:
 
@@ -27,15 +27,15 @@ The intended sequence is:
 - the drone is using the same rigid body as the hover demo path
 - the perimeter file is:
   - `ros2/src/drone_bringup/config/drone_studio_perimeter.yaml`
-- you are flying with the current local `map` frame from `/cdrone/cdrone4/mavros/local_position/pose`
+- you are flying with the current local `map` frame from `/cdrone/cdrone3/mavros/local_position/pose`
 
 If your active flight rigid body is not the default one, add:
 
 ```bash
-rigid_body_name:=RigidBody4
+rigid_body_name:=RigidBody3
 ```
 
-or replace `RigidBody4` with the correct body name in the launch commands below.
+or replace `RigidBody3` with the correct body name in the launch commands below.
 
 ## One-Time Build
 
@@ -79,16 +79,16 @@ source /home/jetson/cdrone_control/ros2/install/setup.bash
 Run these before each flight attempt.
 
 ```bash
-ros2 topic echo --once /cdrone/cdrone4/mavros/state
-ros2 topic echo --once /cdrone/cdrone4/mavros/local_position/pose
-ros2 topic echo --once /cdrone/cdrone4/mavros/companion_process/status
-ros2 topic hz /cdrone/cdrone4/mavros/local_position/pose
+ros2 topic echo --once /cdrone/cdrone3/mavros/state
+ros2 topic echo --once /cdrone/cdrone3/mavros/local_position/pose
+ros2 topic echo --once /cdrone/cdrone3/mavros/companion_process/status
+ros2 topic hz /cdrone/cdrone3/mavros/local_position/pose
 ```
 
 What you want to see:
 
-- `/cdrone/cdrone4/mavros/state` is updating and connected
-- `/cdrone/cdrone4/mavros/local_position/pose` is updating cleanly
+- `/cdrone/cdrone3/mavros/state` is updating and connected
+- `/cdrone/cdrone3/mavros/local_position/pose` is updating cleanly
 - companion status is present
 - local pose rate is healthy
 
@@ -114,7 +114,7 @@ ros2 launch drone_bringup position_hover_demo.launch.py \
 Terminal 2:
 
 ```bash
-ros2 topic echo /cdrone/cdrone4/demo/position_hover_state
+ros2 topic echo /cdrone/cdrone3/demo/position_hover_state
 ```
 
 Terminal 3:
@@ -122,13 +122,13 @@ Terminal 3:
 Start:
 
 ```bash
-ros2 service call /cdrone/cdrone4/demo/position_hover_start std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone3/demo/position_hover_start std_srvs/srv/Trigger "{}"
 ```
 
 Abort if needed:
 
 ```bash
-ros2 service call /cdrone/cdrone4/demo/position_hover_abort std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone3/demo/position_hover_abort std_srvs/srv/Trigger "{}"
 ```
 
 Expected result:
@@ -161,7 +161,7 @@ ros2 launch drone_bringup position_goto_demo.launch.py \
 Terminal 2:
 
 ```bash
-ros2 topic echo /cdrone/cdrone4/demo/position_goto_state
+ros2 topic echo /cdrone/cdrone3/demo/position_goto_state
 ```
 
 Terminal 3:
@@ -169,13 +169,13 @@ Terminal 3:
 Start:
 
 ```bash
-ros2 service call /cdrone/cdrone4/demo/position_goto_start std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone3/demo/position_goto_start std_srvs/srv/Trigger "{}"
 ```
 
 Abort if needed:
 
 ```bash
-ros2 service call /cdrone/cdrone4/demo/position_goto_abort std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone3/demo/position_goto_abort std_srvs/srv/Trigger "{}"
 ```
 
 Expected result:
@@ -211,7 +211,7 @@ ros2 launch drone_bringup position_goto_demo.launch.py \
 Terminal 2:
 
 ```bash
-ros2 topic echo /cdrone/cdrone4/demo/position_goto_state
+ros2 topic echo /cdrone/cdrone3/demo/position_goto_state
 ```
 
 Terminal 3:
@@ -219,13 +219,13 @@ Terminal 3:
 Start:
 
 ```bash
-ros2 service call /cdrone/cdrone4/demo/position_goto_start std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone3/demo/position_goto_start std_srvs/srv/Trigger "{}"
 ```
 
 Abort if needed:
 
 ```bash
-ros2 service call /cdrone/cdrone4/demo/position_goto_abort std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone3/demo/position_goto_abort std_srvs/srv/Trigger "{}"
 ```
 
 Expected result:
@@ -281,7 +281,7 @@ ros2 launch drone_bringup position_circle_demo.launch.py \
 Terminal 2:
 
 ```bash
-ros2 topic echo /cdrone/cdrone4/demo/position_goto_state
+ros2 topic echo /cdrone/cdrone3/demo/position_goto_state
 ```
 
 Terminal 3:
@@ -289,13 +289,13 @@ Terminal 3:
 Start:
 
 ```bash
-ros2 service call /cdrone/cdrone4/demo/position_goto_start std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone3/demo/position_goto_start std_srvs/srv/Trigger "{}"
 ```
 
 Abort if needed:
 
 ```bash
-ros2 service call /cdrone/cdrone4/demo/position_goto_abort std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone3/demo/position_goto_abort std_srvs/srv/Trigger "{}"
 ```
 
 Note:

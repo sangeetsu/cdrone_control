@@ -6,7 +6,7 @@ Commands below assume your shell already sourced ROS 2 and the workspace from
 
 The active `drone_id`, MAVROS namespace, and mocap defaults come from
 `ros2/src/drone_bringup/config/droneid_config.yaml`. The checked-in commands use
-the current `cdrone4` branch values.
+the current `cdrone3` branch values.
 
 ## Build
 
@@ -29,11 +29,11 @@ ros2 launch drone_bringup milestone2_demo.launch.py \
 Run this after supervised takeoff and staging hover:
 
 ```bash
-ros2 service call /cdrone/cdrone4/demo/milestone2_start std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone3/demo/milestone2_start std_srvs/srv/Trigger "{}"
 ```
 
 ## Abort
 
 ```bash
-ros2 service call /cdrone/cdrone4/demo/milestone2_abort std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone3/demo/milestone2_abort std_srvs/srv/Trigger "{}"
 ```

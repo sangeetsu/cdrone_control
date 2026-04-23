@@ -1,7 +1,7 @@
 version: 1
 name: drone_studio
 frame_id: map
-source_pose_topic: /cdrone/cdrone4/mavros/local_position/pose
+source_pose_topic: /cdrone/cdrone3/mavros/local_position/pose
 finalized_from: perimeter.yaml
 finalized_at_utc: '2026-04-13T01:05:30+00:00'
 

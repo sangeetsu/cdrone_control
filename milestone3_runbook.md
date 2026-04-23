@@ -5,7 +5,7 @@ Detailed notes live in `docs/milestones/milestone3.md`.
 
 The active `drone_id`, MAVROS namespace, and mocap defaults come from
 `ros2/src/drone_bringup/config/droneid_config.yaml`. The checked-in commands use
-the current `cdrone4` branch values.
+the current `cdrone3` branch values.
 
 ## Build
 
@@ -37,16 +37,36 @@ ros2 launch drone_bringup milestone3_demo.launch.py \
   speed_profile:=fun
 ```
 
+If you want to push the same named profile directly to PX4 outside the Milestone
+3 launch flow, use:
+
+```bash
+python3 /home/jetson/cdrone_control/scripts/apply_px4_speed_profile.py indoor
+python3 /home/jetson/cdrone_control/scripts/apply_px4_speed_profile.py fun
+python3 /home/jetson/cdrone_control/scripts/apply_px4_speed_profile.py default
+```
+
+Helpful helper commands:
+
+```bash
+python3 /home/jetson/cdrone_control/scripts/apply_px4_speed_profile.py --list
+python3 /home/jetson/cdrone_control/scripts/apply_px4_speed_profile.py fun --dry-run
+/home/jetson/cdrone_control/scripts/restore_hover_baseline_params.sh
+```
+
+Use the restore script if you want to return PX4 to the validated baseline
+profile after testing or after an interrupted run.
+
 ## Start
 
 ```bash
-ros2 service call /cdrone/cdrone4/demo/milestone3_start std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone3/demo/milestone3_start std_srvs/srv/Trigger "{}"
 ```
 
 ## Abort
 
 ```bash
-ros2 service call /cdrone/cdrone4/demo/milestone3_abort std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone3/demo/milestone3_abort std_srvs/srv/Trigger "{}"
 ```
 
 ## Speed Tuning

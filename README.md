@@ -1,7 +1,7 @@
 # cdrone_control
 
 ROS 2 and PX4 workspace for indoor `cdrone` experiments on a Jetson Orin Nano.
-This branch is the `cdrone4` clone, and the active stack is organized around a
+This branch is the `cdrone3` clone, and the active stack is organized around a
 single per-drone identity file instead of scattered literals.
 
 ## Source Of Truth
@@ -11,16 +11,16 @@ All per-drone identity, network, and mocap defaults live in
 
 Current branch defaults:
 
-- `drone_id: cdrone4`
-- `hostname: cdrone4`
-- `local_ip: 192.168.0.121`
-- `mavros_namespace: /cdrone/cdrone4/mavros`
-- `rigid_body_name: RigidBody4`
-- `ownship_pose_topic: /vrpn_mocap/RigidBody4/pose`
+- `drone_id: cdrone3`
+- `hostname: cdrone3`
+- `local_ip: 192.168.0.194`
+- `mavros_namespace: /cdrone/cdrone3/mavros`
+- `rigid_body_name: RigidBody3`
+- `ownship_pose_topic: /vrpn_mocap/RigidBody3/pose`
 - `compare_pose_topic: /vrpn_mocap/RigidBody2/pose`
 - `optitrack_server: 192.168.0.217`
 - `optitrack_port: 3883`
-- peer metadata for `cdrone3: 192.168.0.194`
+- peer metadata for `cdrone4: 192.168.0.121`
 
 When cloning this repo for another drone, update `droneid_config.yaml` first.
 The active bringup launches, tracker launch path, and helper scripts now read
@@ -53,8 +53,8 @@ points for live testing.
 - [milestone3_runbook.md](milestone3_runbook.md): Milestone 3 demo flow
 - [error_realsense_runbook.md](error_realsense_runbook.md): RealSense tracking and report workflow
 
-Each runbook assumes the active values come from `droneid_config.yaml`. The
-checked-in examples show the current `cdrone4` branch values.
+Each runbook assumes the active values come from `droneid_config.yaml`, and the
+root operator-facing runbooks are aligned to the current `cdrone3` defaults.
 
 ## Documentation
 

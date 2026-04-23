@@ -6,14 +6,14 @@ generating the depth-vs-error report bundle reliably.
 It assumes:
 
 - the active tracker node is `realsense_tracker_node`
-- ownship pose comes from `/vrpn_mocap/RigidBody4/pose`
+- ownship pose comes from `/vrpn_mocap/RigidBody3/pose`
 - target reference pose comes from `/vrpn_mocap/RigidBody2/pose`
 - run bundles are written under `/home/jetson/output_dump`
 - the first reporting pass uses `RigidBody2` directly as ground truth
 
 The active identity-sensitive defaults come from
 `ros2/src/drone_bringup/config/droneid_config.yaml`. The checked-in examples
-below reflect the current `cdrone4` branch values.
+below reflect the current `cdrone3` branch values.
 
 ## What This Test Produces
 
@@ -84,7 +84,7 @@ In a new terminal:
 ```bash
 source /opt/ros/humble/setup.bash
 source /home/jetson/cdrone_control/ros2/install/setup.bash
-ros2 topic hz /vrpn_mocap/RigidBody4/pose
+ros2 topic hz /vrpn_mocap/RigidBody3/pose
 ros2 topic hz /vrpn_mocap/RigidBody2/pose
 ```
 
@@ -140,8 +140,8 @@ Optional live checks in another terminal:
 ```bash
 source /opt/ros/humble/setup.bash
 source /home/jetson/cdrone_control/ros2/install/setup.bash
-ros2 topic echo /cdrone/cdrone4/perception/status
-ros2 topic echo /cdrone/cdrone4/perception/world_tracks
+ros2 topic echo /cdrone/cdrone3/perception/status
+ros2 topic echo /cdrone/cdrone3/perception/world_tracks
 ```
 
 Healthy signs:
@@ -427,9 +427,9 @@ Then unplug and replug the D455.
 Check:
 
 ```bash
-ros2 topic echo /cdrone/cdrone4/perception/tracks
-ros2 topic echo /cdrone/cdrone4/perception/world_tracks
-ros2 topic hz /vrpn_mocap/RigidBody4/pose
+ros2 topic echo /cdrone/cdrone3/perception/tracks
+ros2 topic echo /cdrone/cdrone3/perception/world_tracks
+ros2 topic hz /vrpn_mocap/RigidBody3/pose
 ```
 
 Interpretation:
