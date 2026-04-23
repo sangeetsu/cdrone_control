@@ -24,9 +24,12 @@ from drone_control_pkg.deployment_config import (
 from drone_control_pkg.follow_utils import (
     FollowCommand,
     TrackSnapshot,
+    clamp_follow_command_altitude,
     compute_follow_command,
+    compute_return_to_point_command,
     distance_in_standoff_window,
     target_bearing_rad,
+    wrap_angle_rad,
 )
 from drone_control_pkg.milestone2_demo_logic import (
     project_body_velocity_to_world_xy,
@@ -34,6 +37,8 @@ from drone_control_pkg.milestone2_demo_logic import (
     update_dwell_progress,
 )
 from drone_control_pkg.milestone3_state_logic import (
+    completion_next_state,
+    post_return_next_state,
     requires_runtime_tracking_guards,
 )
 from drone_control_pkg.perimeter_utils import PerimeterGuard
@@ -81,11 +86,13 @@ def normalize_takeoff_strategy(value: str) -> str:
 class Milestone3DemoSequenceNode(Node):
     TERMINAL_STATES = {"IDLE", "COMPLETE", "ABORT"}
     ACTIVE_ENGAGEMENT_STATES = {"SEARCH", "FOLLOW", "DWELL"}
+    RETURN_STATES = {"RETURN_TO_START", "RETURN_HOME_HOLD"}
     OFFBOARD_HOLD_STATES = {
         "WARMUP_OFFBOARD",
         "SET_OFFBOARD_MODE",
         "SYNC_SPEED_PROFILE",
         "STAGE_HOVER",
+        "RETURN_HOME_HOLD",
     }
 
     def __init__(self) -> None:
@@ -128,6 +135,10 @@ class Milestone3DemoSequenceNode(Node):
         self.declare_parameter("restore_speed_profile_on_exit", True)
         self.declare_parameter("land_on_complete", True)
         self.declare_parameter("land_on_abort", True)
+        self.declare_parameter("return_to_takeoff_on_complete", True)
+        self.declare_parameter("return_position_tolerance_m", 0.20)
+        self.declare_parameter("return_yaw_tolerance_rad", 0.10)
+        self.declare_parameter("return_hold_duration_s", 1.5)
         self.declare_parameter("required_completion_count", 3)
         self.declare_parameter("dwell_time_s", 3.0)
         self.declare_parameter("follow_distance_m", 1.5)
@@ -250,6 +261,18 @@ class Milestone3DemoSequenceNode(Node):
         )
         self.land_on_complete = bool(self.get_parameter("land_on_complete").value)
         self.land_on_abort = bool(self.get_parameter("land_on_abort").value)
+        self.return_to_takeoff_on_complete = bool(
+            self.get_parameter("return_to_takeoff_on_complete").value
+        )
+        self.return_position_tolerance_m = float(
+            self.get_parameter("return_position_tolerance_m").value
+        )
+        self.return_yaw_tolerance_rad = float(
+            self.get_parameter("return_yaw_tolerance_rad").value
+        )
+        self.return_hold_duration_s = float(
+            self.get_parameter("return_hold_duration_s").value
+        )
         self.required_completion_count = max(
             1, int(self.get_parameter("required_completion_count").value)
         )
@@ -396,6 +419,7 @@ class Milestone3DemoSequenceNode(Node):
 
         self.takeoff_origin_altitude_m: Optional[float] = None
         self.takeoff_origin_xy: Optional[Tuple[float, float]] = None
+        self.takeoff_origin_yaw_rad: Optional[float] = None
         self.touchdown_started_s: Optional[float] = None
         self.last_takeoff_progress_log_s = 0.0
 
@@ -445,6 +469,7 @@ class Milestone3DemoSequenceNode(Node):
 
         self.perimeter_guard: Optional[PerimeterGuard] = None
         self.perimeter_guard_error = ""
+        self.last_altitude_clamp_log_s = 0.0
 
         self.cmd_pub = self.create_publisher(TwistStamped, self.cmd_vel_topic, 10)
         self.state_pub = self.create_publisher(
@@ -709,6 +734,39 @@ class Milestone3DemoSequenceNode(Node):
             (orientation.y * orientation.y) + (orientation.z * orientation.z)
         )
         return math.atan2(siny_cosp, cosy_cosp)
+
+    def has_takeoff_return_target(self) -> bool:
+        return (
+            self.takeoff_origin_xy is not None
+            and self.takeoff_origin_altitude_m is not None
+            and self.takeoff_origin_yaw_rad is not None
+        )
+
+    def return_target_reached(self) -> bool:
+        if not self.has_takeoff_return_target():
+            return False
+
+        current_xy = self.current_xy()
+        target_xy = self.takeoff_origin_xy
+        target_yaw_rad = self.takeoff_origin_yaw_rad
+        assert target_xy is not None
+        assert target_yaw_rad is not None
+
+        horizontal_error_m = math.hypot(
+            current_xy[0] - target_xy[0],
+            current_xy[1] - target_xy[1],
+        )
+        altitude_error_m = abs(
+            self.current_altitude_m() - self.takeoff_target_altitude_m()
+        )
+        yaw_error_rad = abs(
+            wrap_angle_rad(target_yaw_rad - self.current_yaw_rad())
+        )
+        return (
+            horizontal_error_m <= self.return_position_tolerance_m
+            and altitude_error_m <= self.altitude_tolerance_m
+            and yaw_error_rad <= self.return_yaw_tolerance_rad
+        )
 
     def current_frame_id(self) -> str:
         return str(self.latest_pose.header.frame_id or "map").strip()
@@ -1009,6 +1067,35 @@ class Milestone3DemoSequenceNode(Node):
         )
         return self.perimeter_guard.goal_altitude_violation_reason(predicted_z)
 
+    def clamp_command_to_perimeter_altitude(
+        self,
+        command: FollowCommand,
+    ) -> FollowCommand:
+        if not self.enable_perimeter_guard or self.perimeter_guard is None:
+            return command
+
+        altitude_limits = self.perimeter_guard.altitude_limits
+        clamped_command = clamp_follow_command_altitude(
+            command,
+            current_altitude_m=self.current_altitude_m(),
+            projected_horizon_s=self.projected_path_horizon_s,
+            min_z_m=altitude_limits.min_z_m,
+            max_z_m=altitude_limits.max_z_m,
+        )
+        if clamped_command.vz == command.vz:
+            return command
+
+        now_s = self.now_s()
+        if (now_s - self.last_altitude_clamp_log_s) >= 1.0:
+            active_track_id = self.active_track_id
+            self.get_logger().info(
+                "Clamped follow vertical command to respect perimeter altitude "
+                f"limits: id={active_track_id} vz {command.vz:.2f} -> "
+                f"{clamped_command.vz:.2f}"
+            )
+            self.last_altitude_clamp_log_s = now_s
+        return clamped_command
+
     def control_block_reason(self) -> str:
         if self.estop_latched:
             return "ESTOP"
@@ -1134,6 +1221,7 @@ class Milestone3DemoSequenceNode(Node):
         self.last_blocked_reason = ""
         self.takeoff_origin_xy = self.current_xy()
         self.takeoff_origin_altitude_m = self.current_altitude_m()
+        self.takeoff_origin_yaw_rad = self.current_yaw_rad()
         self.touchdown_started_s = None
         self.takeoff_request_sent = False
         self.takeoff_request_accepted = False
@@ -1702,7 +1790,8 @@ class Milestone3DemoSequenceNode(Node):
                 return
 
         if (
-            self.demo_state in {"STAGE_HOVER"} | self.ACTIVE_ENGAGEMENT_STATES
+            self.demo_state
+            in {"STAGE_HOVER"} | self.ACTIVE_ENGAGEMENT_STATES | self.RETURN_STATES
             and not self.latest_state.armed
         ):
             self.enter_abort(
@@ -1711,7 +1800,8 @@ class Milestone3DemoSequenceNode(Node):
             return
 
         if (
-            self.demo_state in {"STAGE_HOVER"} | self.ACTIVE_ENGAGEMENT_STATES
+            self.demo_state
+            in {"STAGE_HOVER"} | self.ACTIVE_ENGAGEMENT_STATES | self.RETURN_STATES
             and self.mode_future is None
             and not self.mode_matches(self.offboard_mode)
         ):
@@ -1739,7 +1829,7 @@ class Milestone3DemoSequenceNode(Node):
         blocked_reason = ""
         if self.demo_state == "ABORT":
             blocked_reason = self.abort_reason
-        elif self.demo_state in self.ACTIVE_ENGAGEMENT_STATES:
+        elif self.demo_state in self.ACTIVE_ENGAGEMENT_STATES | self.RETURN_STATES:
             blocked_reason = self.last_blocked_reason or self.control_block_reason()
         elif self.demo_state == "IDLE":
             blocked_reason = ""
@@ -1747,7 +1837,8 @@ class Milestone3DemoSequenceNode(Node):
             blocked_reason = "ESTOP"
 
         msg.autonomy_ready = (
-            self.demo_state in {"STAGE_HOVER"} | self.ACTIVE_ENGAGEMENT_STATES
+            self.demo_state
+            in {"STAGE_HOVER"} | self.ACTIVE_ENGAGEMENT_STATES | self.RETURN_STATES
             and not blocked_reason
         )
         msg.blocked_reason = blocked_reason
@@ -1785,6 +1876,7 @@ class Milestone3DemoSequenceNode(Node):
             "SET_OFFBOARD_MODE",
             "SYNC_SPEED_PROFILE",
             "STAGE_HOVER",
+            "RETURN_HOME_HOLD",
         }:
             self.publish_zero_command()
 
@@ -2015,6 +2107,7 @@ class Milestone3DemoSequenceNode(Node):
                 max_yaw_rate_rps=self.max_yaw_rate_rps,
                 min_safe_distance_m=self.min_safe_distance_m,
             )
+            command = self.clamp_command_to_perimeter_altitude(command)
             self.min_distance_gate_active = command.min_distance_gate_active
 
             projection_reason = self.command_projection_violation_reason(command)
@@ -2070,14 +2163,21 @@ class Milestone3DemoSequenceNode(Node):
                 )
                 self.clear_active_target()
                 if len(self.completed_track_ids) >= self.required_completion_count:
-                    if self.land_on_complete:
+                    next_state = completion_next_state(
+                        return_to_takeoff_on_complete=(
+                            self.return_to_takeoff_on_complete
+                        ),
+                        has_takeoff_return_target=self.has_takeoff_return_target(),
+                        land_on_complete=self.land_on_complete,
+                    )
+                    if next_state == "RETURN_TO_START":
                         self.set_demo_state(
-                            "SET_LAND_MODE",
-                            "all required targets completed",
+                            next_state,
+                            "all required targets completed; returning to takeoff origin",
                         )
                     else:
                         self.set_demo_state(
-                            "COMPLETE",
+                            next_state,
                             "all required targets completed",
                         )
                 else:
@@ -2086,6 +2186,83 @@ class Milestone3DemoSequenceNode(Node):
                         f"completed track {completed_track_id}",
                     )
             return target
+
+        if self.demo_state == "RETURN_TO_START":
+            control_block = self.control_block_reason()
+            if control_block:
+                self.last_blocked_reason = control_block
+                self.publish_zero_command()
+                return None
+
+            if not self.has_takeoff_return_target():
+                self.last_blocked_reason = ""
+                next_state = post_return_next_state(
+                    land_on_complete=self.land_on_complete
+                )
+                self.set_demo_state(
+                    next_state,
+                    "takeoff origin unavailable; skipping return",
+                )
+                return None
+
+            if self.return_target_reached():
+                self.last_blocked_reason = ""
+                self.publish_zero_command()
+                self.set_demo_state("RETURN_HOME_HOLD", "takeoff origin reached")
+                return None
+
+            target_xy = self.takeoff_origin_xy
+            target_yaw_rad = self.takeoff_origin_yaw_rad
+            assert target_xy is not None
+            assert target_yaw_rad is not None
+            command = compute_return_to_point_command(
+                current_xy=self.current_xy(),
+                current_altitude_m=self.current_altitude_m(),
+                current_yaw_rad=self.current_yaw_rad(),
+                target_xy=target_xy,
+                target_altitude_m=self.takeoff_target_altitude_m(),
+                target_yaw_rad=target_yaw_rad,
+                xy_deadband_m=self.return_position_tolerance_m,
+                z_deadband_m=self.altitude_tolerance_m,
+                yaw_deadband_rad=self.yaw_deadband_rad,
+                kp_xy=self.kp_xy,
+                kp_z=self.kp_z,
+                kp_yaw=self.kp_yaw,
+                max_vel_xy_mps=self.max_vel_xy_mps,
+                max_vel_z_mps=self.max_vel_z_mps,
+                max_yaw_rate_rps=self.max_yaw_rate_rps,
+            )
+            command = self.clamp_command_to_perimeter_altitude(command)
+            projection_reason = self.command_projection_violation_reason(command)
+            if projection_reason is not None:
+                self.last_blocked_reason = projection_reason
+                self.publish_zero_command()
+                self.enter_abort(f"return-to-start blocked: {projection_reason}")
+                return None
+
+            self.last_blocked_reason = ""
+            self.min_distance_gate_active = False
+            self.publish_follow_command(command)
+            return None
+
+        if self.demo_state == "RETURN_HOME_HOLD":
+            control_block = self.control_block_reason()
+            if control_block:
+                self.last_blocked_reason = control_block
+            else:
+                self.last_blocked_reason = ""
+            self.min_distance_gate_active = False
+            if not control_block and self.stage_elapsed_s() >= self.return_hold_duration_s:
+                next_state = post_return_next_state(
+                    land_on_complete=self.land_on_complete
+                )
+                reason = (
+                    "return hold complete; requesting landing"
+                    if next_state == "SET_LAND_MODE"
+                    else "return hold complete"
+                )
+                self.set_demo_state(next_state, reason)
+            return None
 
         if self.demo_state == "SET_LAND_MODE":
             if self.is_land_mode():

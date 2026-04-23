@@ -1,3 +1,9 @@
 numpy<2
 scipy
 PyYAML
+norfair
+opencv-python==4.13.0.92
+polars
+psutil
+requests
+pyrealsense2==2.57.7.10387

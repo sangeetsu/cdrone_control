@@ -12,6 +12,10 @@ milestone3_demo_sequence_node:
     require_companion_active: true
     land_on_complete: true
     land_on_abort: true
+    return_to_takeoff_on_complete: true
+    return_position_tolerance_m: 0.20
+    return_yaw_tolerance_rad: 0.10
+    return_hold_duration_s: 1.5
 
     publish_zero_on_block: true
     block_target_on_perimeter_violation: true

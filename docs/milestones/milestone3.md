@@ -10,7 +10,8 @@ Milestone 3 is the ground-start version of the studio demo:
 1. autonomous vertical takeoff
 2. OFFBOARD warmup and short staging hover
 3. sequential milestone 2 target servicing
-4. AUTO.LAND cleanup by default
+4. return to the saved takeoff XY/yaw at staging altitude
+5. AUTO.LAND cleanup by default
 
 The target geometry and success condition stay the same as milestone 2:
 
@@ -138,6 +139,7 @@ The launch defaults to:
 
 - pre-takeoff baseline profile enabled
 - indoor speed profile enabled after OFFBOARD handoff
+- automatic return to the saved takeoff pose on complete
 - automatic landing on complete
 - automatic landing on abort
 
@@ -182,6 +184,7 @@ Milestone 3 now has the code path for:
 - autonomous takeoff to staging hover
 - delayed indoor speed-profile activation
 - sequential short-range target servicing
+- return to the saved takeoff pose before landing
 - automatic cleanup landing
 
 Still pending flight validation:

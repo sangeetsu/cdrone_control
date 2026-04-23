@@ -107,6 +107,15 @@ class MavrosVelocityNode(Node):
     def now_s(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9
 
+    def latest_cmd_is_effectively_zero(self) -> bool:
+        cmd = self.latest_cmd.twist
+        return (
+            abs(float(cmd.linear.x)) < 1e-4
+            and abs(float(cmd.linear.y)) < 1e-4
+            and abs(float(cmd.linear.z)) < 1e-4
+            and abs(float(cmd.angular.z)) < 1e-4
+        )
+
     def cmd_callback(self, msg: TwistStamped) -> None:
         cmd = deepcopy(msg)
         cmd.twist.linear.x = clamp(
@@ -162,13 +171,20 @@ class MavrosVelocityNode(Node):
 
         if not self._guided_gate_open():
             self.velocity_pub.publish(self._zero_cmd())
-            # Warn periodically (once every 5s) if commands are being received but blocked
+            # Warn periodically if non-zero motion commands are being blocked.
+            # Milestone/demo nodes often publish zero hold setpoints before
+            # OFFBOARD handoff, and those should not look like a teleop problem.
             if not stale and not hasattr(self, '_last_gate_warn'):
                 self._last_gate_warn = 0.0
-            if not stale and (now_s - getattr(self, '_last_gate_warn', 0.0)) > 5.0:
+            if (
+                not stale
+                and not self.latest_cmd_is_effectively_zero()
+                and (now_s - getattr(self, '_last_gate_warn', 0.0)) > 5.0
+            ):
                 self.get_logger().warn(
                     f'Commands blocked: armed={self.state.armed}, '
-                    f'mode={self.state.mode} (need OFFBOARD). Press 6 in velocity teleop.'
+                    f'mode={self.state.mode}. Velocity commands are held until '
+                    'the vehicle is armed and in OFFBOARD.'
                 )
                 self._last_gate_warn = now_s
             return
