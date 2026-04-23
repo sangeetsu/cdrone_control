@@ -454,7 +454,7 @@ All axes clean with near-zero crosstalk. Yaw stable at ~177° throughout. Frame 
 ### 12. Demo milestone on 2026-04-08 — first successful autonomous arm and partial takeoff
 
 - The hover demo finally armed and lifted off under the full demo sequence.
-- Sequence observed in [output.txt](/home/jetson/cdrone_control/output.txt):
+- Sequence observed in [output.txt](/home/jetson/cdrone_control/docs/archived/artifacts/output.txt):
   - `IDLE -> SYNC_TAKEOFF_PARAM`
   - `SYNC_TAKEOFF_PARAM -> SET_TAKEOFF_MODE`
   - `SET_TAKEOFF_MODE -> ARMING`

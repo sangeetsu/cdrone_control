@@ -5,8 +5,8 @@ This directory holds older markdown files that used to live in the repo root.
 They were moved here to keep the root focused on the current active work:
 
 - `README.md`
-- `problem.md`
-- `milestone_planner.md`
+- `docs/notes/offboard_indoor_blocker.md`
+- `docs/plans/milestone_planner.md`
 
 The archived files are still useful for:
 

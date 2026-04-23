@@ -21,6 +21,9 @@ import numpy as np
 from scipy.spatial.transform import Rotation as R
 from ros2_poselib.poselib import Pose3D
 
+from drone_control_pkg.deployment_config import configured_mavros_namespace
+from drone_control_pkg.topic_utils import join_topic
+
 
 # gz sim -v4 -r iris_runway.sdf
 # sim_vehicle.py -v ArduCopter -f gazebo-iris --model JSON --map --console
@@ -36,24 +39,40 @@ class DroneControllerNode(Node):
         mode changes, takeoff, arming, and interval settings for MavLink messages.
         """
         super().__init__("drone_controller_node")
+        self.declare_parameter("mavros_namespace", configured_mavros_namespace())
+        self.mavros_namespace = str(self.get_parameter("mavros_namespace").value)
 
         # <------ Variables ------>
         # keep track of the drone status.
         self.drone_state_queue = deque(maxlen=1)
         self.drone_local_pos_queue = deque(maxlen=100)
+        self.command_topic = join_topic(self.mavros_namespace, "cmd/command")
+        self.mode_topic = join_topic(self.mavros_namespace, "set_mode")
+        self.arm_topic = join_topic(self.mavros_namespace, "cmd/arming")
+        self.takeoff_topic = join_topic(self.mavros_namespace, "cmd/takeoff")
+        self.message_interval_topic = join_topic(
+            self.mavros_namespace, "set_message_interval"
+        )
+        self.state_topic = join_topic(self.mavros_namespace, "state")
+        self.setpoint_position_topic = join_topic(
+            self.mavros_namespace, "setpoint_position/local"
+        )
+        self.local_position_topic = join_topic(
+            self.mavros_namespace, "local_position/pose"
+        )
 
         # <------ Clients ------>
         # for long command (datastream requests)...
-        self.cmd_cli = self.create_client(CommandLong, "/mavros/cmd/command")
+        self.cmd_cli = self.create_client(CommandLong, self.command_topic)
         # for mode changes ...
-        self.mode_cli = self.create_client(SetMode, "/mavros/set_mode")
+        self.mode_cli = self.create_client(SetMode, self.mode_topic)
         # for arming ...
-        self.arm_cli = self.create_client(CommandBool, "/mavros/cmd/arming")
+        self.arm_cli = self.create_client(CommandBool, self.arm_topic)
         # for takeoff
-        self.takeoff_cli = self.create_client(CommandTOL, "/mavros/cmd/takeoff")
+        self.takeoff_cli = self.create_client(CommandTOL, self.takeoff_topic)
         # to set interval between received MavLink messages
         self.message_interval_cli = self.create_client(
-            MessageInterval, "/mavros/set_message_interval"
+            MessageInterval, self.message_interval_topic
         )
 
         # <------ Publishers and Subscribers ------>
@@ -75,18 +94,18 @@ class DroneControllerNode(Node):
 
         # Subscriber for the state of the drone.
         self.state_sub = self.create_subscription(
-            State, "/mavros/state", self.state_callback, state_qos
+            State, self.state_topic, self.state_callback, state_qos
         )
         # publisher for setpoint commands, this used to control the drone
         # in its local coordinate system. Received and sent commands are in
         # meters.
         self.target_pub = self.create_publisher(
-            PoseStamped, "/mavros/setpoint_position/local", 10
+            PoseStamped, self.setpoint_position_topic, 10
         )
         # subscriber for drone`s local position.
         self.pos_sub = self.create_subscription(
             PoseStamped,
-            "/mavros/local_position/pose",
+            self.local_position_topic,
             self.local_position_callback,
             sensor_qos,
         )
@@ -94,7 +113,7 @@ class DroneControllerNode(Node):
         # MavLink messages to request from the drone flight controller.
         # These are drone position, attitude etc. And are requested using
         # set_all_message_interval function which makes async calls to
-        # /mavros/set_message_interval service.
+        # the configured MAVROS set_message_interval service.
         # Message id, Interval in microseconds
         self.messages_to_request = (
             (32, 100000),  # local position
@@ -142,8 +161,9 @@ class DroneControllerNode(Node):
         """
         Requests data from the drone flight controller in the form of MavLink messages.
         Requested messages will be sent at periodic intervals, which are then processed by
-        mavros and published to topics. This function makes async calls to "/mavros/set_message_interval service"
-        to request these messages. Which then sends a MAV_CMD_SET_MESSAGE_INTERVAL commands to the drone.
+        MAVROS and published to topics. This function makes async calls to the configured
+        set_message_interval service to request these messages. Which then sends a
+        MAV_CMD_SET_MESSAGE_INTERVAL command to the drone.
 
         MavLink message ids can be found here: https://mavlink.io/en/messages/common.html
 

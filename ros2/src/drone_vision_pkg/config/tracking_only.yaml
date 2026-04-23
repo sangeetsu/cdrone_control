@@ -33,8 +33,10 @@ realsense_tracker_node:
     color_topic: /camera/color/image_raw
     depth_topic: /camera/aligned_depth_to_color/image_raw
     camera_info_topic: /camera/color/camera_info
-    pose_topic: /vrpn_mocap/RigidBody3/pose
-    compare_pose_topic: /vrpn_mocap/RigidBody2/pose
+    # Identity-sensitive topics are supplied by launch defaults sourced from
+    # droneid_config.yaml. Keeping these blank avoids per-drone drift here.
+    pose_topic: ""
+    compare_pose_topic: ""
     tracks_topic: ""
     world_tracks_topic: ""
     world_track_compare_topic: ""

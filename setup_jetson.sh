@@ -29,7 +29,7 @@ Run it from an interactive shell where you can enter your sudo password:
   ./setup_jetson.sh
 
 If you prefer to review before running, see:
-  docs/rehaul/host_setup.md
+  docs/guides/setup/host_setup.md
 EOF
     exit 1
   fi

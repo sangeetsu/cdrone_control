@@ -5,9 +5,37 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
 
+read_drone_config_value() {
+  local key="$1"
+  python3 - "$REPO_ROOT" "$key" <<'PY'
+from pathlib import Path
+import sys
+
+import yaml
+
+repo_root = Path(sys.argv[1])
+key = sys.argv[2]
+config_path = repo_root / "ros2" / "src" / "drone_bringup" / "config" / "droneid_config.yaml"
+loaded = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+merged = {}
+if isinstance(loaded, dict):
+    for section_name in ("identity", "network", "mocap", "tracking"):
+        section = loaded.get(section_name)
+        if isinstance(section, dict):
+            merged.update(section)
+value = merged.get(key, "")
+print("" if value is None else value)
+PY
+}
+
 DURATION_S=120
-DRONE_ID="drone01"
-MAVROS_NAMESPACE="/mavros"
+DRONE_ID="$(read_drone_config_value drone_id)"
+MAVROS_NAMESPACE="$(read_drone_config_value mavros_namespace)"
+if [[ -z "${DRONE_ID}" ]]; then
+  echo "drone_id is missing from ros2/src/drone_bringup/config/droneid_config.yaml" >&2
+  exit 1
+fi
+MAVROS_NAMESPACE="${MAVROS_NAMESPACE:-/cdrone/${DRONE_ID}/mavros}"
 OUTPUT_DIR=""
 CAPTURE_START_EPOCH_S="$(date +%s)"
 
@@ -29,8 +57,8 @@ Run this while the demo stack is already up, then let the operator trigger the d
 
 Options:
   --duration SEC          Capture duration before auto-stop. Default: 120
-  --drone-id ID           Drone id used for /cdrone/<id>/... topics. Default: drone01
-  --mavros-namespace NS   MAVROS namespace. Default: /mavros
+  --drone-id ID           Drone id used for /cdrone/<id>/... topics. Default: from droneid_config.yaml
+  --mavros-namespace NS   MAVROS namespace. Default: from droneid_config.yaml
   --output-dir PATH       Capture directory. Default: temp_outputs/position_hover_capture_<stamp>
   --extra-topic TOPIC     Extra topic to add to the rosbag. Can be repeated.
   --help                  Show this help.
@@ -38,7 +66,7 @@ Options:
 Examples:
   scripts/capture_position_hover_debug.sh
   scripts/capture_position_hover_debug.sh --duration 90
-  scripts/capture_position_hover_debug.sh --extra-topic /vrpn_mocap/RigidBody3/pose
+  scripts/capture_position_hover_debug.sh --extra-topic /vrpn_mocap/RigidBody4/pose
 EOF
 }
 

@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from drone_control_pkg.deployment_config import default_arg, load_drone_launch_defaults
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
 from launch.substitutions import LaunchConfiguration
@@ -9,6 +10,7 @@ from launch_ros.actions import Node
 def generate_launch_description():
     vision_share = Path(__file__).resolve().parents[1]
     default_tracker_config = str(vision_share / "config" / "tracking_only.yaml")
+    defaults = load_drone_launch_defaults()
 
     tracker_node = Node(
         package="drone_vision_pkg",
@@ -50,20 +52,25 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("log_level", default_value="info"),
-            DeclareLaunchArgument("drone_id", default_value="drone01"),
+            DeclareLaunchArgument(
+                "drone_id",
+                default_value=default_arg(defaults, "drone_id", ""),
+            ),
             DeclareLaunchArgument("source_mode", default_value="direct"),
             DeclareLaunchArgument(
                 "tracker_config_file",
                 default_value=default_tracker_config,
             ),
             DeclareLaunchArgument(
-                "pose_topic", default_value="/vrpn_mocap/RigidBody3/pose"
+                "pose_topic",
+                default_value=default_arg(defaults, "ownship_pose_topic", ""),
             ),
             DeclareLaunchArgument(
                 "publish_world_track_compare", default_value="true"
             ),
             DeclareLaunchArgument(
-                "compare_pose_topic", default_value="/vrpn_mocap/RigidBody2/pose"
+                "compare_pose_topic",
+                default_value=default_arg(defaults, "compare_pose_topic", ""),
             ),
             DeclareLaunchArgument("world_track_compare_topic", default_value=""),
             DeclareLaunchArgument("experiment_tag", default_value=""),

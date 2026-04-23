@@ -12,6 +12,10 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
+from drone_control_pkg.deployment_config import (
+    configured_drone_id,
+    configured_mavros_namespace,
+)
 from drone_control_pkg.topic_utils import cdrone_topic, join_topic
 
 
@@ -56,8 +60,8 @@ class AltctlDemoSequenceNode(Node):
         super().__init__("altctl_demo_sequence_node")
 
         self.declare_parameter("publish_rate_hz", 20.0)
-        self.declare_parameter("drone_id", "drone01")
-        self.declare_parameter("mavros_namespace", "/mavros")
+        self.declare_parameter("drone_id", configured_drone_id())
+        self.declare_parameter("mavros_namespace", configured_mavros_namespace())
         self.declare_parameter("target_altitude_m", 0.7)
         self.declare_parameter("forward_distance_m", 1.2)
         self.declare_parameter("hover_after_takeoff_s", 2.0)

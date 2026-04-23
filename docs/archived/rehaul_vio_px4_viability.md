@@ -26,7 +26,7 @@ Confirmed from PX4 v1.16 docs:
 
 Implication:
 
-- The blocker in `problem.md` is real and correctly diagnosed: **the missing aiding source is the core issue**, not simply missing GPS.
+- The blocker in `docs/notes/offboard_indoor_blocker.md` is real and correctly diagnosed: **the missing aiding source is the core issue**, not simply missing GPS.
 
 ### 2. Indoor position-hold / position-control is feasible once EV/VIO is fused
 

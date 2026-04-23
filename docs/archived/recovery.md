@@ -54,7 +54,7 @@ Important note:
 
 If the camera firmware drifts, use:
 
-- [d455_firmware_downgrade.md](/home/jetson/cdrone_control/docs/rehaul/d455_firmware_downgrade.md)
+- [d455_firmware_downgrade.md](/home/jetson/cdrone_control/docs/guides/setup/d455_firmware_downgrade.md)
 
 ## Backup Artifact
 
@@ -204,7 +204,7 @@ The VIO path that worked here depended on the D455 being on:
 
 If the camera is not on that firmware, follow:
 
-- [d455_firmware_downgrade.md](/home/jetson/cdrone_control/docs/rehaul/d455_firmware_downgrade.md)
+- [d455_firmware_downgrade.md](/home/jetson/cdrone_control/docs/guides/setup/d455_firmware_downgrade.md)
 
 ### 5. Restore Or Rebuild The Isaac Docker Image
 
@@ -325,9 +325,9 @@ That is the lowest-friction path if the flash does not wipe `/`.
 ## Key Files
 
 - [problem2_realsense.md](/home/jetson/cdrone_control/docs/archived/problem2_realsense.md)
-- [isaac_ros_release32.md](/home/jetson/cdrone_control/docs/rehaul/isaac_ros_release32.md)
-- [isaac_vslam_d455.md](/home/jetson/cdrone_control/docs/rehaul/isaac_vslam_d455.md)
-- [d455_firmware_downgrade.md](/home/jetson/cdrone_control/docs/rehaul/d455_firmware_downgrade.md)
+- [isaac_ros_release32.md](/home/jetson/cdrone_control/docs/reference/isaac_ros_release32.md)
+- [isaac_vslam_d455.md](/home/jetson/cdrone_control/docs/guides/vio/isaac_vslam_d455.md)
+- [d455_firmware_downgrade.md](/home/jetson/cdrone_control/docs/guides/setup/d455_firmware_downgrade.md)
 - [setup_jetson.sh](/home/jetson/cdrone_control/setup_jetson.sh)
 - [setup_isaac_ros_release32.sh](/home/jetson/cdrone_control/scripts/setup_isaac_ros_release32.sh)
 - [start_isaac_realsense_container.sh](/home/jetson/cdrone_control/scripts/start_isaac_realsense_container.sh)

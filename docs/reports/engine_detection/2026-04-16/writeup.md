@@ -4,6 +4,10 @@
 
 This note is meant to give a concrete, data-backed summary of how the current TensorRT engine behaves in the RealSense tracking pipeline. The goal is to show where tracking quality degrades, where it fully fails, and why the current evidence points much more strongly to model/engine detectability than to mocap, logging, or evaluation bugs.
 
+This is a dated historical report from the April 16, 2026 bench campaign, so it
+intentionally records the then-active ownship rigid body rather than the newer
+`cdrone4` defaults.
+
 Engine under test:
 
 - `/home/jetson/cdrone_yolo/models/best_large_640_100e_77k_fp16.engine`
@@ -55,7 +59,8 @@ That means the failure mode is not "bad ground truth" or "logger broke." It is "
 
 Source CSV for this table:
 
-- [static_depth_ladder_window_summary.csv](/home/jetson/cdrone_control/engine_model_report_assets/static_depth_ladder_window_summary.csv)
+- The original CSV bundle is not retained in this repo snapshot; use the
+  per-run reports linked later in this document for the preserved evidence.
 
 ## What The Error Trend Says
 
@@ -74,11 +79,11 @@ So the pattern is:
 
 The range/error plot makes that progression obvious:
 
-- [range_vs_error_p90.png](/home/jetson/cdrone_control/engine_model_report_assets/range_vs_error_p90.png)
+- The original range/error plot asset is not retained in this repo snapshot.
 
 The coverage plot shows the cliff between `4.05 m` and `5.02 m`:
 
-- [range_vs_tracking_fraction.png](/home/jetson/cdrone_control/engine_model_report_assets/range_vs_tracking_fraction.png)
+- The original coverage plot asset is not retained in this repo snapshot.
 
 ## Why This Looks Like A Model/Engine Limitation
 
@@ -155,4 +160,3 @@ Ground-truth pose was still valid during the miss runs, so this is not a mocap o
   - no candidate at all
   - weak candidate below confidence threshold
   - NMS suppression
-

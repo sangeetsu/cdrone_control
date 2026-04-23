@@ -10,6 +10,7 @@ from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 
+from drone_control_pkg.deployment_config import configured_drone_id
 from drone_control_pkg.topic_utils import external_pose_input_topic
 
 
@@ -109,7 +110,7 @@ class ExternalPoseAdapterNode(Node):
     def __init__(self) -> None:
         super().__init__("external_pose_adapter_node")
 
-        self.declare_parameter("drone_id", "drone01")
+        self.declare_parameter("drone_id", configured_drone_id())
         self.declare_parameter("source_pose_topic", "/visual_slam/tracking/vo_pose")
         self.declare_parameter("output_pose_topic", "")
         self.declare_parameter("map_frame", "map")

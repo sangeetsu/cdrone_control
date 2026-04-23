@@ -13,6 +13,10 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from std_msgs.msg import Bool
 from std_srvs.srv import Trigger
 
+from drone_control_pkg.deployment_config import (
+    configured_drone_id,
+    configured_mavros_namespace,
+)
 from drone_control_pkg.follow_utils import (
     FollowCommand,
     TrackSnapshot,
@@ -37,8 +41,8 @@ class Milestone2DemoSequenceNode(Node):
 
         self.declare_parameter("scenario_id", "milestone2_demo_v1")
         self.declare_parameter("publish_rate_hz", 20.0)
-        self.declare_parameter("drone_id", "drone01")
-        self.declare_parameter("mavros_namespace", "/mavros")
+        self.declare_parameter("drone_id", configured_drone_id())
+        self.declare_parameter("mavros_namespace", configured_mavros_namespace())
         self.declare_parameter("required_completion_count", 3)
         self.declare_parameter("dwell_time_s", 3.0)
         self.declare_parameter("follow_distance_m", 1.5)

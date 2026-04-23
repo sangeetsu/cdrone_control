@@ -2,8 +2,8 @@
 """
 Keyboard teleop for cdrone_control via MAVROS.
 
-Default backend publishes MAVLink MANUAL_CONTROL stick inputs to
-/mavros/manual_control/send for ALTCTL/STABILIZED indoor teleop.
+Default backend publishes MAVLink MANUAL_CONTROL stick inputs to the
+configured MAVROS manual-control topic for ALTCTL/STABILIZED indoor teleop.
 An optional velocity backend remains available for OFFBOARD workflows.
 """
 
@@ -23,6 +23,10 @@ from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
 from std_msgs.msg import Bool
 
+from drone_control_pkg.deployment_config import (
+    configured_drone_id,
+    configured_mavros_namespace,
+)
 from drone_control_pkg.topic_utils import cdrone_topic, join_topic
 
 
@@ -63,8 +67,8 @@ class KeyboardTeleopNode(Node):
         self.declare_parameter('throttle_step', 200.0)
         self.declare_parameter('arm_throttle_hold_sec', 1.5)
         self.declare_parameter('disarm_request_delay_sec', 1.0)
-        self.declare_parameter('drone_id', 'drone01')
-        self.declare_parameter('mavros_namespace', '/mavros')
+        self.declare_parameter('drone_id', configured_drone_id())
+        self.declare_parameter('mavros_namespace', configured_mavros_namespace())
         self.declare_parameter('cmd_vel_topic', '')
         self.declare_parameter('estop_topic', '')
         self.declare_parameter('manual_control_topic', '')
@@ -170,13 +174,13 @@ class KeyboardTeleopNode(Node):
 
     def print_usage(self):
         if self.command_interface == MANUAL_INTERFACE:
-            msg = """
+            msg = f"""
 ========================================
 Keyboard Teleop for cdrone_control
 ========================================
 
 Backend:
-  MANUAL_CONTROL -> /mavros/manual_control/send
+  MANUAL_CONTROL -> {self.manual_control_topic}
   Intended modes: ALTCTL (preferred), STABILIZED, POSCTL
 
 Movement:
@@ -203,27 +207,21 @@ Exit:
   ESC or Ctrl+C : Quit
 
 Current scales:
-  XY: {:.0f}
-  Yaw: {:.0f}
-  Throttle center: {:.0f}
-  Throttle step: {:.0f}
-  Disarm delay: {:.1f}s
+  XY: {self.manual_xy:.0f}
+  Yaw: {self.manual_yaw:.0f}
+  Throttle center: {self.throttle_center:.0f}
+  Throttle step: {self.throttle_step:.0f}
+  Disarm delay: {self.disarm_request_delay_sec:.1f}s
 ========================================
-""".format(
-                self.manual_xy,
-                self.manual_yaw,
-                self.throttle_center,
-                self.throttle_step,
-                self.disarm_request_delay_sec,
-            )
+"""
         else:
-            msg = """
+            msg = f"""
 ========================================
 Keyboard Teleop for cdrone_control
 ========================================
 
 Backend:
-  Velocity -> /cdrone/control/cmd_vel_body
+  Velocity -> {self.cmd_vel_topic}
   Intended mode: OFFBOARD
 
 Movement:
@@ -250,10 +248,10 @@ Exit:
   ESC or Ctrl+C : Quit
 
 Current speeds:
-  Linear: {:.2f} m/s
-  Angular: {:.2f} rad/s
+  Linear: {self.linear_speed:.2f} m/s
+  Angular: {self.angular_speed:.2f} rad/s
 ========================================
-""".format(self.linear_speed, self.angular_speed)
+"""
         print(msg)
 
     def get_key(self):
@@ -418,7 +416,8 @@ Current speeds:
         self.cmd_client.call_async(req)
         self.get_logger().info(
             'To disable QGC joystick override, run in another terminal:\n'
-            '  ros2 service call /mavros/param/set mavros_msgs/srv/ParamSetV2 "'
+            f'  ros2 service call {join_topic(self.mavros_namespace, "param/set")} '
+            'mavros_msgs/srv/ParamSetV2 "'
             '{param_id: COM_RC_IN_MODE, value: {integer: 1}}"\n'
             'Or in QGC: Application Settings -> Virtual Joystick -> disable'
         )

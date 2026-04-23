@@ -182,4 +182,4 @@ ros2 launch drone_bringup altctl_demo.launch.py \
 
 - [`altctl_demo_sequence_node.py`](/home/sangeetsu/cdrone_control/ros2/src/drone_control_pkg/drone_control_pkg/altctl_demo_sequence_node.py)
 - [`altctl_demo.launch.py`](/home/sangeetsu/cdrone_control/ros2/src/drone_bringup/launch/altctl_demo.launch.py)
-- [`problem.md`](/home/sangeetsu/cdrone_control/problem.md)
+- [`docs/notes/offboard_indoor_blocker.md`](/home/sangeetsu/cdrone_control/problem.md)

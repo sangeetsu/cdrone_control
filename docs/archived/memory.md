@@ -104,7 +104,7 @@ The first four archived packages now live under `archive/legacy_stack/ros2/src/`
 
 ## Documents That Mattered
 
-- `problem.md` captured the live failure mode and what had been tried.
+- `docs/notes/offboard_indoor_blocker.md` captured the live failure mode and what had been tried.
 - the old `README.md` summarized the previous control paths.
 - `archive/legacy_stack/docs/vio_todo.md` outlined the intended VIO integration direction.
 - `hackster.md` summarized the GPS-denied Jetson/PX4/RealSense reference workflow.

@@ -1,6 +1,7 @@
 import os
 
 from ament_index_python.packages import get_package_share_directory
+from drone_control_pkg.deployment_config import default_arg, load_drone_launch_defaults
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -9,6 +10,7 @@ from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
     bringup_share = get_package_share_directory("drone_bringup")
+    defaults = load_drone_launch_defaults()
 
     goto_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -135,9 +137,18 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("log_level", default_value="info"),
-            DeclareLaunchArgument("drone_id", default_value="drone01"),
-            DeclareLaunchArgument("mavros_namespace", default_value="mavros"),
-            DeclareLaunchArgument("pose_source", default_value="optitrack"),
+            DeclareLaunchArgument(
+                "drone_id",
+                default_value=default_arg(defaults, "drone_id", ""),
+            ),
+            DeclareLaunchArgument(
+                "mavros_namespace",
+                default_value=default_arg(defaults, "mavros_namespace", "mavros"),
+            ),
+            DeclareLaunchArgument(
+                "pose_source",
+                default_value=default_arg(defaults, "pose_source", "optitrack"),
+            ),
             DeclareLaunchArgument("source_pose_topic", default_value=""),
             DeclareLaunchArgument("takeoff_altitude_m", default_value="0.7"),
             DeclareLaunchArgument("takeoff_rate_m_s", default_value="0.5"),
@@ -237,27 +248,77 @@ def generate_launch_description():
                 "perimeter_ceiling_tolerance_m",
                 default_value="0.05",
             ),
-            DeclareLaunchArgument("global_origin_latitude_deg", default_value="0.0"),
-            DeclareLaunchArgument("global_origin_longitude_deg", default_value="0.0"),
-            DeclareLaunchArgument("global_origin_altitude_m", default_value="17.1637"),
-            DeclareLaunchArgument("home_position_x_m", default_value="0.0"),
-            DeclareLaunchArgument("home_position_y_m", default_value="0.0"),
-            DeclareLaunchArgument("home_position_z_m", default_value="0.0"),
-            DeclareLaunchArgument("home_approach_z_m", default_value="1.0"),
-            DeclareLaunchArgument("reference_retry_period_s", default_value="1.0"),
+            DeclareLaunchArgument(
+                "global_origin_latitude_deg",
+                default_value=default_arg(defaults, "global_origin_latitude_deg", 0.0),
+            ),
+            DeclareLaunchArgument(
+                "global_origin_longitude_deg",
+                default_value=default_arg(defaults, "global_origin_longitude_deg", 0.0),
+            ),
+            DeclareLaunchArgument(
+                "global_origin_altitude_m",
+                default_value=default_arg(defaults, "global_origin_altitude_m", 17.1637),
+            ),
+            DeclareLaunchArgument(
+                "home_position_x_m",
+                default_value=default_arg(defaults, "home_position_x_m", 0.0),
+            ),
+            DeclareLaunchArgument(
+                "home_position_y_m",
+                default_value=default_arg(defaults, "home_position_y_m", 0.0),
+            ),
+            DeclareLaunchArgument(
+                "home_position_z_m",
+                default_value=default_arg(defaults, "home_position_z_m", 0.0),
+            ),
+            DeclareLaunchArgument(
+                "home_approach_z_m",
+                default_value=default_arg(defaults, "home_approach_z_m", 1.0),
+            ),
+            DeclareLaunchArgument(
+                "reference_retry_period_s",
+                default_value=default_arg(defaults, "reference_retry_period_s", 1.0),
+            ),
             DeclareLaunchArgument("external_pose_publish_rate_hz", default_value="30.0"),
             DeclareLaunchArgument("external_pose_timeout_s", default_value="0.25"),
-            DeclareLaunchArgument("map_frame", default_value="map"),
+            DeclareLaunchArgument(
+                "map_frame", default_value=default_arg(defaults, "map_frame", "map")
+            ),
             DeclareLaunchArgument("position_offset_m", default_value="[0.0, 0.0, 0.0]"),
             DeclareLaunchArgument("rpy_offset_rad", default_value="[0.0, 0.0, 0.0]"),
-            DeclareLaunchArgument("optitrack_server", default_value="192.168.0.217"),
-            DeclareLaunchArgument("optitrack_port", default_value="3883"),
-            DeclareLaunchArgument("rigid_body_name", default_value="RigidBody3"),
-            DeclareLaunchArgument("vrpn_update_freq", default_value="100.0"),
-            DeclareLaunchArgument("vrpn_refresh_freq", default_value="1.0"),
-            DeclareLaunchArgument("vrpn_sensor_data_qos", default_value="true"),
-            DeclareLaunchArgument("source_best_effort", default_value="true"),
-            DeclareLaunchArgument("use_vrpn_timestamps", default_value="false"),
+            DeclareLaunchArgument(
+                "optitrack_server",
+                default_value=default_arg(defaults, "optitrack_server", "192.168.0.217"),
+            ),
+            DeclareLaunchArgument(
+                "optitrack_port",
+                default_value=default_arg(defaults, "optitrack_port", 3883),
+            ),
+            DeclareLaunchArgument(
+                "rigid_body_name",
+                default_value=default_arg(defaults, "rigid_body_name", ""),
+            ),
+            DeclareLaunchArgument(
+                "vrpn_update_freq",
+                default_value=default_arg(defaults, "vrpn_update_freq", 100.0),
+            ),
+            DeclareLaunchArgument(
+                "vrpn_refresh_freq",
+                default_value=default_arg(defaults, "vrpn_refresh_freq", 1.0),
+            ),
+            DeclareLaunchArgument(
+                "vrpn_sensor_data_qos",
+                default_value=default_arg(defaults, "vrpn_sensor_data_qos", True),
+            ),
+            DeclareLaunchArgument(
+                "source_best_effort",
+                default_value=default_arg(defaults, "source_best_effort", True),
+            ),
+            DeclareLaunchArgument(
+                "use_vrpn_timestamps",
+                default_value=default_arg(defaults, "use_vrpn_timestamps", False),
+            ),
             DeclareLaunchArgument("enable_pose_debug", default_value="true"),
             DeclareLaunchArgument("debug_publish_rate_hz", default_value="1.0"),
             DeclareLaunchArgument("debug_history_window_s", default_value="5.0"),

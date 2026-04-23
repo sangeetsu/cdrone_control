@@ -16,12 +16,50 @@ Usage:
 import sys
 import time
 import threading
+from pathlib import Path
 
+import yaml
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from geometry_msgs.msg import PoseStamped
 import math
+
+
+def load_drone_config() -> dict:
+    repo_root = Path(__file__).resolve().parents[1]
+    config_path = repo_root / "ros2" / "src" / "drone_bringup" / "config" / "droneid_config.yaml"
+    loaded = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(loaded, dict):
+        raise ValueError(f"Expected mapping in {config_path}")
+
+    merged: dict = {}
+    for section_name in ("identity", "network", "mocap", "tracking"):
+        section = loaded.get(section_name)
+        if isinstance(section, dict):
+            merged.update(section)
+    return merged
+
+
+def join_topic(namespace: str, leaf: str) -> str:
+    namespace = str(namespace or "").strip().rstrip("/")
+    if not namespace:
+        return "/" + str(leaf or "").lstrip("/")
+    if not namespace.startswith("/"):
+        namespace = "/" + namespace
+    return f"{namespace}/" + str(leaf or "").lstrip("/")
+
+
+DRONE_DEFAULTS = load_drone_config()
+DRONE_ID = str(DRONE_DEFAULTS.get("drone_id", "")).strip().strip("/")
+OWNERSHIP_RIGID_BODY = str(DRONE_DEFAULTS.get("rigid_body_name", "RigidBody")).strip()
+VRPN_POSE_TOPIC = str(
+    DRONE_DEFAULTS.get("ownship_pose_topic", f"/vrpn_mocap/{OWNERSHIP_RIGID_BODY}/pose")
+).strip()
+MAVROS_NAMESPACE = str(DRONE_DEFAULTS.get("mavros_namespace", "")).strip()
+if not MAVROS_NAMESPACE and DRONE_ID:
+    MAVROS_NAMESPACE = f"/cdrone/{DRONE_ID}/mavros"
+VISION_POSE_TOPIC = join_topic(MAVROS_NAMESPACE, "vision_pose/pose")
 
 
 def quat_to_euler(q):
@@ -57,14 +95,14 @@ class FrameDiagNode(Node):
         # Raw VRPN output (before any conversion)
         self.create_subscription(
             PoseStamped,
-            "/vrpn_mocap/RigidBody3/pose",
+            VRPN_POSE_TOPIC,
             self.vrpn_cb,
             be_qos,
         )
         # What MAVROS receives (after adapter+bridge)
         self.create_subscription(
             PoseStamped,
-            "/mavros/vision_pose/pose",
+            VISION_POSE_TOPIC,
             self.mavros_cb,
             10,
         )
@@ -135,7 +173,7 @@ def main():
     node = FrameDiagNode()
 
     # Wait for data
-    print("Waiting for VRPN data on /vrpn_mocap/RigidBody3/pose ...")
+    print(f"Waiting for VRPN data on {VRPN_POSE_TOPIC} ...")
     for _ in range(100):
         rclpy.spin_once(node, timeout_sec=0.1)
         v, _ = node.snapshot()

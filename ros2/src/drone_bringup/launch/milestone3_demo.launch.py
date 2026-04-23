@@ -1,42 +1,56 @@
 import os
 
 from ament_index_python.packages import get_package_share_directory
+from drone_control_pkg.deployment_config import (
+    default_arg as _default_arg,
+    load_drone_launch_defaults,
+)
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
-import yaml
+
+
+_SPEED_PROFILE_FILENAME_BY_NAME = {
+    "indoor": "indoor_speed_profile.yaml",
+    "fun": "fun_speed_profile.yaml",
+    "default": "default_speed_profile.yaml",
+}
 
 
 def _load_optitrack_defaults() -> dict[str, object]:
-    config_path = os.path.join(
-        get_package_share_directory("drone_bringup"),
-        "config",
-        "optitrack_defaults.yaml",
-    )
-    with open(config_path, "r", encoding="utf-8") as config_file:
-        loaded = yaml.safe_load(config_file) or {}
-    if not isinstance(loaded, dict):
-        raise ValueError(f"Expected mapping in {config_path}")
-    return loaded
-
-
-def _default_arg(defaults: dict[str, object], key: str, fallback: object) -> str:
-    value = defaults.get(key, fallback)
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    return str(value)
+    return load_drone_launch_defaults()
 
 
 def launch_setup(context, *args, **kwargs):
-    del context, args, kwargs
+    del args, kwargs
 
     bringup_share = get_package_share_directory("drone_bringup")
     log_level = LaunchConfiguration("log_level")
     drone_id = LaunchConfiguration("drone_id")
     mavros_namespace = LaunchConfiguration("mavros_namespace")
+    explicit_speed_profile_config = (
+        LaunchConfiguration("speed_profile_config").perform(context).strip()
+    )
+    speed_profile_name = LaunchConfiguration("speed_profile").perform(context).strip().lower()
+    if explicit_speed_profile_config:
+        resolved_speed_profile_config = explicit_speed_profile_config
+    else:
+        speed_profile_name = speed_profile_name or "indoor"
+        profile_filename = _SPEED_PROFILE_FILENAME_BY_NAME.get(speed_profile_name)
+        if profile_filename is None:
+            valid_names = ", ".join(sorted(_SPEED_PROFILE_FILENAME_BY_NAME))
+            raise ValueError(
+                f"Unsupported speed_profile '{speed_profile_name}'. "
+                f"Expected one of: {valid_names}"
+            )
+        resolved_speed_profile_config = os.path.join(
+            bringup_share,
+            "config",
+            profile_filename,
+        )
 
     pose_bridge_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -177,7 +191,7 @@ def launch_setup(context, *args, **kwargs):
                 "use_speed_profile": ParameterValue(
                     LaunchConfiguration("use_speed_profile"), value_type=bool
                 ),
-                "speed_profile_config": LaunchConfiguration("speed_profile_config"),
+                "speed_profile_config": resolved_speed_profile_config,
             },
         ],
         arguments=["--ros-args", "--log-level", log_level],
@@ -210,11 +224,6 @@ def generate_launch_description():
         "config",
         "drone_studio_perimeter.yaml",
     )
-    default_speed_profile_config = os.path.join(
-        bringup_share,
-        "config",
-        "indoor_speed_profile.yaml",
-    )
     default_pre_takeoff_profile_config = os.path.join(
         bringup_share,
         "config",
@@ -224,16 +233,27 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("log_level", default_value="info"),
-            DeclareLaunchArgument("drone_id", default_value="drone01"),
-            DeclareLaunchArgument("mavros_namespace", default_value="mavros"),
-            DeclareLaunchArgument("pose_source", default_value="optitrack"),
+            DeclareLaunchArgument(
+                "drone_id",
+                default_value=_default_arg(defaults, "drone_id", ""),
+            ),
+            DeclareLaunchArgument(
+                "mavros_namespace",
+                default_value=_default_arg(defaults, "mavros_namespace", "mavros"),
+            ),
+            DeclareLaunchArgument(
+                "pose_source",
+                default_value=_default_arg(defaults, "pose_source", "optitrack"),
+            ),
             DeclareLaunchArgument("source_pose_topic", default_value=""),
             DeclareLaunchArgument("tracks_topic", default_value=""),
             DeclareLaunchArgument("engagement_state_topic", default_value=""),
             DeclareLaunchArgument("tracking_source_mode", default_value="direct"),
             DeclareLaunchArgument(
                 "tracking_pose_topic",
-                default_value="/vrpn_mocap/RigidBody3/pose",
+                default_value=_default_arg(
+                    defaults, "ownship_pose_topic", ""
+                ),
             ),
             DeclareLaunchArgument(
                 "publish_world_track_compare",
@@ -241,7 +261,9 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "compare_pose_topic",
-                default_value="/vrpn_mocap/RigidBody2/pose",
+                default_value=_default_arg(
+                    defaults, "compare_pose_topic", "/vrpn_mocap/RigidBody2/pose"
+                ),
             ),
             DeclareLaunchArgument("world_track_compare_topic", default_value=""),
             DeclareLaunchArgument("experiment_tag", default_value=""),
@@ -299,8 +321,12 @@ def generate_launch_description():
                 default_value="true",
             ),
             DeclareLaunchArgument(
+                "speed_profile",
+                default_value="indoor",
+            ),
+            DeclareLaunchArgument(
                 "speed_profile_config",
-                default_value=default_speed_profile_config,
+                default_value="",
             ),
             DeclareLaunchArgument(
                 "global_origin_latitude_deg",
@@ -364,7 +390,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "rigid_body_name",
-                default_value=_default_arg(defaults, "rigid_body_name", "RigidBody3"),
+                default_value=_default_arg(defaults, "rigid_body_name", ""),
             ),
             DeclareLaunchArgument(
                 "vrpn_update_freq",

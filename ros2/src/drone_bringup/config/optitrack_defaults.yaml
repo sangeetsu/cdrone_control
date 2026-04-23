@@ -1,6 +1,5 @@
 optitrack_server: 192.168.0.217
 optitrack_port: 3883
-rigid_body_name: RigidBody3
 map_frame: map
 vrpn_update_freq: 100.0
 vrpn_refresh_freq: 1.0

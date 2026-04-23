@@ -43,6 +43,82 @@ The manual recovery script still exists if a run is interrupted during cleanup:
 
 - `/home/jetson/cdrone_control/scripts/restore_hover_baseline_params.sh`
 
+## PX4 Speed Profiles
+
+Milestone 3 now supports three named post-OFFBOARD PX4 speed profiles:
+
+- `indoor`: current conservative indoor profile
+- `fun`: midpoint profile between indoor and the old fast baseline
+- `default`: the faster baseline motion limits
+
+Select them directly in the launch command:
+
+```bash
+ros2 launch drone_bringup milestone3_demo.launch.py \
+  required_completion_count:=1 \
+  speed_profile:=indoor
+```
+
+or:
+
+```bash
+ros2 launch drone_bringup milestone3_demo.launch.py \
+  required_completion_count:=1 \
+  speed_profile:=fun
+```
+
+or:
+
+```bash
+ros2 launch drone_bringup milestone3_demo.launch.py \
+  required_completion_count:=1 \
+  speed_profile:=default
+```
+
+If you provide both `speed_profile:=...` and an explicit
+`speed_profile_config:=...` path, the explicit config path wins.
+
+If you want to push one of the same profiles to PX4 outside the Milestone 3
+launch flow, use:
+
+```bash
+python3 scripts/apply_px4_speed_profile.py indoor
+python3 scripts/apply_px4_speed_profile.py fun
+python3 scripts/apply_px4_speed_profile.py default
+```
+
+These PX4 values are real units, not normalized multipliers:
+
+- `MPC_XY_CRUISE`, `MPC_XY_VEL_MAX`, `MPC_Z_V_AUTO_UP`, `MPC_Z_V_AUTO_DN`,
+  `MPC_Z_VEL_MAX_DN`, `MPC_LAND_SPEED`, and `MPC_TKO_SPEED` are in `m/s`
+- `MPC_ACC_HOR` is in `m/s^2`
+- `MPC_JERK_AUTO` and `MPC_JERK_MAX` are in `m/s^3`
+
+Current post-OFFBOARD profile values:
+
+| Profile | `MPC_XY_CRUISE` | `MPC_XY_VEL_MAX` | `MPC_ACC_HOR` | `MPC_JERK_AUTO` | `MPC_JERK_MAX` | `MPC_Z_V_AUTO_UP` | `MPC_Z_V_AUTO_DN` | `MPC_Z_VEL_MAX_DN` | `MPC_LAND_SPEED` |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
+| `indoor` | `1.0` | `1.5` | `1.0` | `1.0` | `2.0` | `0.8` | `0.5` | `0.5` | `0.35` |
+| `fun` | `3.0` | `6.0` | `2.0` | `2.5` | `5.0` | `1.8` | `1.0` | `1.0` | `0.5` |
+| `default` | `5.0` | `12.0` | `3.0` | `4.0` | `8.0` | `3.0` | `1.5` | `1.5` | `0.7` |
+
+Takeoff is handled separately. Before OFFBOARD handoff, Milestone 3 restores
+the pre-takeoff baseline profile from
+`ros2/src/drone_bringup/config/milestone3_takeoff_baseline_profile.yaml`,
+including `MPC_TKO_SPEED: 1.5`, so the named post-OFFBOARD profiles do not slow
+the climbout.
+
+Important tuning note: if the drone still turns too slowly to keep a laterally
+moving target in frame, the PX4 profile is only part of the story. Milestone 3
+also limits turning on the controller side in
+`ros2/src/drone_bringup/config/milestone3_demo.yaml`, especially:
+
+- `kp_yaw`
+- `max_yaw_rate_rps`
+
+So a faster PX4 profile can help the vehicle translate more aggressively, but
+it will not override a low yaw-rate cap in the Milestone 3 controller.
+
 ## Launch Surface
 
 Main launch:
@@ -70,21 +146,21 @@ The launch defaults to:
 Start the full ground-to-target sequence:
 
 ```bash
-ros2 service call /cdrone/drone01/demo/milestone3_start std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone4/demo/milestone3_start std_srvs/srv/Trigger "{}"
 ```
 
 Abort the sequence:
 
 ```bash
-ros2 service call /cdrone/drone01/demo/milestone3_abort std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone4/demo/milestone3_abort std_srvs/srv/Trigger "{}"
 ```
 
 Useful live topics:
 
 ```bash
-ros2 topic echo /cdrone/drone01/engagement/state
-ros2 topic echo /cdrone/drone01/perception/tracks
-ros2 topic echo /mavros/state
+ros2 topic echo /cdrone/cdrone4/engagement/state
+ros2 topic echo /cdrone/cdrone4/perception/tracks
+ros2 topic echo /cdrone/cdrone4/mavros/state
 ```
 
 ## Validation Used For This Revision

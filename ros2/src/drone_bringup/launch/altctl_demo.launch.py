@@ -1,6 +1,7 @@
 import os
 
 from ament_index_python.packages import get_package_share_directory
+from drone_control_pkg.deployment_config import default_arg, load_drone_launch_defaults
 from launch import LaunchDescription
 from launch.actions import (
     DeclareLaunchArgument,
@@ -100,11 +101,18 @@ def launch_setup(context, *args, **kwargs):
 
 
 def generate_launch_description():
+    defaults = load_drone_launch_defaults()
     return LaunchDescription(
         [
             DeclareLaunchArgument("log_level", default_value="info"),
-            DeclareLaunchArgument("drone_id", default_value="drone01"),
-            DeclareLaunchArgument("mavros_namespace", default_value="mavros"),
+            DeclareLaunchArgument(
+                "drone_id",
+                default_value=default_arg(defaults, "drone_id", ""),
+            ),
+            DeclareLaunchArgument(
+                "mavros_namespace",
+                default_value=default_arg(defaults, "mavros_namespace", "mavros"),
+            ),
             DeclareLaunchArgument("publish_rate_hz", default_value="20.0"),
             DeclareLaunchArgument("target_altitude_m", default_value="0.7"),
             DeclareLaunchArgument("forward_distance_m", default_value="1.2"),

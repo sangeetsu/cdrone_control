@@ -29,7 +29,7 @@ This pass should leave the repo with:
 - Reuse only the smallest useful pieces from archived follow logic
 - Keep the control contract simple and explicit
 - Verify the hover demo after touching MAVROS launch/config
-- Treat "world frame" as the PX4 local `map` frame used by `/mavros/local_position/pose`, not GPS latitude/longitude
+- Treat "world frame" as the PX4 local `map` frame used by `/cdrone/cdrone4/mavros/local_position/pose`, not GPS latitude/longitude
 - Prefer body-frame follow first; postpone map-frame target pursuit until needed
 
 ## Next Demo Milestone
@@ -60,7 +60,7 @@ The current hover demo uses:
 2. `external_pose_adapter_node`
 3. `external_pose_bridge_node`
 4. MAVROS `vision_pose/pose`
-5. PX4 fused local pose at `/mavros/local_position/pose`
+5. PX4 fused local pose at `/cdrone/cdrone4/mavros/local_position/pose`
 
 The relevant active files are:
 
@@ -108,7 +108,7 @@ Handled by:
 - MAVROS `vision_pose/pose`
 - PX4 external-vision fusion
 
-The hover demo then reads `/mavros/local_position/pose`, plus home/global-origin topics, and treats that as the trusted local frame.
+The hover demo then reads `/cdrone/cdrone4/mavros/local_position/pose`, plus home/global-origin topics, and treats that as the trusted local frame.
 
 ### Transform 3: target body coordinates -> body-frame control commands
 
@@ -131,7 +131,7 @@ This is not needed for the first active follow pass or for a static world-frame 
 
 Inputs for that later step would be:
 
-- `p_drone_map` from `/mavros/local_position/pose`
+- `p_drone_map` from `/cdrone/cdrone4/mavros/local_position/pose`
 - `R_map_body` from the ownship orientation in that same pose
 - `p_target_body` from `TargetTrack`
 
@@ -148,9 +148,9 @@ That later feature becomes useful only if we want:
 Add a new node in `drone_control_pkg` that:
 
 - subscribes to `TargetTrackArray`
-- subscribes to `/mavros/state`
-- subscribes to `/mavros/local_position/pose`
-- subscribes to `/mavros/companion_process/status`
+- subscribes to `/cdrone/cdrone4/mavros/state`
+- subscribes to `/cdrone/cdrone4/mavros/local_position/pose`
+- subscribes to `/cdrone/cdrone4/mavros/companion_process/status`
 - selects one valid target
 - applies safety gates before commanding motion
 - publishes `TwistStamped` on `/cdrone/<id>/control/cmd_vel_body`
@@ -230,14 +230,14 @@ Move older root markdown files into `docs/archived/` and update surviving refere
 Likely keep in the root:
 
 - `README.md`
-- `problem.md`
-- `milestone_planner.md`
+- `docs/notes/offboard_indoor_blocker.md`
+- `docs/plans/milestone_planner.md`
 
 ## Files Likely To Change
 
 ### New files
 
-- `milestone_planner.md`
+- `docs/plans/milestone_planner.md`
 - `docs/archived/README.md`
 - `ros2/src/drone_control_pkg/drone_control_pkg/target_follow_controller_node.py`
 - `ros2/src/drone_bringup/config/target_follow_safety.yaml`

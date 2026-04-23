@@ -19,12 +19,12 @@ Hit fractions below are computed across the full run. Range, depth, and error me
 
 Source CSV for this table:
 
-- `/home/jetson/cdrone_control/engine_model_report_assets_2026-04-20/static_depth_ladder_summary.csv`
+- `/home/jetson/cdrone_control/docs/reports/engine_detection/2026-04-20/model_report_assets/static_depth_ladder_summary.csv`
 
 Overview plots:
 
-- Tracking coverage vs range: `/home/jetson/cdrone_control/engine_model_report_assets_2026-04-20/range_vs_tracking_fraction.png`
-- Error vs range: `/home/jetson/cdrone_control/engine_model_report_assets_2026-04-20/range_vs_error_p90.png`
+- Tracking coverage vs range: `/home/jetson/cdrone_control/docs/reports/engine_detection/2026-04-20/model_report_assets/range_vs_tracking_fraction.png`
+- Error vs range: `/home/jetson/cdrone_control/docs/reports/engine_detection/2026-04-20/model_report_assets/range_vs_error_p90.png`
 
 Representative runs:
 

@@ -3,17 +3,18 @@
 Interactive studio perimeter calibration helper.
 
 Capture the safe fly boundary and keep-out zones in the same local frame the
-drone already uses for flight control. By default that is `/mavros/local_position/pose`.
+drone already uses for flight control.
 
 Recommended workflow:
-1. Launch the external-pose pipeline so `/mavros/local_position/pose` is live.
+1. Launch the external-pose pipeline so the configured MAVROS `local_position/pose`
+   topic is live.
 2. Place a calibration marker at each vertex of the safe outer boundary.
 3. Place the marker at the four corners of the pillar keep-out square.
 4. Let this script average each placement and write `perimeter.yaml`.
 
 Example:
   python3 scripts/calibrate_perimeter.py \
-    --topic /mavros/local_position/pose \
+    --topic /cdrone/cdrone4/mavros/local_position/pose \
     --output ros2/src/drone_bringup/config/perimeter.yaml \
     --boundary-labels north_west north_east south_east south_west \
     --pillar-labels pillar_nw pillar_ne pillar_se pillar_sw \
@@ -38,6 +39,41 @@ import yaml
 from geometry_msgs.msg import PoseStamped
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+
+
+def load_drone_config() -> dict[str, object]:
+    repo_root = Path(__file__).resolve().parents[1]
+    config_path = repo_root / "ros2" / "src" / "drone_bringup" / "config" / "droneid_config.yaml"
+    loaded = yaml.safe_load(config_path.read_text(encoding="utf-8")) or {}
+    if not isinstance(loaded, dict):
+        raise ValueError(f"Expected mapping in {config_path}")
+
+    merged: dict[str, object] = {}
+    for section_name in ("identity", "network", "mocap", "tracking"):
+        section = loaded.get(section_name)
+        if isinstance(section, dict):
+            merged.update(section)
+    return merged
+
+
+def join_topic(namespace: str, leaf: str) -> str:
+    namespace = str(namespace or "").strip().rstrip("/")
+    if not namespace:
+        return "/" + str(leaf or "").lstrip("/")
+    if not namespace.startswith("/"):
+        namespace = "/" + namespace
+    return f"{namespace}/" + str(leaf or "").lstrip("/")
+
+
+DRONE_DEFAULTS = load_drone_config()
+DEFAULT_DRONE_ID = str(DRONE_DEFAULTS.get("drone_id", "")).strip().strip("/")
+DEFAULT_MAVROS_NAMESPACE = str(DRONE_DEFAULTS.get("mavros_namespace", "")).strip()
+if not DEFAULT_MAVROS_NAMESPACE and DEFAULT_DRONE_ID:
+    DEFAULT_MAVROS_NAMESPACE = f"/cdrone/{DEFAULT_DRONE_ID}/mavros"
+DEFAULT_POSE_TOPIC = join_topic(
+    DEFAULT_MAVROS_NAMESPACE,
+    "local_position/pose",
+)
 
 
 def quat_to_yaw_rad(msg: PoseStamped) -> float:
@@ -170,8 +206,8 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--topic",
-        default="/mavros/local_position/pose",
-        help="Pose topic to sample. Prefer /mavros/local_position/pose.",
+        default=DEFAULT_POSE_TOPIC,
+        help="Pose topic to sample. Prefer the configured MAVROS local_position topic.",
     )
     parser.add_argument(
         "--output",

@@ -5,6 +5,7 @@ from geometry_msgs.msg import PoseStamped
 from mavros_msgs.msg import CompanionProcessStatus
 from rclpy.node import Node
 
+from drone_control_pkg.deployment_config import configured_mavros_namespace
 from drone_control_pkg.topic_utils import join_topic
 
 
@@ -42,7 +43,7 @@ class BenchVisionPoseNode(Node):
         self.declare_parameter("pitch_rad", 0.0)
         self.declare_parameter("yaw_rad", 0.0)
         self.declare_parameter("publish_companion_status", True)
-        self.declare_parameter("mavros_namespace", "/mavros")
+        self.declare_parameter("mavros_namespace", configured_mavros_namespace())
 
         self.publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
         self.frame_id = str(self.get_parameter("frame_id").value)

@@ -72,7 +72,7 @@ The repo was advanced from "camera recovery" into "working VSLAM":
   - added as the first-pass bridge from Isaac VSLAM `vo_pose` into MAVROS `vision_pose/pose`
 - `.gitignore`
   - updated to ignore `/temp_outputs/`
-- `docs/rehaul/isaac_vslam_d455.md`
+- `docs/guides/vio/isaac_vslam_d455.md`
   - added as the active VSLAM bringup note
 - `README.md`
   - updated to reflect that VSLAM is now alive

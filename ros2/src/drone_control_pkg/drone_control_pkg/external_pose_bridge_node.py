@@ -7,6 +7,10 @@ from geometry_msgs.msg import PoseStamped
 from mavros_msgs.msg import CompanionProcessStatus
 from rclpy.node import Node
 
+from drone_control_pkg.deployment_config import (
+    configured_drone_id,
+    configured_mavros_namespace,
+)
 from drone_control_pkg.topic_utils import (
     external_pose_input_topic,
     join_topic,
@@ -22,8 +26,8 @@ class ExternalPoseBridgeNode(Node):
     def __init__(self) -> None:
         super().__init__("external_pose_bridge_node")
 
-        self.declare_parameter("drone_id", "drone01")
-        self.declare_parameter("mavros_namespace", "/mavros")
+        self.declare_parameter("drone_id", configured_drone_id())
+        self.declare_parameter("mavros_namespace", configured_mavros_namespace())
         self.declare_parameter("publish_rate_hz", 30.0)
         self.declare_parameter("input_timeout_s", 0.25)
         self.declare_parameter("publish_companion_status", True)

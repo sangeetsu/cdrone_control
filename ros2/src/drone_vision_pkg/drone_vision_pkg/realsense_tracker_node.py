@@ -8,6 +8,10 @@ import time
 
 import numpy as np
 import rclpy
+from drone_control_pkg.deployment_config import (
+    configured_compare_pose_topic,
+    configured_drone_id,
+)
 from drone_control_pkg.topic_utils import cdrone_topic, external_pose_input_topic
 from drone_msgs.msg import (
     PerceptionStatus,
@@ -232,7 +236,7 @@ class RealsenseTrackerNode(Node):
     def __init__(self) -> None:
         super().__init__("realsense_tracker_node")
 
-        self.declare_parameter("drone_id", "drone01")
+        self.declare_parameter("drone_id", configured_drone_id())
         self.declare_parameter("source_mode", "direct")
         self.declare_parameter("tracker_rate_hz", 10.0)
         self.declare_parameter("device_id", 0)
@@ -272,7 +276,7 @@ class RealsenseTrackerNode(Node):
         )
         self.declare_parameter("camera_info_topic", "/camera/color/camera_info")
         self.declare_parameter("pose_topic", "")
-        self.declare_parameter("compare_pose_topic", "/vrpn_mocap/RigidBody2/pose")
+        self.declare_parameter("compare_pose_topic", configured_compare_pose_topic())
         self.declare_parameter("tracks_topic", "")
         self.declare_parameter("world_tracks_topic", "")
         self.declare_parameter("world_track_compare_topic", "")
@@ -391,9 +395,10 @@ class RealsenseTrackerNode(Node):
         self.direct_depth_fps = int(self.get_parameter("direct_depth_fps").value)
         pose_topic = str(self.get_parameter("pose_topic").value).strip()
         self.pose_topic = pose_topic or external_pose_input_topic(self.drone_id)
-        self.compare_pose_topic = str(
-            self.get_parameter("compare_pose_topic").value
-        ).strip()
+        self.compare_pose_topic = (
+            str(self.get_parameter("compare_pose_topic").value).strip()
+            or configured_compare_pose_topic()
+        )
         self.tracks_topic = (
             str(self.get_parameter("tracks_topic").value).strip()
             or cdrone_topic(self.drone_id, "perception/tracks")

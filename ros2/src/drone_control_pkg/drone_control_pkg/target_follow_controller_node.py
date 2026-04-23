@@ -11,6 +11,10 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from std_msgs.msg import Bool, String
 from std_srvs.srv import SetBool
 
+from drone_control_pkg.deployment_config import (
+    configured_drone_id,
+    configured_mavros_namespace,
+)
 from drone_control_pkg.follow_utils import (
     TrackSnapshot,
     compute_follow_command,
@@ -24,8 +28,8 @@ class TargetFollowControllerNode(Node):
         super().__init__("target_follow_controller_node")
 
         self.declare_parameter("publish_rate_hz", 20.0)
-        self.declare_parameter("drone_id", "drone01")
-        self.declare_parameter("mavros_namespace", "/mavros")
+        self.declare_parameter("drone_id", configured_drone_id())
+        self.declare_parameter("mavros_namespace", configured_mavros_namespace())
         self.declare_parameter("follow_enabled_on_startup", False)
         self.declare_parameter("follow_distance_m", 3.0)
         self.declare_parameter("follow_distance_tolerance_m", 0.25)

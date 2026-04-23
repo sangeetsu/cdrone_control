@@ -90,9 +90,9 @@ After the firmware downgrade and the D455 auto-exposure workaround:
 - `/visual_slam/tracking/odometry` measured about `89.9 Hz`
 - `/visual_slam/status` published `vo_state: 1`
 - `/visual_slam/tracking/odometry` produced a valid `nav_msgs/msg/Odometry` sample in the `odom -> camera_link` frame chain
-- the repo bootstrap bridge relayed `/visual_slam/tracking/vo_pose` into `/mavros/vision_pose/pose`
-- `/mavros/vision_pose/pose` measured about `30.0 Hz`
-- `/mavros/companion_process/status` published `state: 4` for the visual-inertial odometry component
+- the repo bootstrap bridge relayed `/visual_slam/tracking/vo_pose` into `/cdrone/cdrone4/mavros/vision_pose/pose`
+- `/cdrone/cdrone4/mavros/vision_pose/pose` measured about `30.0 Hz`
+- `/cdrone/cdrone4/mavros/companion_process/status` published `state: 4` for the visual-inertial odometry component
 
 One captured odometry sample and the rate logs are stored in the gitignored temp output directory created by the capture script.
 

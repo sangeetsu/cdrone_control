@@ -6,6 +6,7 @@ from mavros_msgs.msg import HomePosition, State
 from rclpy import qos
 from rclpy.node import Node
 
+from drone_control_pkg.deployment_config import configured_mavros_namespace
 from drone_control_pkg.topic_utils import join_topic
 
 STATE_QOS = qos.QoSProfile(
@@ -26,7 +27,7 @@ class DroneSetup(Node):
     def __init__(self) -> None:
         super().__init__("drone_setup")
 
-        self.declare_parameter("mavros_namespace", "/mavros")
+        self.declare_parameter("mavros_namespace", configured_mavros_namespace())
         self.declare_parameter("global_origin_latitude_deg", 0.0)
         self.declare_parameter("global_origin_longitude_deg", 0.0)
         self.declare_parameter("global_origin_altitude_m", 0.0)

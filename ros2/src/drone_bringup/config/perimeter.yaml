@@ -1,6 +1,6 @@
 version: 1
 frame_id: map
-calibration_source_topic: /mavros/local_position/pose
+calibration_source_topic: /cdrone/cdrone4/mavros/local_position/pose
 generated_at_utc: '2026-04-13T01:04:44.013932+00:00'
 capture_semantics:
   boundary_polygon_xy_m: Safe inner boundary to enforce directly, not the physical

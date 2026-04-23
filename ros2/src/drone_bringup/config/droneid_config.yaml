@@ -1,0 +1,24 @@
+identity:
+  drone_id: cdrone4
+  hostname: cdrone4
+  mavros_namespace: /cdrone/cdrone4/mavros
+
+network:
+  local_ip: 192.168.0.121
+  peer_drone_ips:
+    cdrone3: 192.168.0.194
+  optitrack_server: 192.168.0.217
+  optitrack_port: 3883
+
+mocap:
+  pose_source: optitrack
+  rigid_body_name: RigidBody4
+  map_frame: map
+  vrpn_update_freq: 100.0
+  vrpn_refresh_freq: 1.0
+  vrpn_sensor_data_qos: true
+  source_best_effort: true
+  use_vrpn_timestamps: false
+
+tracking:
+  compare_pose_topic: /vrpn_mocap/RigidBody2/pose

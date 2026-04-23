@@ -1,6 +1,7 @@
 import os
 
 from ament_index_python.packages import get_package_share_directory
+from drone_control_pkg.deployment_config import default_arg, load_drone_launch_defaults
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
@@ -9,6 +10,7 @@ from launch.substitutions import LaunchConfiguration
 
 def generate_launch_description():
     bringup_share = get_package_share_directory("drone_bringup")
+    defaults = load_drone_launch_defaults()
     external_pose_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(bringup_share, "launch", "external_pose_px4_bridge.launch.py")
@@ -30,8 +32,14 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("log_level", default_value="info"),
-            DeclareLaunchArgument("drone_id", default_value="drone01"),
-            DeclareLaunchArgument("mavros_namespace", default_value="mavros"),
+            DeclareLaunchArgument(
+                "drone_id",
+                default_value=default_arg(defaults, "drone_id", ""),
+            ),
+            DeclareLaunchArgument(
+                "mavros_namespace",
+                default_value=default_arg(defaults, "mavros_namespace", "mavros"),
+            ),
             DeclareLaunchArgument(
                 "input_pose_topic",
                 default_value="/visual_slam/tracking/vo_pose",

@@ -16,6 +16,10 @@ from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPo
 from std_msgs.msg import String
 from std_srvs.srv import Trigger
 
+from drone_control_pkg.deployment_config import (
+    configured_drone_id,
+    configured_mavros_namespace,
+)
 from drone_control_pkg.perimeter_utils import PerimeterGuard
 from drone_control_pkg.px4_param_profile import Px4ParamProfile
 from drone_control_pkg.topic_utils import cdrone_topic, join_topic
@@ -142,8 +146,8 @@ class PositionGotoDemoSequenceNode(Node):
         super().__init__("position_goto_demo_sequence_node")
 
         self.declare_parameter("publish_rate_hz", 20.0)
-        self.declare_parameter("drone_id", "drone01")
-        self.declare_parameter("mavros_namespace", "/mavros")
+        self.declare_parameter("drone_id", configured_drone_id())
+        self.declare_parameter("mavros_namespace", configured_mavros_namespace())
         self.declare_parameter("demo_mode", "goto")
         self.declare_parameter("takeoff_altitude_m", 0.7)
         self.declare_parameter("takeoff_rate_m_s", 0.5)

@@ -102,24 +102,24 @@ Important defaults in `milestone2_demo.yaml`:
 Start the airborne sequence after supervised takeoff and staging:
 
 ```bash
-ros2 service call /cdrone/drone01/demo/milestone2_start std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone4/demo/milestone2_start std_srvs/srv/Trigger "{}"
 ```
 
 Abort the sequence:
 
 ```bash
-ros2 service call /cdrone/drone01/demo/milestone2_abort std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone4/demo/milestone2_abort std_srvs/srv/Trigger "{}"
 ```
 
 Useful live topics:
 
 ```bash
-ros2 topic echo /cdrone/drone01/perception/tracks
-ros2 topic echo /cdrone/drone01/engagement/state
-ros2 topic echo /mavros/state
+ros2 topic echo /cdrone/cdrone4/perception/tracks
+ros2 topic echo /cdrone/cdrone4/engagement/state
+ros2 topic echo /cdrone/cdrone4/mavros/state
 ```
 
-The operator-facing state message is `/cdrone/drone01/engagement/state`
+The operator-facing state message is `/cdrone/cdrone4/engagement/state`
 (`drone_msgs/EngagementState`), which now includes:
 
 - `dwell_elapsed_s`

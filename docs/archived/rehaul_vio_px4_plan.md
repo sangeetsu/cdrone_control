@@ -197,7 +197,7 @@ Create `ros2/src/drone_vio_pkg` with:
 
 These are the files the rehaul will almost certainly touch:
 
-- `problem.md`
+- `docs/notes/offboard_indoor_blocker.md`
 - `README.md`
 - `archive/legacy_stack/docs/vio_todo.md`
 - `ros2/src/drone_bringup/launch/realsense_d455.launch.py`
@@ -413,4 +413,4 @@ The fastest viable rehaul is:
 - validate indoor `POSCTL`
 - then upgrade to odometry-based external vision as the flight-ready interface and restore `OFFBOARD`
 
-That path directly attacks the blocker in `problem.md` without dragging the whole legacy autonomy stack forward into the new design.
+That path directly attacks the blocker in `docs/notes/offboard_indoor_blocker.md` without dragging the whole legacy autonomy stack forward into the new design.

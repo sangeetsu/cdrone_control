@@ -9,6 +9,10 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy
 from std_msgs.msg import Bool
 
+from drone_control_pkg.deployment_config import (
+    configured_drone_id,
+    configured_mavros_namespace,
+)
 from drone_control_pkg.topic_utils import cdrone_topic, join_topic
 
 
@@ -26,8 +30,8 @@ class MavrosVelocityNode(Node):
         self.declare_parameter("max_vel_z_mps", 0.8)
         self.declare_parameter("max_yaw_rate_rps", 0.6)
         self.declare_parameter("require_guided_mode", True)
-        self.declare_parameter("drone_id", "drone01")
-        self.declare_parameter("mavros_namespace", "/mavros")
+        self.declare_parameter("drone_id", configured_drone_id())
+        self.declare_parameter("mavros_namespace", configured_mavros_namespace())
         self.declare_parameter("cmd_vel_topic", "")
         self.declare_parameter("estop_topic", "")
         self.declare_parameter("state_topic", "")

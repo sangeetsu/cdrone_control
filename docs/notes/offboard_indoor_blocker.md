@@ -10,10 +10,10 @@
 - ✅ `mavros_velocity_node` streams setpoints at 20Hz
 - ✅ Mode switch to OFFBOARD returns `mode_sent=True`
 - ✅ Reproduced live on the drone computer: PX4 acknowledges the OFFBOARD request but stays in `AUTO.LOITER`
-- ✅ `/mavros/local_position/pose` and `/mavros/local_position/velocity_body` are publishing, so MAVROS and EKF are not completely dead
+- ✅ `/cdrone/cdrone4/mavros/local_position/pose` and `/cdrone/cdrone4/mavros/local_position/velocity_body` are publishing, so MAVROS and EKF are not completely dead
 - ✅ Current PX4 params confirmed over MAVROS: `EKF2_GPS_CTRL=7`, `COM_RC_IN_MODE=1`
 - ✅ MAVROS `vision_pose` plugin is enabled already
-- ⚠️ MAVROS `odometry` plugin is currently denylisted, so a proper `/mavros/odometry/out` VIO feed is not wired yet
+- ⚠️ MAVROS `odometry` plugin is currently denylisted, so a proper `/cdrone/cdrone4/mavros/odometry/out` VIO feed is not wired yet
 - ❌ OFFBOARD mode does not activate — PX4 silently reverts or reports "resolve system health failures"
 - ✅ Bench-only external-vision publisher added: `bench_vision_pose_node`
 - ✅ One-command bench backend added: `ros2 launch drone_bringup bench_offboard.launch.py`
@@ -55,7 +55,7 @@ In QGC → Parameters:
 This removes GPS fusion, but by itself it is not enough for no-GPS velocity OFFBOARD. PX4 still needs another aiding source.
 
 ### Option C — Bench-only dummy external vision pose
-Add a bench-only ROS2 node that publishes a fixed pose to `/mavros/vision_pose/pose` so PX4 can treat MAVROS as an external vision source during props-off testing.
+Add a bench-only ROS2 node that publishes a fixed pose to `/cdrone/cdrone4/mavros/vision_pose/pose` so PX4 can treat MAVROS as an external vision source during props-off testing.
 
 Notes:
 - bench use only; the estimate does not move with the vehicle
@@ -67,11 +67,11 @@ Use the in-progress stereo vision stack as the basis for a real VIO / external-v
 
 TODO:
 - convert stereo stack output into a PX4-compatible external-vision stream
-- decide whether to publish via MAVROS `vision_pose` or enable the MAVROS `odometry` plugin for `/mavros/odometry/out`
+- decide whether to publish via MAVROS `vision_pose` or enable the MAVROS `odometry` plugin for `/cdrone/cdrone4/mavros/odometry/out`
 - tune PX4 external-vision fusion params once the real estimator is online
 
 ### Option E — Switch to attitude setpoints (code change)
-Change `mavros_velocity_node.py` to publish to `/mavros/setpoint_raw/attitude` instead of `/mavros/setpoint_velocity/cmd_vel`. Attitude control bypasses the position controller entirely. User rejected this option.
+Change `mavros_velocity_node.py` to publish to `/cdrone/cdrone4/mavros/setpoint_raw/attitude` instead of `/cdrone/cdrone4/mavros/setpoint_velocity/cmd_vel`. Attitude control bypasses the position controller entirely. User rejected this option.
 
 ## Recommended Next Session Plan
 1. Use `ALTCTL` as the temporary indoor teleop mode from the Jetson keyboard path
@@ -79,8 +79,8 @@ Change `mavros_velocity_node.py` to publish to `/mavros/setpoint_raw/attitude` i
    `ros2 launch drone_bringup drone.launch.py`
    `ros2 run drone_control_pkg keyboard_teleop_node`
 3. Press `2` for `ALTCTL`, then `1` to arm with throttle forced low
-4. Confirm `/mavros/manual_control/send` is active if arming still fails:
-   `ros2 topic echo /mavros/manual_control/send --once`
+4. Confirm `/cdrone/cdrone4/mavros/manual_control/send` is active if arming still fails:
+   `ros2 topic echo /cdrone/cdrone4/mavros/manual_control/send --once`
 5. Long-term: replace the dummy node with stereo-derived VIO from the vision stack and return to proper OFFBOARD autonomy
 
 ## Resume Commands
@@ -92,7 +92,7 @@ ros2 launch drone_bringup drone.launch.py
 ros2 run drone_control_pkg keyboard_teleop_node
 
 # Check manual-control messages flowing:
-ros2 topic echo /mavros/manual_control/send --once
+ros2 topic echo /cdrone/cdrone4/mavros/manual_control/send --once
 
 # Keyboard sequence:
 # 1. Press 2 -> ALTCTL

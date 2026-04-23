@@ -12,6 +12,11 @@ from rclpy import qos
 from rclpy.node import Node
 from std_msgs.msg import String
 
+from drone_control_pkg.deployment_config import (
+    configured_drone_id,
+    configured_mavros_namespace,
+    configured_ownship_pose_topic,
+)
 from drone_control_pkg.topic_utils import cdrone_topic, external_pose_input_topic, join_topic
 
 
@@ -38,9 +43,9 @@ class ExternalPoseDebugNode(Node):
     def __init__(self) -> None:
         super().__init__("external_pose_debug_node")
 
-        self.declare_parameter("drone_id", "drone01")
-        self.declare_parameter("mavros_namespace", "/mavros")
-        self.declare_parameter("source_pose_topic", "/vrpn_mocap/RigidBody3/pose")
+        self.declare_parameter("drone_id", configured_drone_id())
+        self.declare_parameter("mavros_namespace", configured_mavros_namespace())
+        self.declare_parameter("source_pose_topic", configured_ownship_pose_topic())
         self.declare_parameter("adapter_output_pose_topic", "")
         self.declare_parameter("vision_pose_topic", "")
         self.declare_parameter("local_pose_topic", "")
