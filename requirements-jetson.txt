@@ -7,3 +7,4 @@ polars
 psutil
 requests
 pyrealsense2==2.57.7.10387
+blink1
