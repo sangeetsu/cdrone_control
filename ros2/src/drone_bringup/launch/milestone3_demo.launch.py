@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 from ament_index_python.packages import get_package_share_directory
 from drone_control_pkg.deployment_config import (
@@ -6,7 +7,13 @@ from drone_control_pkg.deployment_config import (
     load_drone_launch_defaults,
 )
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument,
+    ExecuteProcess,
+    IncludeLaunchDescription,
+    LogInfo,
+    OpaqueFunction,
+)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -24,10 +31,18 @@ def _load_optitrack_defaults() -> dict[str, object]:
     return load_drone_launch_defaults()
 
 
+def _launch_arg_as_bool(context, name: str, default: bool = False) -> bool:
+    raw_value = LaunchConfiguration(name).perform(context).strip().lower()
+    if not raw_value:
+        return default
+    return raw_value in {"1", "true", "t", "yes", "y", "on"}
+
+
 def launch_setup(context, *args, **kwargs):
     del args, kwargs
 
     bringup_share = get_package_share_directory("drone_bringup")
+    bringup_share_path = Path(bringup_share).resolve()
     log_level = LaunchConfiguration("log_level")
     drone_id = LaunchConfiguration("drone_id")
     drone_namespace = LaunchConfiguration("drone_namespace")
@@ -203,11 +218,46 @@ def launch_setup(context, *args, **kwargs):
         arguments=["--ros-args", "--log-level", log_level],
     )
 
+    led_actions = []
+    if _launch_arg_as_bool(context, "enable_led_indicator", default=True):
+        repo_root = bringup_share_path.parents[4]
+        led_script_path = repo_root / "scripts" / "led_control.py"
+        if led_script_path.is_file():
+            led_cmd = [
+                str(led_script_path),
+                "--fade-ms",
+                LaunchConfiguration("led_indicator_fade_ms").perform(context).strip(),
+            ]
+            engagement_state_topic = (
+                LaunchConfiguration("engagement_state_topic").perform(context).strip()
+            )
+            if engagement_state_topic:
+                led_cmd.extend(["--state-topic", engagement_state_topic])
+            if _launch_arg_as_bool(context, "led_indicator_dry_run", default=False):
+                led_cmd.append("--dry-run")
+            led_actions.append(
+                ExecuteProcess(
+                    cmd=led_cmd,
+                    output="screen",
+                    additional_env={"PYTHONUNBUFFERED": "1"},
+                )
+            )
+        else:
+            led_actions.append(
+                LogInfo(
+                    msg=(
+                        f"milestone3 LED indicator skipped because helper script "
+                        f"was not found at {led_script_path}"
+                    )
+                )
+            )
+
     return [
         pose_bridge_launch,
         tracking_launch,
         mavros_velocity_node,
         milestone3_demo_node,
+        *led_actions,
     ]
 
 
@@ -264,6 +314,9 @@ def generate_launch_description():
             DeclareLaunchArgument("source_pose_topic", default_value=""),
             DeclareLaunchArgument("tracks_topic", default_value=""),
             DeclareLaunchArgument("engagement_state_topic", default_value=""),
+            DeclareLaunchArgument("enable_led_indicator", default_value="true"),
+            DeclareLaunchArgument("led_indicator_dry_run", default_value="false"),
+            DeclareLaunchArgument("led_indicator_fade_ms", default_value="250"),
             DeclareLaunchArgument("tracking_source_mode", default_value="direct"),
             DeclareLaunchArgument(
                 "tracking_pose_topic",
