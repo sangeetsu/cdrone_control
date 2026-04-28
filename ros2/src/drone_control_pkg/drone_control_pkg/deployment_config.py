@@ -50,6 +50,21 @@ def _flatten_config_sections(config: dict[str, Any]) -> dict[str, Any]:
     return flattened
 
 
+def _normalize_ns(namespace: object) -> str:
+    namespace = str(namespace or "").strip()
+    if not namespace:
+        return ""
+    if not namespace.startswith("/"):
+        namespace = "/" + namespace
+    return namespace.rstrip("/")
+
+
+def _join_topic(namespace: object, leaf: object) -> str:
+    namespace = _normalize_ns(namespace)
+    leaf = "/" + str(leaf or "").strip().lstrip("/")
+    return f"{namespace}{leaf}" if namespace else leaf
+
+
 @lru_cache(maxsize=1)
 def load_drone_launch_defaults() -> dict[str, Any]:
     shared_defaults = _load_yaml_mapping(
@@ -61,12 +76,35 @@ def load_drone_launch_defaults() -> dict[str, Any]:
     defaults = _merge_mappings(shared_defaults, drone_defaults)
 
     drone_id = str(defaults.get("drone_id", "")).strip().strip("/")
+    if drone_id and not str(defaults.get("drone_namespace", "")).strip():
+        defaults["drone_namespace"] = f"/cdrone/{drone_id}"
     if drone_id and not str(defaults.get("mavros_namespace", "")).strip():
         defaults["mavros_namespace"] = f"/cdrone/{drone_id}/mavros"
 
+    drone_namespace = _normalize_ns(defaults.get("drone_namespace", ""))
+    if not str(defaults.get("mocap_namespace", "")).strip():
+        defaults["mocap_namespace"] = _join_topic(
+            drone_namespace or "/cdrone", "vrpn_mocap"
+        )
+
     rigid_body_name = str(defaults.get("rigid_body_name", "")).strip()
     if rigid_body_name and not str(defaults.get("ownship_pose_topic", "")).strip():
-        defaults["ownship_pose_topic"] = f"/vrpn_mocap/{rigid_body_name}/pose"
+        defaults["ownship_pose_topic"] = _join_topic(
+            defaults.get("mocap_namespace", "/vrpn_mocap"),
+            f"{rigid_body_name}/pose",
+        )
+
+    compare_rigid_body_name = str(
+        defaults.get("compare_rigid_body_name", "RigidBody2")
+    ).strip()
+    if (
+        compare_rigid_body_name
+        and not str(defaults.get("compare_pose_topic", "")).strip()
+    ):
+        defaults["compare_pose_topic"] = _join_topic(
+            defaults.get("mocap_namespace", "/vrpn_mocap"),
+            f"{compare_rigid_body_name}/pose",
+        )
 
     return defaults
 
@@ -108,6 +146,21 @@ def configured_mavros_namespace() -> str:
     return f"/cdrone/{drone_id}/mavros" if drone_id else "/mavros"
 
 
+def configured_drone_namespace() -> str:
+    namespace = str(get_default_value("drone_namespace", "")).strip()
+    if namespace:
+        return _normalize_ns(namespace)
+    drone_id = configured_drone_id().strip().strip("/")
+    return f"/cdrone/{drone_id}" if drone_id else "/cdrone"
+
+
+def configured_mocap_namespace() -> str:
+    namespace = str(get_default_value("mocap_namespace", "")).strip()
+    if namespace:
+        return _normalize_ns(namespace)
+    return _join_topic(configured_drone_namespace(), "vrpn_mocap")
+
+
 def configured_rigid_body_name() -> str:
     return str(get_default_value("rigid_body_name", "RigidBody")).strip() or "RigidBody"
 
@@ -116,11 +169,17 @@ def configured_ownship_pose_topic() -> str:
     ownship_pose_topic = str(get_default_value("ownship_pose_topic", "")).strip()
     if ownship_pose_topic:
         return ownship_pose_topic
-    return f"/vrpn_mocap/{configured_rigid_body_name()}/pose"
+    return _join_topic(
+        configured_mocap_namespace(),
+        f"{configured_rigid_body_name()}/pose",
+    )
 
 
 def configured_compare_pose_topic() -> str:
-    return (
-        str(get_default_value("compare_pose_topic", "/vrpn_mocap/RigidBody2/pose")).strip()
-        or "/vrpn_mocap/RigidBody2/pose"
-    )
+    compare_pose_topic = str(get_default_value("compare_pose_topic", "")).strip()
+    if compare_pose_topic:
+        return compare_pose_topic
+    compare_rigid_body_name = str(
+        get_default_value("compare_rigid_body_name", "RigidBody2")
+    ).strip()
+    return _join_topic(configured_mocap_namespace(), f"{compare_rigid_body_name}/pose")

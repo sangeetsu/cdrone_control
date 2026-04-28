@@ -18,17 +18,28 @@ def _load_optitrack_defaults() -> dict[str, object]:
     return load_drone_launch_defaults()
 
 
+def _join_topic(namespace: str, leaf: str) -> str:
+    namespace = str(namespace or "").strip()
+    if namespace and not namespace.startswith("/"):
+        namespace = "/" + namespace
+    namespace = namespace.rstrip("/")
+    leaf = "/" + str(leaf or "").strip().lstrip("/")
+    return f"{namespace}{leaf}" if namespace else leaf
+
+
 def launch_setup(context, *args, **kwargs):
     del args, kwargs
 
     bringup_share = get_package_share_directory("drone_bringup")
     log_level = LaunchConfiguration("log_level")
     mavros_namespace = LaunchConfiguration("mavros_namespace")
+    drone_namespace = LaunchConfiguration("drone_namespace")
+    mocap_namespace = LaunchConfiguration("mocap_namespace").perform(context).strip()
     drone_id = LaunchConfiguration("drone_id")
     pose_source = LaunchConfiguration("pose_source").perform(context).strip().lower()
     source_pose_topic = LaunchConfiguration("source_pose_topic").perform(context).strip()
     rigid_body_name = LaunchConfiguration("rigid_body_name").perform(context).strip()
-    default_optitrack_topic = f"/vrpn_mocap/{rigid_body_name}/pose"
+    default_optitrack_topic = _join_topic(mocap_namespace, f"{rigid_body_name}/pose")
 
     drone_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -45,6 +56,7 @@ def launch_setup(context, *args, **kwargs):
         Node(
             package="drone_control_pkg",
             executable="drone_setup_node",
+            namespace=drone_namespace,
             output="screen",
             condition=IfCondition(LaunchConfiguration("enable_reference_setup")),
             parameters=[
@@ -90,7 +102,7 @@ def launch_setup(context, *args, **kwargs):
             Node(
                 package="vrpn_mocap",
                 executable="client_node",
-                namespace="vrpn_mocap",
+                namespace=LaunchConfiguration("mocap_namespace"),
                 name="vrpn_mocap_client_node",
                 output="screen",
                 parameters=[
@@ -134,6 +146,7 @@ def launch_setup(context, *args, **kwargs):
         Node(
             package="drone_control_pkg",
             executable="external_pose_adapter_node",
+            namespace=drone_namespace,
             output="screen",
             parameters=[
                 {
@@ -158,6 +171,7 @@ def launch_setup(context, *args, **kwargs):
         Node(
             package="drone_control_pkg",
             executable="external_pose_bridge_node",
+            namespace=drone_namespace,
             output="screen",
             parameters=[
                 {
@@ -191,6 +205,7 @@ def launch_setup(context, *args, **kwargs):
         Node(
             package="drone_control_pkg",
             executable="external_pose_debug_node",
+            namespace=drone_namespace,
             output="screen",
             condition=IfCondition(LaunchConfiguration("enable_pose_debug")),
             parameters=[
@@ -245,6 +260,16 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "mavros_namespace",
                 default_value=_default_arg(defaults, "mavros_namespace", "mavros"),
+            ),
+            DeclareLaunchArgument(
+                "drone_namespace",
+                default_value=_default_arg(defaults, "drone_namespace", "/cdrone"),
+            ),
+            DeclareLaunchArgument(
+                "mocap_namespace",
+                default_value=_default_arg(
+                    defaults, "mocap_namespace", "/cdrone/vrpn_mocap"
+                ),
             ),
             DeclareLaunchArgument(
                 "pose_source",

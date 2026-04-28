@@ -1,0 +1,415 @@
+[INFO] [launch]: All log files can be found below /home/jetson/.ros/log/2026-04-24-21-22-59-753016-jetson-10432
+[INFO] [launch]: Default logging verbosity is set to INFO
+[INFO] [mavros_node-1]: process started with pid [10433]
+[INFO] [drone_setup_node-2]: process started with pid [10435]
+[INFO] [client_node-3]: process started with pid [10437]
+[INFO] [external_pose_adapter_node-4]: process started with pid [10439]
+[INFO] [external_pose_bridge_node-5]: process started with pid [10441]
+[INFO] [external_pose_debug_node-6]: process started with pid [10443]
+[INFO] [realsense_tracker_node-7]: process started with pid [10451]
+[INFO] [mavros_velocity_node-8]: process started with pid [10462]
+[INFO] [milestone3_demo_sequence_node-9]: process started with pid [10468]
+[mavros_node-1] [INFO] [1777090980.026785522] [cdrone.cdrone3.mavros.mavros_node]: Starting mavros_node container
+[mavros_node-1] [INFO] [1777090980.027030136] [cdrone.cdrone3.mavros.mavros_node]: FCU URL: udp://:14540@127.0.0.1:14550
+[mavros_node-1] [INFO] [1777090980.027054744] [cdrone.cdrone3.mavros.mavros_node]: GCS URL: 
+[mavros_node-1] [INFO] [1777090980.027065752] [cdrone.cdrone3.mavros.mavros_node]: UAS Prefix: /uas1
+[mavros_node-1] [INFO] [1777090980.027075353] [cdrone.cdrone3.mavros.mavros_node]: Starting mavros router node
+[client_node-3] check_vrpn_cookie(): VRPN Note: minor version number doesn't match: (prefer 'vrpn: ver. 07.35', got 'vrpn: ver. 07.33  0').  This is not normally a problem.
+[mavros_node-1] [INFO] [1777090980.075555211] [cdrone.cdrone3.mavros.mavros_router]: Built-in SIMD instructions: ARM NEON
+[mavros_node-1] [INFO] [1777090980.075653934] [cdrone.cdrone3.mavros.mavros_router]: Built-in MAVLink package version: 2026.3.3
+[mavros_node-1] [INFO] [1777090980.075672014] [cdrone.cdrone3.mavros.mavros_router]: Known MAVLink dialects: common ardupilotmega ASLUAV AVSSUAS all csAirLink cubepilot development icarous loweheiser marsh matrixpilot paparazzi standard stemstudios storm32 uAvionix ualberta
+[mavros_node-1] [INFO] [1777090980.075685230] [cdrone.cdrone3.mavros.mavros_router]: MAVROS Router started
+[mavros_node-1] [INFO] [1777090980.075999670] [cdrone.cdrone3.mavros.mavros_node]: Starting mavros uas node
+[mavros_node-1] [INFO] [1777090980.193614350] [cdrone.cdrone3.mavros.mavros_router]: Requested to add endpoint: type: 0, url: udp://:14540@127.0.0.1:14550
+[mavros_node-1] [INFO] [1777090980.202287679] [cdrone.cdrone3.mavros.mavros_router]: Endpoint link[1000] created
+[mavros_node-1] [INFO] [1777090980.203255095] [cdrone.cdrone3.mavros.mavros_router]: link[1000] opened successfully
+[mavros_node-1] [INFO] [1777090980.203328920] [cdrone.cdrone3.mavros.mavros_router]: Requested to add endpoint: type: 2, url: /uas1
+[mavros_node-1] [INFO] [1777090980.203382938] [cdrone.cdrone3.mavros.mavros_router]: Endpoint link[1001] created
+[mavros_node-1] [INFO] [1777090980.207879206] [cdrone.cdrone3.mavros.mavros_router]: link[1001] opened successfully
+[mavros_node-1] [INFO] [1777090980.212227407] [cdrone.cdrone3.mavros.mavros_router]: link[1000] detected remote address 1.1
+[mavros_node-1] [INFO] [1777090980.217791798] [cdrone.cdrone3.mavros.mavros]: UAS Executor started, threads: 6
+[mavros_node-1] [INFO] [1777090980.286189449] [cdrone.cdrone3.mavros.mavros]: Plugin actuator_control created
+[mavros_node-1] [INFO] [1777090980.286433967] [cdrone.cdrone3.mavros.mavros]: Plugin actuator_control initialized
+[mavros_node-1] [INFO] [1777090980.368569678] [cdrone.cdrone3.mavros.mavros]: Plugin adsb created
+[mavros_node-1] [INFO] [1777090980.368951543] [cdrone.cdrone3.mavros.mavros]: Plugin adsb initialized
+[mavros_node-1] [INFO] [1777090980.421535341] [cdrone.cdrone3.mavros.mavros]: Plugin altitude created
+[mavros_node-1] [INFO] [1777090980.422083834] [cdrone.cdrone3.mavros.mavros]: Plugin altitude initialized
+[mavros_node-1] [INFO] [1777090980.462700175] [cdrone.cdrone3.mavros.mavros]: Plugin cam_imu_sync created
+[mavros_node-1] [INFO] [1777090980.463188379] [cdrone.cdrone3.mavros.mavros]: Plugin cam_imu_sync initialized
+[mavros_node-1] [INFO] [1777090980.500788551] [cdrone.cdrone3.mavros.mavros]: Plugin camera created
+[mavros_node-1] [INFO] [1777090980.501066349] [cdrone.cdrone3.mavros.mavros]: Plugin camera initialized
+[mavros_node-1] [INFO] [1777090980.553282458] [cdrone.cdrone3.mavros.mavros]: Plugin cellular_status created
+[mavros_node-1] [INFO] [1777090980.554148367] [cdrone.cdrone3.mavros.mavros]: Plugin cellular_status initialized
+[mavros_node-1] [INFO] [1777090980.673200010] [cdrone.cdrone3.mavros.mavros]: Plugin command created
+[mavros_node-1] [INFO] [1777090980.673376078] [cdrone.cdrone3.mavros.mavros]: Plugin command initialized
+[mavros_node-1] [INFO] [1777090980.724364733] [cdrone.cdrone3.mavros.mavros]: Plugin companion_process_status created
+[mavros_node-1] [INFO] [1777090980.724565986] [cdrone.cdrone3.mavros.mavros]: Plugin companion_process_status initialized
+[mavros_node-1] [INFO] [1777090980.798677663] [cdrone.cdrone3.mavros.mavros]: Plugin debug_value created
+[mavros_node-1] [INFO] [1777090980.798921317] [cdrone.cdrone3.mavros.mavros]: Plugin debug_value initialized
+[mavros_node-1] [INFO] [1777090980.866951152] [cdrone.cdrone3.mavros.distance_sensor]: DS: rangefinder_pub: Loading config: id: 0
+[mavros_node-1] frame_id: lidar
+[mavros_node-1] field_of_view: 0.0
+[mavros_node-1] send_tf: false
+[mavros_node-1] sensor_position: {x: 0.0, y: 0.0, z: -0.1}
+[mavros_node-1] [INFO] [1777090980.876560824] [cdrone.cdrone3.mavros.distance_sensor]: DS: rangefinder_sub: Loading config: subscriber: true
+[mavros_node-1] id: 1
+[mavros_node-1] orientation: PITCH_270
+[mavros_node-1] [INFO] [1777090980.893709494] [cdrone.cdrone3.mavros.mavros]: Plugin distance_sensor created
+[mavros_node-1] [INFO] [1777090980.894694574] [cdrone.cdrone3.mavros.mavros]: Plugin distance_sensor initialized
+[mavros_node-1] [INFO] [1777090980.977300312] [cdrone.cdrone3.mavros.mavros]: Plugin esc_status created
+[mavros_node-1] [INFO] [1777090980.980479877] [cdrone.cdrone3.mavros.mavros]: Plugin esc_status initialized
+[client_node-3] [INFO] [1777090981.040436813] [cdrone.cdrone3.vrpn_mocap.vrpn_mocap_client_node]: Created new tracker RigidBody4
+[client_node-3] [INFO] [1777090981.040791190] [cdrone.cdrone3.vrpn_mocap.vrpn_mocap_client_node]: Created new tracker RigidBody3
+[client_node-3] [INFO] [1777090981.052734486] [cdrone.cdrone3.vrpn_mocap.vrpn_mocap_client_node]: Creating sensor 0
+[client_node-3] [INFO] [1777090981.056679893] [cdrone.cdrone3.vrpn_mocap.vrpn_mocap_client_node]: Creating sensor 0
+[mavros_node-1] [INFO] [1777090981.059263572] [cdrone.cdrone3.mavros.mavros]: Plugin esc_telemetry created
+[mavros_node-1] [INFO] [1777090981.060378319] [cdrone.cdrone3.mavros.mavros]: Plugin esc_telemetry initialized
+[mavros_node-1] [INFO] [1777090981.276250348] [cdrone.cdrone3.mavros.mavros]: Plugin fake_gps created
+[mavros_node-1] [INFO] [1777090981.276382351] [cdrone.cdrone3.mavros.mavros]: Plugin fake_gps initialized
+[external_pose_adapter_node-4] [INFO] [1777090981.432112512] [cdrone.cdrone3.external_pose_adapter_node]: External pose adapter started: /cdrone/cdrone3/vrpn_mocap/RigidBody3/pose -> /cdrone/cdrone3/external_pose/input_pose (source_qos=best_effort)
+[mavros_node-1] [INFO] [1777090981.440090401] [cdrone.cdrone3.mavros.mavros]: Plugin ftp created
+[mavros_node-1] [INFO] [1777090981.441752905] [cdrone.cdrone3.mavros.mavros]: Plugin ftp initialized
+[mavros_node-1] [INFO] [1777090981.505169732] [cdrone.cdrone3.mavros.mavros]: Plugin geofence created
+[mavros_node-1] [INFO] [1777090981.505725266] [cdrone.cdrone3.mavros.mavros]: Plugin geofence initialized
+[mavros_node-1] [INFO] [1777090981.719524573] [cdrone.cdrone3.mavros.mavros]: Plugin gimbal_control created
+[mavros_node-1] [INFO] [1777090981.719698145] [cdrone.cdrone3.mavros.mavros]: Plugin gimbal_control initialized
+[drone_setup_node-2] [INFO] [1777090981.751411359] [cdrone.cdrone3.drone_setup]: Drone setup node started: /cdrone/cdrone3/mavros/global_position/set_gp_origin, /cdrone/cdrone3/mavros/home_position/set; origin=(0.0000000, 0.0000000, 17.1637m) home=(0.000, 0.000, 0.000)
+[drone_setup_node-2] [WARN] [1777090981.752254772] [cdrone.cdrone3.drone_setup]: Using a synthetic indoor global origin at lat/lon 0,0. This is acceptable for bench indoor EV use, but replace it with the lab's real lat/lon/ellipsoid altitude for production.
+[mavros_node-1] [INFO] [1777090981.779643273] [cdrone.cdrone3.mavros.mavros]: Plugin global_position created
+[mavros_node-1] [INFO] [1777090981.779823405] [cdrone.cdrone3.mavros.mavros]: Plugin global_position initialized
+[external_pose_bridge_node-5] [INFO] [1777090981.819004864] [cdrone.cdrone3.external_pose_bridge_node]: External pose bridge started: /cdrone/cdrone3/external_pose/input_pose, /cdrone/cdrone3/vio/input_pose -> /cdrone/cdrone3/mavros/vision_pose/pose
+[mavros_node-1] [INFO] [1777090981.819814387] [cdrone.cdrone3.mavros.mavros]: Plugin gps_input created
+[mavros_node-1] [INFO] [1777090981.819928790] [cdrone.cdrone3.mavros.mavros]: Plugin gps_input initialized
+[mavros_node-1] [INFO] [1777090981.877852813] [cdrone.cdrone3.mavros.mavros]: Plugin gps_rtk created
+[mavros_node-1] [INFO] [1777090981.877983920] [cdrone.cdrone3.mavros.mavros]: Plugin gps_rtk initialized
+[mavros_node-1] [INFO] [1777090981.914796841] [cdrone.cdrone3.mavros.mavros]: Plugin gps_status created
+[mavros_node-1] [INFO] [1777090981.914951437] [cdrone.cdrone3.mavros.mavros]: Plugin gps_status initialized
+[mavros_node-1] [INFO] [1777090981.914981006] [cdrone.cdrone3.mavros.mavros]: Plugin guided_target ignored
+[mavros_node-1] [INFO] [1777090981.952705309] [cdrone.cdrone3.mavros.mavros]: Plugin hil created
+[mavros_node-1] [INFO] [1777090981.952857760] [cdrone.cdrone3.mavros.mavros]: Plugin hil initialized
+[mavros_node-1] [INFO] [1777090982.269384414] [cdrone.cdrone3.mavros.mavros]: Plugin home_position created
+[mavros_node-1] [INFO] [1777090982.269551554] [cdrone.cdrone3.mavros.mavros]: Plugin home_position initialized
+[mavros_velocity_node-8] [INFO] [1777090982.369232970] [cdrone.cdrone3.mavros_velocity_node]: MAVROS velocity node started.
+[mavros_node-1] [INFO] [1777090982.436259741] [cdrone.cdrone3.mavros.mavros]: Plugin imu created
+[mavros_node-1] [INFO] [1777090982.436432993] [cdrone.cdrone3.mavros.mavros]: Plugin imu initialized
+[mavros_node-1] [INFO] [1777090982.496018432] [cdrone.cdrone3.mavros.mavros]: Plugin landing_target created
+[mavros_node-1] [INFO] [1777090982.496158404] [cdrone.cdrone3.mavros.mavros]: Plugin landing_target initialized
+[mavros_node-1] [INFO] [1777090982.571739141] [cdrone.cdrone3.mavros.mavros]: Plugin local_position created
+[mavros_node-1] [INFO] [1777090982.571926538] [cdrone.cdrone3.mavros.mavros]: Plugin local_position initialized
+[external_pose_debug_node-6] [INFO] [1777090982.583732711] [cdrone.cdrone3.external_pose_debug_node]: External pose debug started: /cdrone/cdrone3/vrpn_mocap/RigidBody3/pose -> /cdrone/cdrone3/external_pose/input_pose -> /cdrone/cdrone3/mavros/vision_pose/pose; local=/cdrone/cdrone3/mavros/local_position/pose; source_qos=best_effort
+[milestone3_demo_sequence_node-9] [INFO] [1777090982.588535611] [cdrone.cdrone3.milestone3_demo_sequence_node]: Loaded perimeter guard: drone_studio_perimeter.yaml frame=map keep_outs=1
+[milestone3_demo_sequence_node-9] [INFO] [1777090982.593583861] [cdrone.cdrone3.milestone3_demo_sequence_node]: Loaded pre-takeoff profile: milestone3_takeoff_baseline_v1 params=10
+[milestone3_demo_sequence_node-9] [INFO] [1777090982.598297735] [cdrone.cdrone3.milestone3_demo_sequence_node]: Loaded speed profile: indoor_slow_v1 params=9
+[milestone3_demo_sequence_node-9] [INFO] [1777090982.600658784] [cdrone.cdrone3.milestone3_demo_sequence_node]: Milestone 3 demo sequence node started. tracks=/cdrone/cdrone3/perception/tracks cmd_vel=/cdrone/cdrone3/control/cmd_vel_body state_topic=/cdrone/cdrone3/engagement/state
+[mavros_node-1] [INFO] [1777090982.655291431] [cdrone.cdrone3.mavros.mavros]: Plugin log_transfer created
+[mavros_node-1] [INFO] [1777090982.655452203] [cdrone.cdrone3.mavros.mavros]: Plugin log_transfer initialized
+[mavros_node-1] [INFO] [1777090982.704089058] [cdrone.cdrone3.mavros.mavros]: Plugin mag_calibration_status created
+[mavros_node-1] [INFO] [1777090982.704232070] [cdrone.cdrone3.mavros.mavros]: Plugin mag_calibration_status initialized
+[mavros_node-1] [INFO] [1777090982.750102746] [cdrone.cdrone3.mavros.mavros]: Plugin manual_control created
+[mavros_node-1] [INFO] [1777090982.750282622] [cdrone.cdrone3.mavros.mavros]: Plugin manual_control initialized
+[mavros_node-1] [INFO] [1777090982.812579487] [cdrone.cdrone3.mavros.mavros]: Plugin mocap_pose_estimate created
+[mavros_node-1] [INFO] [1777090982.812717250] [cdrone.cdrone3.mavros.mavros]: Plugin mocap_pose_estimate initialized
+[mavros_node-1] [INFO] [1777090982.863424235] [cdrone.cdrone3.mavros.mavros]: Plugin mount_control created
+[mavros_node-1] [INFO] [1777090982.863631120] [cdrone.cdrone3.mavros.mavros]: Plugin mount_control initialized
+[mavros_node-1] [INFO] [1777090982.902935045] [cdrone.cdrone3.mavros.mavros]: Plugin nav_controller_output created
+[mavros_node-1] [INFO] [1777090982.903076777] [cdrone.cdrone3.mavros.mavros]: Plugin nav_controller_output initialized
+[mavros_node-1] [INFO] [1777090982.947776449] [cdrone.cdrone3.mavros.mavros]: Plugin obstacle_distance created
+[mavros_node-1] [INFO] [1777090982.948003206] [cdrone.cdrone3.mavros.mavros]: Plugin obstacle_distance initialized
+[mavros_node-1] [INFO] [1777090982.996295445] [cdrone.cdrone3.mavros.mavros]: Plugin obstacle_distance_3d created
+[mavros_node-1] [INFO] [1777090982.997274508] [cdrone.cdrone3.mavros.mavros]: Plugin obstacle_distance_3d initialized
+[mavros_node-1] [INFO] [1777090982.997367982] [cdrone.cdrone3.mavros.mavros]: Plugin odometry ignored
+[mavros_node-1] [INFO] [1777090983.039386054] [cdrone.cdrone3.mavros.mavros]: Plugin onboard_computer_status created
+[mavros_node-1] [INFO] [1777090983.039523497] [cdrone.cdrone3.mavros.mavros]: Plugin onboard_computer_status initialized
+[mavros_node-1] [INFO] [1777090983.119680665] [cdrone.cdrone3.mavros.mavros]: Plugin open_drone_id created
+[mavros_node-1] [INFO] [1777090983.119815741] [cdrone.cdrone3.mavros.mavros]: Plugin open_drone_id initialized
+[mavros_node-1] [INFO] [1777090983.170051002] [cdrone.cdrone3.mavros.mavros]: Plugin optical_flow created
+[mavros_node-1] [INFO] [1777090983.170198302] [cdrone.cdrone3.mavros.mavros]: Plugin optical_flow initialized
+[mavros_node-1] [INFO] [1777090983.260763370] [cdrone.cdrone3.mavros.mavros]: Plugin param created
+[mavros_node-1] [INFO] [1777090983.260910990] [cdrone.cdrone3.mavros.mavros]: Plugin param initialized
+[mavros_node-1] [INFO] [1777090983.315013865] [cdrone.cdrone3.mavros.mavros]: Plugin play_tune created
+[mavros_node-1] [INFO] [1777090983.315142988] [cdrone.cdrone3.mavros.mavros]: Plugin play_tune initialized
+[mavros_node-1] [INFO] [1777090983.380355251] [cdrone.cdrone3.mavros.mavros]: Plugin px4flow created
+[mavros_node-1] [INFO] [1777090983.380506871] [cdrone.cdrone3.mavros.mavros]: Plugin px4flow initialized
+[mavros_node-1] [INFO] [1777090983.449630237] [cdrone.cdrone3.mavros.mavros]: Plugin rallypoint created
+[mavros_node-1] [INFO] [1777090983.449797121] [cdrone.cdrone3.mavros.mavros]: Plugin rallypoint initialized
+[mavros_node-1] [INFO] [1777090983.491897306] [cdrone.cdrone3.mavros.mavros]: Plugin rangefinder created
+[mavros_node-1] [INFO] [1777090983.492121088] [cdrone.cdrone3.mavros.mavros]: Plugin rangefinder initialized
+[mavros_node-1] [INFO] [1777090983.539360469] [cdrone.cdrone3.mavros.mavros]: Plugin rc_io created
+[mavros_node-1] [INFO] [1777090983.539558682] [cdrone.cdrone3.mavros.mavros]: Plugin rc_io initialized
+[mavros_node-1] [INFO] [1777090983.584175408] [cdrone.cdrone3.mavros.mavros]: Plugin setpoint_accel created
+[mavros_node-1] [INFO] [1777090983.584300659] [cdrone.cdrone3.mavros.mavros]: Plugin setpoint_accel initialized
+[mavros_node-1] [INFO] [1777090983.635072381] [cdrone.cdrone3.mavros.mavros]: Plugin setpoint_attitude created
+[mavros_node-1] [INFO] [1777090983.635344100] [cdrone.cdrone3.mavros.mavros]: Plugin setpoint_attitude initialized
+[mavros_node-1] [INFO] [1777090983.702022511] [cdrone.cdrone3.mavros.mavros]: Plugin setpoint_position created
+[mavros_node-1] [INFO] [1777090983.702290069] [cdrone.cdrone3.mavros.mavros]: Plugin setpoint_position initialized
+[mavros_node-1] [INFO] [1777090983.765850357] [cdrone.cdrone3.mavros.mavros]: Plugin setpoint_raw created
+[mavros_node-1] [INFO] [1777090983.766468228] [cdrone.cdrone3.mavros.mavros]: Plugin setpoint_raw initialized
+[mavros_node-1] [INFO] [1777090983.820387451] [cdrone.cdrone3.mavros.mavros]: Plugin setpoint_trajectory created
+[mavros_node-1] [INFO] [1777090983.820548735] [cdrone.cdrone3.mavros.mavros]: Plugin setpoint_trajectory initialized
+[mavros_node-1] [INFO] [1777090983.872792813] [cdrone.cdrone3.mavros.mavros]: Plugin setpoint_velocity created
+[mavros_node-1] [INFO] [1777090983.874519894] [cdrone.cdrone3.mavros.mavros]: Plugin setpoint_velocity initialized
+[mavros_node-1] [INFO] [1777090983.947339062] [cdrone.cdrone3.mavros.mavros]: Plugin sim_state created
+[mavros_node-1] [INFO] [1777090983.947495034] [cdrone.cdrone3.mavros.mavros]: Plugin sim_state initialized
+[mavros_node-1] [INFO] [1777090984.058407601] [cdrone.cdrone3.mavros.mavros]: Plugin sys_status created
+[mavros_node-1] [INFO] [1777090984.058625719] [cdrone.cdrone3.mavros.mavros]: Plugin sys_status initialized
+[mavros_node-1] [INFO] [1777090984.120302857] [cdrone.cdrone3.mavros.time]: TM: Timesync mode: MAVLINK
+[mavros_node-1] [INFO] [1777090984.132765622] [cdrone.cdrone3.mavros.mavros]: Plugin sys_time created
+[mavros_node-1] [INFO] [1777090984.132917018] [cdrone.cdrone3.mavros.mavros]: Plugin sys_time initialized
+[mavros_node-1] [INFO] [1777090984.200377560] [cdrone.cdrone3.mavros.mavros]: Plugin tdr_radio created
+[mavros_node-1] [INFO] [1777090984.200561981] [cdrone.cdrone3.mavros.mavros]: Plugin tdr_radio initialized
+[mavros_node-1] [INFO] [1777090984.262659641] [cdrone.cdrone3.mavros.mavros]: Plugin terrain created
+[mavros_node-1] [INFO] [1777090984.262810557] [cdrone.cdrone3.mavros.mavros]: Plugin terrain initialized
+[mavros_node-1] [INFO] [1777090984.336926908] [cdrone.cdrone3.mavros.mavros]: Plugin trajectory created
+[mavros_node-1] [INFO] [1777090984.337063455] [cdrone.cdrone3.mavros.mavros]: Plugin trajectory initialized
+[mavros_node-1] [INFO] [1777090984.397824539] [cdrone.cdrone3.mavros.mavros]: Plugin tunnel created
+[mavros_node-1] [INFO] [1777090984.397968735] [cdrone.cdrone3.mavros.mavros]: Plugin tunnel initialized
+[mavros_node-1] [INFO] [1777090984.469436094] [cdrone.cdrone3.mavros.mavros]: Plugin vfr_hud created
+[mavros_node-1] [INFO] [1777090984.471123431] [cdrone.cdrone3.mavros.mavros]: Plugin vfr_hud initialized
+[mavros_node-1] [INFO] [1777090984.543906054] [cdrone.cdrone3.mavros.mavros]: Plugin vibration created
+[mavros_node-1] [INFO] [1777090984.544894781] [cdrone.cdrone3.mavros.mavros]: Plugin vibration initialized
+[mavros_node-1] [INFO] [1777090984.620044853] [cdrone.cdrone3.mavros.mavros]: Plugin vision_pose created
+[mavros_node-1] [INFO] [1777090984.620180921] [cdrone.cdrone3.mavros.mavros]: Plugin vision_pose initialized
+[mavros_node-1] [INFO] [1777090984.688054209] [cdrone.cdrone3.mavros.mavros]: Plugin vision_speed created
+[mavros_node-1] [INFO] [1777090984.690004464] [cdrone.cdrone3.mavros.mavros]: Plugin vision_speed initialized
+[mavros_node-1] [INFO] [1777090984.781219756] [cdrone.cdrone3.mavros.mavros]: Plugin waypoint created
+[mavros_node-1] [INFO] [1777090984.781424785] [cdrone.cdrone3.mavros.mavros]: Plugin waypoint initialized
+[mavros_node-1] [INFO] [1777090984.781470546] [cdrone.cdrone3.mavros.mavros]: Plugin wheel_odometry ignored
+[mavros_node-1] [INFO] [1777090984.867296684] [cdrone.cdrone3.mavros.mavros]: Plugin wind_estimation created
+[mavros_node-1] [INFO] [1777090984.867616436] [cdrone.cdrone3.mavros.mavros]: Plugin wind_estimation initialized
+[mavros_node-1] [INFO] [1777090984.877329855] [cdrone.cdrone3.mavros.mavros_router]: link[1001] detected remote address 1.197
+[mavros_node-1] [INFO] [1777090984.880580621] [cdrone.cdrone3.mavros.mavros]: Built-in SIMD instructions: ARM NEON
+[mavros_node-1] [INFO] [1777090984.880674992] [cdrone.cdrone3.mavros.mavros]: Built-in MAVLink package version: 2026.3.3
+[mavros_node-1] [INFO] [1777090984.880691472] [cdrone.cdrone3.mavros.mavros]: Known MAVLink dialects: common ardupilotmega ASLUAV AVSSUAS all csAirLink cubepilot development icarous loweheiser marsh matrixpilot paparazzi standard stemstudios storm32 uAvionix ualberta
+[mavros_node-1] [INFO] [1777090984.880704720] [cdrone.cdrone3.mavros.mavros]: MAVROS UAS via /uas1 started. MY ID 1.191, TARGET ID 1.1
+[mavros_node-1] [INFO] [1777090984.881171004] [cdrone.cdrone3.mavros.mavros_router]: link[1001] detected remote address 1.191
+[mavros_node-1] [INFO] [1777090984.890528734] [cdrone.cdrone3.mavros.imu]: IMU: High resolution IMU detected!
+[mavros_node-1] [INFO] [1777090984.892044002] [cdrone.cdrone3.mavros.imu]: IMU: Attitude quaternion IMU detected!
+[mavros_node-1] [INFO] [1777090984.899337363] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 10716939 with args -0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1777090984.981673048] [cdrone.cdrone3.mavros.rc]: RC_CHANNELS message detected!
+[mavros_node-1] [INFO] [1777090985.076757106] [cdrone.cdrone3.mavros.geofence]: GF: Using MISSION_ITEM_INT
+[mavros_node-1] [INFO] [1777090985.078290423] [cdrone.cdrone3.mavros.rallypoint]: RP: Using MISSION_ITEM_INT
+[mavros_node-1] [INFO] [1777090985.079052010] [cdrone.cdrone3.mavros.mission]: WP: Using MISSION_ITEM_INT
+[mavros_node-1] [INFO] [1777090985.079742810] [cdrone.cdrone3.mavros.sys]: VER: 1.1: Capabilities         0x000000000000e8ff
+[mavros_node-1] [INFO] [1777090985.080409418] [cdrone.cdrone3.mavros.sys]: VER: 1.1: Flight software:     011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1777090985.081070074] [cdrone.cdrone3.mavros.sys]: VER: 1.1: Middleware software: 011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1777090985.081737835] [cdrone.cdrone3.mavros.sys]: VER: 1.1: OS software:         0b0000ff (886acbbdb4f061e5)
+[mavros_node-1] [INFO] [1777090985.082411547] [cdrone.cdrone3.mavros.sys]: VER: 1.1: Board hardware:      00000039
+[mavros_node-1] [INFO] [1777090985.082451644] [cdrone.cdrone3.mavros.sys]: VER: 1.1: VID/PID:             3185:0039
+[mavros_node-1] [INFO] [1777090985.082475420] [cdrone.cdrone3.mavros.sys]: VER: 1.1: UID:                 3333510833383530
+[mavros_node-1] [WARN] [1777090985.082785892] [cdrone.cdrone3.mavros.cmd]: CMD: Unexpected command 520, result 0
+[mavros_node-1] [INFO] [1777090985.083494517] [cdrone.cdrone3.mavros.mavros]: CON: Got HEARTBEAT, connected. FCU: PX4 Autopilot
+[mavros_node-1] [INFO] [1777090985.083671513] [cdrone.cdrone3.mavros.mission]: WP: detected enable_partial_push: 0
+[mavros_velocity_node-8] [INFO] [1777090985.086571743] [cdrone.cdrone3.mavros_velocity_node]: Mode changed:  → CMODE(393216)
+[mavros_node-1] [INFO] [1777090985.089170590] [cdrone.cdrone3.mavros.rc]: RC_CHANNELS message detected!
+[drone_setup_node-2] [INFO] [1777090985.089369571] [cdrone.cdrone3.drone_setup]: FCU connected; publishing indoor global origin and home position
+[mavros_node-1] [INFO] [1777090985.092922489] [cdrone.cdrone3.mavros.imu]: IMU: High resolution IMU detected!
+[mavros_node-1] [INFO] [1777090985.093079965] [cdrone.cdrone3.mavros.imu]: IMU: Attitude quaternion IMU detected!
+[mavros_node-1] [WARN] [1777090985.093352579] [cdrone.cdrone3.mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-0-0-18-1-128-0-0-0-128-59-1-128-128-59-1-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1777090985.093466342] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 13835193 with args -124-0-126-0-17-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1777090985.093638442] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 10011251 with args -56-0-0-0-24-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1777090985.093741389] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [ERROR] [1777090985.093813966] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 3087815 with args -0-64-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1777090985.093892656] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 453929 with args -255-255-255-255-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1777090985.093962482] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1777090985.098179832] [cdrone.cdrone3.mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-0-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[drone_setup_node-2] [INFO] [1777090985.703324186] [cdrone.cdrone3.drone_setup]: Publishing indoor reference setup (attempt 1): global_origin_ready=False home_position_ready=False
+[mavros_node-1] [INFO] [1777090986.084059533] [cdrone.cdrone3.mavros.mavros_router]: link[1000] detected remote address 254.0
+[mavros_velocity_node-8] [INFO] [1777090986.088042381] [cdrone.cdrone3.mavros_velocity_node]: Mode changed: CMODE(393216) → OFFBOARD
+[mavros_node-1] [INFO] [1777090986.115162461] [cdrone.cdrone3.mavros.sys]: VER: 1.1: Capabilities         0x000000000000e8ff
+[mavros_node-1] [INFO] [1777090986.115262239] [cdrone.cdrone3.mavros.sys]: VER: 1.1: Flight software:     011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1777090986.115282752] [cdrone.cdrone3.mavros.sys]: VER: 1.1: Middleware software: 011000ff (6ea3539157000000)
+[mavros_node-1] [INFO] [1777090986.115295904] [cdrone.cdrone3.mavros.sys]: VER: 1.1: OS software:         0b0000ff (886acbbdb4f061e5)
+[mavros_node-1] [INFO] [1777090986.115307264] [cdrone.cdrone3.mavros.sys]: VER: 1.1: Board hardware:      00000039
+[mavros_node-1] [INFO] [1777090986.115316801] [cdrone.cdrone3.mavros.sys]: VER: 1.1: VID/PID:             3185:0039
+[mavros_node-1] [INFO] [1777090986.115325729] [cdrone.cdrone3.mavros.sys]: VER: 1.1: UID:                 3333510833383530
+[drone_setup_node-2] [INFO] [1777090986.701398265] [cdrone.cdrone3.drone_setup]: Indoor global origin and home position are confirmed by MAVROS
+[mavros_node-1] [WARN] [1777090987.176179919] [cdrone.cdrone3.mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-0-0-0-0-128-0-0-0-176-123-127-128-176-123-127-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1777090987.176517015] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1777090987.176687484] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 453929 with args -255-255-255-255-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1777090987.176828895] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1777090987.178000315] [cdrone.cdrone3.mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-0-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[realsense_tracker_node-7] [INFO] [1777090987.783378985] [cdrone.cdrone3.realsense_tracker_node]: Started direct RealSense pipeline: color=848x480@15, depth=848x480@15, align_depth_to_color=True, depth_scale_m=0.001000
+[realsense_tracker_node-7] [INFO] [1777090988.099534182] [cdrone.cdrone3.realsense_tracker_node]: RealSense tracker started: source_mode=direct, model=/home/jetson/cdrone_control/models/16_k_and_drone_studio_realsense_images_model.engine, tracks=/cdrone/cdrone3/perception/tracks, world_tracks=/cdrone/cdrone3/perception/world_tracks, pose=/cdrone/cdrone3/vrpn_mocap/RigidBody3/pose, reid=on, motion_estimator=on, track_hold_s=0.50, world_track_compare=disabled, run_dir=disabled, tracks_csv=disabled, frames_csv=disabled
+[realsense_tracker_node-7] Loading /home/jetson/cdrone_control/models/16_k_and_drone_studio_realsense_images_model.engine for TensorRT inference...
+[realsense_tracker_node-7] [04/24/2026-21:23:08] [TRT] [I] Loaded engine size: 50 MiB
+[realsense_tracker_node-7] [04/24/2026-21:23:08] [TRT] [W] Using an engine plan file across different models of devices is not recommended and is likely to affect performance or even cause errors.
+[realsense_tracker_node-7] [04/24/2026-21:23:09] [TRT] [I] [MemUsageChange] TensorRT-managed allocation in IExecutionContext creation: CPU +1, GPU +36, now: CPU 1, GPU 83 (MiB)
+[mavros_node-1] [WARN] [1777090999.374895790] [cdrone.cdrone3.mavros.param]: PR: request param #837 timeout, retries left 2, and 63 params still missing
+[mavros_node-1] [INFO] [1777091000.089984066] [cdrone.cdrone3.mavros.mission]: WP: mission received
+[mavros_node-1] [INFO] [1777091005.091993562] [cdrone.cdrone3.mavros.rallypoint]: RP: mission received
+[mavros_node-1] [INFO] [1777091010.088950827] [cdrone.cdrone3.mavros.geofence]: GF: mission received
+[external_pose_bridge_node-5] /opt/ros/humble/local/lib/python3.10/dist-packages/rclpy/service.py:76: RuntimeWarning: failed to send response (timeout): client will not receive response, at ./src/rmw_response.cpp:154, at ./src/rcl/service.c:314
+[external_pose_bridge_node-5]   self.__service.service_send_response(response, header.request_id)
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.574712911] [cdrone.cdrone3.milestone3_demo_sequence_node]: State IDLE -> SYNC_TAKEOFF_PARAM: start requested
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.620065346] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested current MIS_TAKEOFF_ALT
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.669192722] [cdrone.cdrone3.milestone3_demo_sequence_node]: MIS_TAKEOFF_ALT currently 2.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.677782404] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MIS_TAKEOFF_ALT=1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.719002962] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set MIS_TAKEOFF_ALT to 1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.721552432] [cdrone.cdrone3.milestone3_demo_sequence_node]: State SYNC_TAKEOFF_PARAM -> SYNC_PRE_TAKEOFF_PROFILE: takeoff altitude configured
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.770599646] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_XY_CRUISE=5.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.818913914] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set pre-takeoff baseline MPC_XY_CRUISE to 5.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.821470264] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_XY_VEL_MAX=12.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.868727386] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set pre-takeoff baseline MPC_XY_VEL_MAX to 12.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.872897696] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_ACC_HOR=3.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.918681502] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set pre-takeoff baseline MPC_ACC_HOR to 3.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.923083017] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_JERK_AUTO=4.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.968745892] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set pre-takeoff baseline MPC_JERK_AUTO to 4.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091039.976681830] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_JERK_MAX=8.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.018760778] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set pre-takeoff baseline MPC_JERK_MAX to 8.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.021549006] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_Z_V_AUTO_UP=3.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.068626827] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set pre-takeoff baseline MPC_Z_V_AUTO_UP to 3.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.074635934] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_Z_V_AUTO_DN=1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.123359236] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set pre-takeoff baseline MPC_Z_V_AUTO_DN to 1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.131364968] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_Z_VEL_MAX_DN=1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.168420561] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set pre-takeoff baseline MPC_Z_VEL_MAX_DN to 1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.176204879] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_LAND_SPEED=0.70
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.220124351] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set pre-takeoff baseline MPC_LAND_SPEED to 0.70
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.229891438] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_TKO_SPEED=1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.268746531] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set pre-takeoff baseline MPC_TKO_SPEED to 1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.272180055] [cdrone.cdrone3.milestone3_demo_sequence_node]: State SYNC_PRE_TAKEOFF_PROFILE -> SET_TAKEOFF_MODE: pre-takeoff profile configured
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.323070289] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested mode AUTO.TAKEOFF
+[mavros_node-1] [WARN] [1777091040.331474335] [cdrone.cdrone3.mavros.cmd]: CMD: Unexpected command 176, result 0
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.368950642] [cdrone.cdrone3.milestone3_demo_sequence_node]: Mode request accepted for AUTO.TAKEOFF
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.871250685] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested mode AUTO.TAKEOFF
+[milestone3_demo_sequence_node-9] [INFO] [1777091040.918944298] [cdrone.cdrone3.milestone3_demo_sequence_node]: Mode request accepted for AUTO.TAKEOFF
+[mavros_velocity_node-8] [INFO] [1777091041.088031948] [cdrone.cdrone3.mavros_velocity_node]: Mode changed: OFFBOARD → AUTO.TAKEOFF
+[milestone3_demo_sequence_node-9] [INFO] [1777091041.119181604] [cdrone.cdrone3.milestone3_demo_sequence_node]: State SET_TAKEOFF_MODE -> ARMING: AUTO.TAKEOFF confirmed
+[milestone3_demo_sequence_node-9] [INFO] [1777091042.620159806] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested arm
+[mavros_node-1] [INFO] [1777091042.636874743] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 9489139 with args -4-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1777091042.638707747] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 3878855 with args -0-0-192-63-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[milestone3_demo_sequence_node-9] [INFO] [1777091042.668882405] [cdrone.cdrone3.milestone3_demo_sequence_node]: Arm request accepted
+[mavros_node-1] [INFO] [1777091042.673945184] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 1203183 with args -234-7-4-1-8-47-28-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1777091042.745600215] [cdrone.cdrone3.mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-0-0-0-0-128-0-0-0-176-123-127-128-176-123-127-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1777091042.745854973] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1777091042.746022081] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 453929 with args -255-255-255-255-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1777091042.746150948] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1777091042.748467677] [cdrone.cdrone3.mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-4-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_velocity_node-8] [INFO] [1777091043.090194682] [cdrone.cdrone3.mavros_velocity_node]: Armed: True
+[milestone3_demo_sequence_node-9] [INFO] [1777091043.119684074] [cdrone.cdrone3.milestone3_demo_sequence_node]: State ARMING -> TAKEOFF: vehicle armed; waiting for PX4 AUTO.TAKEOFF climb
+[milestone3_demo_sequence_node-9] [INFO] [1777091043.171143572] [cdrone.cdrone3.milestone3_demo_sequence_node]: Takeoff progress: delta_z=0.00 m target_delta_z=1.50 m mode=AUTO.TAKEOFF armed=True
+[milestone3_demo_sequence_node-9] [INFO] [1777091044.220707139] [cdrone.cdrone3.milestone3_demo_sequence_node]: Takeoff progress: delta_z=0.00 m target_delta_z=1.50 m mode=AUTO.TAKEOFF armed=True
+[mavros_node-1] [INFO] [1777091044.465775336] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 4277609 with args -0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[milestone3_demo_sequence_node-9] [INFO] [1777091045.270965511] [cdrone.cdrone3.milestone3_demo_sequence_node]: Takeoff progress: delta_z=0.01 m target_delta_z=1.50 m mode=AUTO.TAKEOFF armed=True
+[milestone3_demo_sequence_node-9] [INFO] [1777091046.319503655] [cdrone.cdrone3.milestone3_demo_sequence_node]: Takeoff progress: delta_z=0.03 m target_delta_z=1.50 m mode=AUTO.TAKEOFF armed=True
+[milestone3_demo_sequence_node-9] [INFO] [1777091047.369611665] [cdrone.cdrone3.milestone3_demo_sequence_node]: Takeoff progress: delta_z=0.16 m target_delta_z=1.50 m mode=AUTO.TAKEOFF armed=True
+[milestone3_demo_sequence_node-9] [INFO] [1777091048.421085218] [cdrone.cdrone3.milestone3_demo_sequence_node]: Takeoff progress: delta_z=0.50 m target_delta_z=1.50 m mode=AUTO.TAKEOFF armed=True
+[mavros_velocity_node-8] [INFO] [1777091049.083798225] [cdrone.cdrone3.mavros_velocity_node]: Mode changed: AUTO.TAKEOFF → AUTO.LOITER
+[milestone3_demo_sequence_node-9] [WARN] [1777091049.124234191] [cdrone.cdrone3.milestone3_demo_sequence_node]: PX4 exited AUTO.TAKEOFF before the demo observed the target altitude; shortfall=0.75 m mode=AUTO.LOITER. Accepting handoff.
+[milestone3_demo_sequence_node-9] [INFO] [1777091049.128027787] [cdrone.cdrone3.milestone3_demo_sequence_node]: State TAKEOFF -> WARMUP_OFFBOARD: PX4 handed off to AUTO.LOITER during takeoff
+[milestone3_demo_sequence_node-9] [INFO] [1777091050.669231825] [cdrone.cdrone3.milestone3_demo_sequence_node]: State WARMUP_OFFBOARD -> SET_OFFBOARD_MODE: offboard warmup complete
+[milestone3_demo_sequence_node-9] [INFO] [1777091050.722354789] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested mode OFFBOARD
+[mavros_node-1] [WARN] [1777091050.727770505] [cdrone.cdrone3.mavros.cmd]: CMD: Unexpected command 176, result 0
+[milestone3_demo_sequence_node-9] [INFO] [1777091050.768743316] [cdrone.cdrone3.milestone3_demo_sequence_node]: Mode request accepted for OFFBOARD
+[mavros_velocity_node-8] [INFO] [1777091051.083117279] [cdrone.cdrone3.mavros_velocity_node]: Mode changed: AUTO.LOITER → OFFBOARD
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.119812993] [cdrone.cdrone3.milestone3_demo_sequence_node]: State SET_OFFBOARD_MODE -> SYNC_SPEED_PROFILE: OFFBOARD confirmed
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.170564475] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested current MPC_XY_CRUISE
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.218586770] [cdrone.cdrone3.milestone3_demo_sequence_node]: MPC_XY_CRUISE currently 5.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.223926292] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_XY_CRUISE=1.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.268879392] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set MPC_XY_CRUISE to 1.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.284510271] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested current MPC_XY_VEL_MAX
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.318798502] [cdrone.cdrone3.milestone3_demo_sequence_node]: MPC_XY_VEL_MAX currently 12.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.323602171] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_XY_VEL_MAX=1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.369447229] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set MPC_XY_VEL_MAX to 1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.374173937] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested current MPC_ACC_HOR
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.418736147] [cdrone.cdrone3.milestone3_demo_sequence_node]: MPC_ACC_HOR currently 3.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.421491991] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_ACC_HOR=1.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.468506869] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set MPC_ACC_HOR to 1.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.470939185] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested current MPC_JERK_AUTO
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.518793796] [cdrone.cdrone3.milestone3_demo_sequence_node]: MPC_JERK_AUTO currently 4.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.521412164] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_JERK_AUTO=1.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.569734882] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set MPC_JERK_AUTO to 1.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.572708843] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested current MPC_JERK_MAX
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.618821395] [cdrone.cdrone3.milestone3_demo_sequence_node]: MPC_JERK_MAX currently 8.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.623385475] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_JERK_MAX=2.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.669743089] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set MPC_JERK_MAX to 2.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.674084987] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested current MPC_Z_V_AUTO_UP
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.718687807] [cdrone.cdrone3.milestone3_demo_sequence_node]: MPC_Z_V_AUTO_UP currently 3.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.721379073] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_Z_V_AUTO_UP=0.80
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.770899708] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set MPC_Z_V_AUTO_UP to 0.80
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.774934751] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested current MPC_Z_V_AUTO_DN
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.819139225] [cdrone.cdrone3.milestone3_demo_sequence_node]: MPC_Z_V_AUTO_DN currently 1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.824109842] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_Z_V_AUTO_DN=0.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.869734831] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set MPC_Z_V_AUTO_DN to 0.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.873967958] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested current MPC_Z_VEL_MAX_DN
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.918756062] [cdrone.cdrone3.milestone3_demo_sequence_node]: MPC_Z_VEL_MAX_DN currently 1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.924164131] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_Z_VEL_MAX_DN=0.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.968831528] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set MPC_Z_VEL_MAX_DN to 0.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091051.973517114] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested current MPC_LAND_SPEED
+[milestone3_demo_sequence_node-9] [INFO] [1777091052.019502656] [cdrone.cdrone3.milestone3_demo_sequence_node]: MPC_LAND_SPEED currently 0.70
+[milestone3_demo_sequence_node-9] [INFO] [1777091052.024515706] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_LAND_SPEED=0.35
+[milestone3_demo_sequence_node-9] [INFO] [1777091052.068890712] [cdrone.cdrone3.milestone3_demo_sequence_node]: Set MPC_LAND_SPEED to 0.35
+[milestone3_demo_sequence_node-9] [INFO] [1777091052.071616827] [cdrone.cdrone3.milestone3_demo_sequence_node]: State SYNC_SPEED_PROFILE -> STAGE_HOVER: speed profile configured
+[milestone3_demo_sequence_node-9] [INFO] [1777091054.122698549] [cdrone.cdrone3.milestone3_demo_sequence_node]: State STAGE_HOVER -> SEARCH: stage hover complete
+[external_pose_debug_node-6] [WARN] [1777091078.531244612] [cdrone.cdrone3.external_pose_debug_node]: source->local pos error 0.104m (dx=+0.002, dy=+0.011, dz=+0.104) src_z=0.131 local_z=0.235 src_minus_home=+0.000 local_minus_home=+0.104; source->local vertical mismatch dz=+0.104m src_minus_home=+0.000 local_minus_home=+0.104
+[external_pose_debug_node-6] [WARN] [1777091079.530668765] [cdrone.cdrone3.external_pose_debug_node]: source->local pos error 0.147m (dx=+0.004, dy=+0.013, dz=+0.147) src_z=0.131 local_z=0.277 src_minus_home=-0.000 local_minus_home=+0.146; source->local vertical mismatch dz=+0.147m src_minus_home=-0.000 local_minus_home=+0.146
+[milestone3_demo_sequence_node-9] [INFO] [1777091080.019121285] [cdrone.cdrone3.milestone3_demo_sequence_node]: Target lock: id=1 dist=2.54 x=2.44 y=0.44 z=0.51
+[milestone3_demo_sequence_node-9] [INFO] [1777091080.025089624] [cdrone.cdrone3.milestone3_demo_sequence_node]: State SEARCH -> FOLLOW
+[external_pose_debug_node-6] [WARN] [1777091080.530449634] [cdrone.cdrone3.external_pose_debug_node]: source->local pos error 0.135m (dx=+0.004, dy=+0.009, dz=+0.135) src_z=0.134 local_z=0.269 src_minus_home=+0.003 local_minus_home=+0.138; source->local vertical mismatch dz=+0.135m src_minus_home=+0.003 local_minus_home=+0.138
+[milestone3_demo_sequence_node-9] [INFO] [1777091080.819146781] [cdrone.cdrone3.milestone3_demo_sequence_node]: Clamped follow vertical command to respect perimeter altitude limits: id=1 vz 0.11 -> 0.12
+[milestone3_demo_sequence_node-9] [INFO] [1777091080.921193098] [cdrone.cdrone3.milestone3_demo_sequence_node]: State FOLLOW -> DWELL
+[milestone3_demo_sequence_node-9] [INFO] [1777091081.470766486] [cdrone.cdrone3.milestone3_demo_sequence_node]: State DWELL -> FOLLOW
+[milestone3_demo_sequence_node-9] [INFO] [1777091081.721432682] [cdrone.cdrone3.milestone3_demo_sequence_node]: State FOLLOW -> DWELL
+[milestone3_demo_sequence_node-9] [INFO] [1777091081.819289073] [cdrone.cdrone3.milestone3_demo_sequence_node]: Clamped follow vertical command to respect perimeter altitude limits: id=1 vz 0.00 -> 0.16
+[milestone3_demo_sequence_node-9] [INFO] [1777091082.019666993] [cdrone.cdrone3.milestone3_demo_sequence_node]: State DWELL -> FOLLOW
+[milestone3_demo_sequence_node-9] [INFO] [1777091082.870546802] [cdrone.cdrone3.milestone3_demo_sequence_node]: Clamped follow vertical command to respect perimeter altitude limits: id=1 vz 0.00 -> 0.20
+[milestone3_demo_sequence_node-9] [INFO] [1777091083.872222195] [cdrone.cdrone3.milestone3_demo_sequence_node]: Clamped follow vertical command to respect perimeter altitude limits: id=1 vz 0.00 -> 0.25
+[milestone3_demo_sequence_node-9] [INFO] [1777091084.919020111] [cdrone.cdrone3.milestone3_demo_sequence_node]: Clamped follow vertical command to respect perimeter altitude limits: id=1 vz 0.00 -> 0.26
+[milestone3_demo_sequence_node-9] [INFO] [1777091085.719843946] [cdrone.cdrone3.milestone3_demo_sequence_node]: State FOLLOW -> DWELL
+[milestone3_demo_sequence_node-9] [INFO] [1777091085.919233781] [cdrone.cdrone3.milestone3_demo_sequence_node]: Clamped follow vertical command to respect perimeter altitude limits: id=1 vz 0.00 -> 0.20
+[milestone3_demo_sequence_node-9] [INFO] [1777091086.968848863] [cdrone.cdrone3.milestone3_demo_sequence_node]: Clamped follow vertical command to respect perimeter altitude limits: id=1 vz 0.00 -> 0.18
+[milestone3_demo_sequence_node-9] [INFO] [1777091088.018951065] [cdrone.cdrone3.milestone3_demo_sequence_node]: Target lock: id=3 dist=1.53 x=1.53 y=0.04 z=-0.12
+[milestone3_demo_sequence_node-9] [INFO] [1777091088.019766957] [cdrone.cdrone3.milestone3_demo_sequence_node]: Clamped follow vertical command to respect perimeter altitude limits: id=3 vz 0.00 -> 0.15
+[milestone3_demo_sequence_node-9] [INFO] [1777091089.068870963] [cdrone.cdrone3.milestone3_demo_sequence_node]: Clamped follow vertical command to respect perimeter altitude limits: id=3 vz -0.05 -> 0.11
+[milestone3_demo_sequence_node-9] [INFO] [1777091090.069247885] [cdrone.cdrone3.milestone3_demo_sequence_node]: Clamped follow vertical command to respect perimeter altitude limits: id=3 vz -0.05 -> 0.10
+[milestone3_demo_sequence_node-9] [INFO] [1777091091.069633612] [cdrone.cdrone3.milestone3_demo_sequence_node]: Target complete: id=3 completed=1/1
+[milestone3_demo_sequence_node-9] [INFO] [1777091091.070486497] [cdrone.cdrone3.milestone3_demo_sequence_node]: State DWELL -> RETURN_TO_START: all required targets completed; returning to takeoff origin
+[milestone3_demo_sequence_node-9] [INFO] [1777091105.621357919] [cdrone.cdrone3.milestone3_demo_sequence_node]: State RETURN_TO_START -> RETURN_HOME_HOLD: takeoff origin reached
+[milestone3_demo_sequence_node-9] [INFO] [1777091107.170923858] [cdrone.cdrone3.milestone3_demo_sequence_node]: State RETURN_HOME_HOLD -> SET_LAND_MODE: return hold complete; requesting landing
+[milestone3_demo_sequence_node-9] [INFO] [1777091107.220254612] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested mode AUTO.LAND
+[mavros_node-1] [WARN] [1777091107.230307052] [cdrone.cdrone3.mavros.cmd]: CMD: Unexpected command 176, result 0
+[milestone3_demo_sequence_node-9] [INFO] [1777091107.270315336] [cdrone.cdrone3.milestone3_demo_sequence_node]: Mode request accepted for AUTO.LAND
+[milestone3_demo_sequence_node-9] [INFO] [1777091107.770551049] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested mode AUTO.LAND
+[milestone3_demo_sequence_node-9] [INFO] [1777091107.818566123] [cdrone.cdrone3.milestone3_demo_sequence_node]: Mode request accepted for AUTO.LAND
+[mavros_velocity_node-8] [INFO] [1777091108.083936228] [cdrone.cdrone3.mavros_velocity_node]: Mode changed: OFFBOARD → AUTO.LAND
+[milestone3_demo_sequence_node-9] [INFO] [1777091108.118864067] [cdrone.cdrone3.milestone3_demo_sequence_node]: State SET_LAND_MODE -> WAIT_TOUCHDOWN: AUTO.LAND confirmed
+[milestone3_demo_sequence_node-9] [INFO] [1777091112.570078676] [cdrone.cdrone3.milestone3_demo_sequence_node]: State WAIT_TOUCHDOWN -> DISARMING: touchdown detected
+[milestone3_demo_sequence_node-9] [INFO] [1777091112.620077416] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested disarm
+[mavros_node-1] [ERROR] [1777091112.637197647] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 9091509 with args -0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[milestone3_demo_sequence_node-9] [WARN] [1777091112.668846717] [cdrone.cdrone3.milestone3_demo_sequence_node]: Disarm request reported failure (result 1) while PX4 is landing; continuing to wait for auto-disarm.
+[mavros_node-1] [INFO] [1777091113.803584267] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 9844908 with args -0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1777091115.806437846] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 16017271 with args -6-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_velocity_node-8] [INFO] [1777091116.083217265] [cdrone.cdrone3.mavros_velocity_node]: Mode changed: AUTO.LAND → OFFBOARD
+[mavros_velocity_node-8] [INFO] [1777091116.085383591] [cdrone.cdrone3.mavros_velocity_node]: Armed: False
+[milestone3_demo_sequence_node-9] [INFO] [1777091116.119443473] [cdrone.cdrone3.milestone3_demo_sequence_node]: State DISARMING -> RESTORE_TAKEOFF_PARAM: vehicle disarmed
+[milestone3_demo_sequence_node-9] [INFO] [1777091116.169603306] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested FCU parameter pull (attempt 1)
+[mavros_node-1] [INFO] [1777091116.169890865] [cdrone.cdrone3.mavros.param]: PR: start force pull
+[mavros_node-1] [WARN] [1777091119.857907653] [cdrone.cdrone3.mavros.sys]: FCU: UNK(8): EVENT 11047904 with args -0-0-0-0-0-128-0-0-0-176-123-127-128-176-123-127-128-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1777091119.858179051] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 377561 with args -8-0-0-0-20-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1777091119.858365008] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 453929 with args -255-255-255-255-7-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [INFO] [1777091119.858558549] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 6801787 with args -255-255-255-255-12-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1777091119.860044281] [cdrone.cdrone3.mavros.sys]: FCU: UNK(8): EVENT 1914663 with args -0-2-0-2-56-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[mavros_node-1] [WARN] [1777091146.180047451] [cdrone.cdrone3.mavros.param]: PR: request param #813 timeout, retries left 2, and 90 params still missing
+[milestone3_demo_sequence_node-9] [WARN] [1777091146.218786429] [cdrone.cdrone3.milestone3_demo_sequence_node]: FCU parameter pull failed for MIS_TAKEOFF_ALT (reported failure); retrying param pull in 1.0s
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.220739309] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MIS_TAKEOFF_ALT=2.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.268840248] [cdrone.cdrone3.milestone3_demo_sequence_node]: Restored MIS_TAKEOFF_ALT to 2.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.269828177] [cdrone.cdrone3.milestone3_demo_sequence_node]: State RESTORE_TAKEOFF_PARAM -> RESTORE_SPEED_PROFILE: takeoff altitude already restored
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.320964967] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_XY_CRUISE=5.00
+[mavros_node-1] [WARN] [1777091146.359056729] [cdrone.cdrone3.mavros.sys]: FCU: EVENT 15909593 with args -0-0-192-63-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-0-
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.369010352] [cdrone.cdrone3.milestone3_demo_sequence_node]: Restored MPC_XY_CRUISE to 5.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.372992723] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_XY_VEL_MAX=12.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.420674611] [cdrone.cdrone3.milestone3_demo_sequence_node]: Restored MPC_XY_VEL_MAX to 12.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.426118394] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_ACC_HOR=3.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.469121350] [cdrone.cdrone3.milestone3_demo_sequence_node]: Restored MPC_ACC_HOR to 3.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.471819081] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_JERK_AUTO=4.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.522466387] [cdrone.cdrone3.milestone3_demo_sequence_node]: Restored MPC_JERK_AUTO to 4.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.526362580] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_JERK_MAX=8.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.568727888] [cdrone.cdrone3.milestone3_demo_sequence_node]: Restored MPC_JERK_MAX to 8.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.570867718] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_Z_V_AUTO_UP=3.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.618770251] [cdrone.cdrone3.milestone3_demo_sequence_node]: Restored MPC_Z_V_AUTO_UP to 3.00
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.621014339] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_Z_V_AUTO_DN=1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.668840167] [cdrone.cdrone3.milestone3_demo_sequence_node]: Restored MPC_Z_V_AUTO_DN to 1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.670996317] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_Z_VEL_MAX_DN=1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.718812896] [cdrone.cdrone3.milestone3_demo_sequence_node]: Restored MPC_Z_VEL_MAX_DN to 1.50
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.720943797] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_LAND_SPEED=0.70
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.778433097] [cdrone.cdrone3.milestone3_demo_sequence_node]: Restored MPC_LAND_SPEED to 0.70
+[milestone3_demo_sequence_node-9] [INFO] [1777091146.779301503] [cdrone.cdrone3.milestone3_demo_sequence_node]: State RESTORE_SPEED_PROFILE -> COMPLETE: demo complete

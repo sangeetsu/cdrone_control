@@ -30,6 +30,7 @@ def launch_setup(context, *args, **kwargs):
     bringup_share = get_package_share_directory("drone_bringup")
     log_level = LaunchConfiguration("log_level")
     drone_id = LaunchConfiguration("drone_id")
+    drone_namespace = LaunchConfiguration("drone_namespace")
     mavros_namespace = LaunchConfiguration("mavros_namespace")
     explicit_speed_profile_config = (
         LaunchConfiguration("speed_profile_config").perform(context).strip()
@@ -59,6 +60,8 @@ def launch_setup(context, *args, **kwargs):
         launch_arguments={
             "log_level": log_level,
             "drone_id": drone_id,
+            "drone_namespace": drone_namespace,
+            "mocap_namespace": LaunchConfiguration("mocap_namespace"),
             "mavros_namespace": mavros_namespace,
             "pose_source": LaunchConfiguration("pose_source"),
             "source_pose_topic": LaunchConfiguration("source_pose_topic"),
@@ -111,6 +114,7 @@ def launch_setup(context, *args, **kwargs):
         launch_arguments={
             "log_level": log_level,
             "drone_id": drone_id,
+            "drone_namespace": drone_namespace,
             "source_mode": LaunchConfiguration("tracking_source_mode"),
             "pose_topic": LaunchConfiguration("tracking_pose_topic"),
             "publish_world_track_compare": LaunchConfiguration(
@@ -148,6 +152,7 @@ def launch_setup(context, *args, **kwargs):
     mavros_velocity_node = Node(
         package="drone_control_pkg",
         executable="mavros_velocity_node",
+        namespace=drone_namespace,
         output="screen",
         parameters=[
             {
@@ -170,6 +175,7 @@ def launch_setup(context, *args, **kwargs):
     milestone3_demo_node = Node(
         package="drone_control_pkg",
         executable="milestone3_demo_sequence_node",
+        namespace=drone_namespace,
         output="screen",
         parameters=[
             LaunchConfiguration("demo_config"),
@@ -238,8 +244,18 @@ def generate_launch_description():
                 default_value=_default_arg(defaults, "drone_id", ""),
             ),
             DeclareLaunchArgument(
+                "drone_namespace",
+                default_value=_default_arg(defaults, "drone_namespace", "/cdrone"),
+            ),
+            DeclareLaunchArgument(
                 "mavros_namespace",
                 default_value=_default_arg(defaults, "mavros_namespace", "mavros"),
+            ),
+            DeclareLaunchArgument(
+                "mocap_namespace",
+                default_value=_default_arg(
+                    defaults, "mocap_namespace", "/cdrone/vrpn_mocap"
+                ),
             ),
             DeclareLaunchArgument(
                 "pose_source",
@@ -261,9 +277,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument(
                 "compare_pose_topic",
-                default_value=_default_arg(
-                    defaults, "compare_pose_topic", "/vrpn_mocap/RigidBody2/pose"
-                ),
+                default_value=_default_arg(defaults, "compare_pose_topic", ""),
             ),
             DeclareLaunchArgument("world_track_compare_topic", default_value=""),
             DeclareLaunchArgument("experiment_tag", default_value=""),

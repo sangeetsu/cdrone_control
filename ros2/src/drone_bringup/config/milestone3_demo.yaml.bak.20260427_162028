@@ -50,7 +50,7 @@ milestone3_demo_sequence_node:
     enable_perimeter_guard: true
     perimeter_segment_sample_step_m: 0.10
     perimeter_boundary_tolerance_m: 0.05
-    perimeter_boundary_margin_m: 0.8
+    perimeter_boundary_margin_m: 0.9
     perimeter_keep_out_margin_m: 0.3
     perimeter_ceiling_tolerance_m: 0.10
     projected_path_horizon_s: 0.75

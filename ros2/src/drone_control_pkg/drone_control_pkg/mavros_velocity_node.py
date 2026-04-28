@@ -20,6 +20,14 @@ def clamp(value: float, min_v: float, max_v: float) -> float:
     return max(min(value, max_v), min_v)
 
 
+def offboard_velocity_gate_open(
+    *, require_guided_mode: bool, armed: bool, mode: str
+) -> bool:
+    if not require_guided_mode:
+        return True
+    return bool(armed and mode == "OFFBOARD")
+
+
 class MavrosVelocityNode(Node):
     def __init__(self) -> None:
         super().__init__("mavros_velocity_node")
@@ -150,10 +158,10 @@ class MavrosVelocityNode(Node):
         self.local_pose = msg
 
     def _guided_gate_open(self) -> bool:
-        if not self.require_guided_mode:
-            return True
-        return bool(
-            self.state.armed and (self.state.mode == "OFFBOARD" or self.state.guided)
+        return offboard_velocity_gate_open(
+            require_guided_mode=self.require_guided_mode,
+            armed=self.state.armed,
+            mode=self.state.mode,
         )
 
     def _zero_cmd(self) -> TwistStamped:

@@ -986,19 +986,6 @@ class Milestone3DemoSequenceNode(Node):
             f"Skipping speed profile parameter {param_name}: {reason}"
         )
 
-    @staticmethod
-    def is_missing_param_reason(reason: str) -> bool:
-        reason_text = str(reason).lower()
-        return "undeclared" in reason_text or "unknown parameter" in reason_text
-
-    def skip_takeoff_param_restore(self, reason: str) -> None:
-        self.restore_complete = True
-        self.takeoff_param_changed = False
-        self.original_takeoff_alt_m = None
-        self.get_logger().warn(
-            f"Skipping takeoff-parameter restore for {self.takeoff_param_id}: {reason}"
-        )
-
     def perimeter_start_violation_reason(self) -> Optional[str]:
         if not self.enable_perimeter_guard:
             return None
@@ -1630,7 +1617,7 @@ class Milestone3DemoSequenceNode(Node):
                             if response.results
                             else "no response"
                         )
-                        if self.is_missing_param_reason(reason):
+                        if "undeclared" in str(reason).lower():
                             self.original_takeoff_alt_m = None
                             self.schedule_param_pull_retry(
                                 f"{self.takeoff_param_id} not declared yet during set"
@@ -1655,7 +1642,7 @@ class Milestone3DemoSequenceNode(Node):
                             if response.results
                             else "no response"
                         )
-                        if self.is_missing_param_reason(reason):
+                        if "undeclared" in str(reason).lower():
                             self.skip_speed_profile_param(
                                 param_name,
                                 f"set failed because it is not declared: {reason}",
@@ -1675,10 +1662,11 @@ class Milestone3DemoSequenceNode(Node):
                             if response.results
                             else "no response"
                         )
-                        if self.is_missing_param_reason(reason):
-                            self.skip_takeoff_param_restore(
-                                f"restore failed because it is not declared: {reason}"
+                        if "undeclared" in str(reason).lower():
+                            self.schedule_param_pull_retry(
+                                f"{self.takeoff_param_id} not declared yet during restore"
                             )
+                            self.restore_complete = False
                             return
                         self.enter_abort(
                             f"failed to restore {self.takeoff_param_id}: {reason}"
@@ -1697,10 +1685,9 @@ class Milestone3DemoSequenceNode(Node):
                             if response.results
                             else "no response"
                         )
-                        if self.is_missing_param_reason(reason):
-                            self.skip_speed_profile_param(
-                                param_name,
-                                f"restore failed because it is not declared: {reason}",
+                        if "undeclared" in str(reason).lower():
+                            self.schedule_param_pull_retry(
+                                f"{param_name} not declared yet during restore"
                             )
                             return
                         self.enter_abort(f"failed to restore {param_name}: {reason}")

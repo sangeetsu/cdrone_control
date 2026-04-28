@@ -15,6 +15,7 @@ def generate_launch_description():
     tracker_node = Node(
         package="drone_vision_pkg",
         executable="realsense_tracker_node",
+        namespace=LaunchConfiguration("drone_namespace"),
         output="screen",
         parameters=[
             LaunchConfiguration("tracker_config_file"),
@@ -55,6 +56,10 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "drone_id",
                 default_value=default_arg(defaults, "drone_id", ""),
+            ),
+            DeclareLaunchArgument(
+                "drone_namespace",
+                default_value=default_arg(defaults, "drone_namespace", "/cdrone"),
             ),
             DeclareLaunchArgument("source_mode", default_value="direct"),
             DeclareLaunchArgument(

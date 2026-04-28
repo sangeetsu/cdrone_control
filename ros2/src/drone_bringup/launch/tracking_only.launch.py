@@ -25,6 +25,10 @@ def generate_launch_description():
                 "drone_id",
                 default_value=default_arg(defaults, "drone_id", ""),
             ),
+            DeclareLaunchArgument(
+                "drone_namespace",
+                default_value=default_arg(defaults, "drone_namespace", "/cdrone"),
+            ),
             DeclareLaunchArgument("source_mode", default_value="direct"),
             DeclareLaunchArgument(
                 "pose_topic",
@@ -71,6 +75,7 @@ def generate_launch_description():
                 launch_arguments={
                     "log_level": LaunchConfiguration("log_level"),
                     "drone_id": LaunchConfiguration("drone_id"),
+                    "drone_namespace": LaunchConfiguration("drone_namespace"),
                     "source_mode": LaunchConfiguration("source_mode"),
                     "pose_topic": LaunchConfiguration("pose_topic"),
                     "publish_world_track_compare": LaunchConfiguration(
