@@ -5,7 +5,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from drone_control_pkg.follow_utils import TrackSnapshot
+from drone_control_pkg.follow_utils import TRACK_SOURCE_PREDICTED, TrackSnapshot
 from drone_control_pkg.milestone2_demo_logic import (
     project_body_velocity_to_world_xy,
     select_sequential_target,
@@ -25,6 +25,9 @@ def make_track(
     distance_m: float | None = None,
     confidence: float = 0.9,
     last_seen_s: float = 10.0,
+    source: int = 0,
+    last_observed_age_s: float = 0.0,
+    position_uncertainty_m: float = 0.0,
 ) -> TrackSnapshot:
     return TrackSnapshot(
         track_id=track_id,
@@ -39,6 +42,9 @@ def make_track(
         bbox_area_px=1000.0,
         inbound=vx_b_mps < 0.0,
         last_seen_s=last_seen_s,
+        source=source,
+        last_observed_age_s=last_observed_age_s,
+        position_uncertainty_m=position_uncertainty_m,
     )
 
 
@@ -87,6 +93,64 @@ def test_select_sequential_target_skips_excluded_and_stale_tracks():
 
     assert chosen is not None
     assert chosen.track_id == 33
+
+
+def test_select_sequential_target_rejects_predicted_by_default():
+    tracks = [
+        make_track(
+            11,
+            x_b_m=1.6,
+            source=TRACK_SOURCE_PREDICTED,
+            last_observed_age_s=0.4,
+            position_uncertainty_m=0.2,
+        )
+    ]
+
+    chosen = select_sequential_target(
+        tracks,
+        active_track_id=None,
+        excluded_track_ids=set(),
+        now_s=10.1,
+        track_timeout_s=0.5,
+        min_track_confidence=0.35,
+        max_target_distance_m=2.6,
+        require_target_in_front=True,
+        max_abs_target_y_m=4.0,
+        max_abs_target_z_m=2.5,
+    )
+
+    assert chosen is None
+
+
+def test_select_sequential_target_allows_bounded_predicted_track():
+    tracks = [
+        make_track(
+            11,
+            x_b_m=1.6,
+            source=TRACK_SOURCE_PREDICTED,
+            last_observed_age_s=0.4,
+            position_uncertainty_m=0.2,
+        )
+    ]
+
+    chosen = select_sequential_target(
+        tracks,
+        active_track_id=None,
+        excluded_track_ids=set(),
+        now_s=10.1,
+        track_timeout_s=0.5,
+        min_track_confidence=0.35,
+        max_target_distance_m=2.6,
+        require_target_in_front=True,
+        max_abs_target_y_m=4.0,
+        max_abs_target_z_m=2.5,
+        allow_predicted_tracks=True,
+        max_predicted_track_age_s=1.5,
+        max_predicted_position_uncertainty_m=0.75,
+    )
+
+    assert chosen is not None
+    assert chosen.track_id == 11
 
 
 def test_update_dwell_progress_completes_after_required_duration():

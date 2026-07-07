@@ -271,6 +271,22 @@ class TargetFollowControllerNode(Node):
                 bbox_area_px=float(track.bbox_area_px),
                 inbound=bool(track.inbound),
                 last_seen_s=now_s,
+                detector_track_id=int(
+                    getattr(track, "detector_track_id", int(track.track_id))
+                ),
+                source=int(getattr(track, "source", 0)),
+                last_observed_age_s=float(
+                    getattr(track, "last_observed_age_s", 0.0)
+                ),
+                prediction_horizon_s=float(
+                    getattr(track, "prediction_horizon_s", 0.0)
+                ),
+                position_uncertainty_m=float(
+                    getattr(track, "position_uncertainty_m", 0.0)
+                ),
+                velocity_uncertainty_mps=float(
+                    getattr(track, "velocity_uncertainty_mps", 0.0)
+                ),
             )
             self.tracks[snapshot.track_id] = snapshot
             seen_ids.add(snapshot.track_id)

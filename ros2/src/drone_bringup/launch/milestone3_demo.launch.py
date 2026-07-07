@@ -100,6 +100,7 @@ def launch_setup(context, *args, **kwargs):
             "adapter_timeout_s": LaunchConfiguration("external_pose_timeout_s"),
             "publish_companion_status": "true",
             "map_frame": LaunchConfiguration("map_frame"),
+            "frame_rpy_rad": LaunchConfiguration("frame_rpy_rad"),
             "position_offset_m": LaunchConfiguration("position_offset_m"),
             "rpy_offset_rad": LaunchConfiguration("rpy_offset_rad"),
             "optitrack_server": LaunchConfiguration("optitrack_server"),
@@ -161,6 +162,15 @@ def launch_setup(context, *args, **kwargs):
             "publish_track_hold_max_extrapolation_m": LaunchConfiguration(
                 "tracker_publish_track_hold_max_extrapolation_m"
             ),
+            "recording_target_map_world_topic": LaunchConfiguration(
+                "recording_target_map_world_topic"
+            ),
+            "recording_save_depth_video": LaunchConfiguration(
+                "recording_save_depth_video"
+            ),
+            "recording_replace_depth_tile_with_yolo": LaunchConfiguration(
+                "recording_replace_depth_tile_with_yolo"
+            ),
         }.items(),
     )
 
@@ -202,9 +212,36 @@ def launch_setup(context, *args, **kwargs):
                 "mavros_namespace": mavros_namespace,
                 "tracks_topic": LaunchConfiguration("tracks_topic"),
                 "engagement_state_topic": LaunchConfiguration("engagement_state_topic"),
+                "enable_predicted_track_control": ParameterValue(
+                    LaunchConfiguration("enable_predicted_track_control"),
+                    value_type=bool,
+                ),
+                "predicted_track_hold_s": ParameterValue(
+                    LaunchConfiguration("predicted_track_hold_s"),
+                    value_type=float,
+                ),
+                "max_predicted_position_uncertainty_m": ParameterValue(
+                    LaunchConfiguration("max_predicted_position_uncertainty_m"),
+                    value_type=float,
+                ),
+                "predicted_max_vel_xy_mps": ParameterValue(
+                    LaunchConfiguration("predicted_max_vel_xy_mps"),
+                    value_type=float,
+                ),
+                "predicted_max_vel_z_mps": ParameterValue(
+                    LaunchConfiguration("predicted_max_vel_z_mps"),
+                    value_type=float,
+                ),
+                "predicted_max_yaw_rate_rps": ParameterValue(
+                    LaunchConfiguration("predicted_max_yaw_rate_rps"),
+                    value_type=float,
+                ),
                 "perimeter_config": LaunchConfiguration("perimeter_config"),
                 "required_completion_count": ParameterValue(
                     LaunchConfiguration("required_completion_count"), value_type=int
+                ),
+                "takeoff_altitude_m": ParameterValue(
+                    LaunchConfiguration("takeoff_altitude_m"), value_type=float
                 ),
                 "pre_takeoff_profile_config": LaunchConfiguration(
                     "pre_takeoff_profile_config"
@@ -252,11 +289,108 @@ def launch_setup(context, *args, **kwargs):
                 )
             )
 
+    tracking_metrics_actions = []
+    if _launch_arg_as_bool(context, "enable_tracking_metrics", default=False):
+        tracking_metrics_actions.append(
+            Node(
+                package="drone_vision_pkg",
+                executable="tracking_metrics_node",
+                namespace=drone_namespace,
+                output="screen",
+                parameters=[
+                    {
+                        "drone_id": drone_id,
+                        "experiment_tag": LaunchConfiguration(
+                            "tracking_metrics_experiment_tag"
+                        ),
+                        "output_dir": LaunchConfiguration("tracking_metrics_output_dir"),
+                        "raw_world_tracks_topic": LaunchConfiguration(
+                            "tracking_metrics_raw_world_topic"
+                        ),
+                        "target_map_world_tracks_topic": LaunchConfiguration(
+                            "tracking_metrics_target_map_world_topic"
+                        ),
+                        "ownship_pose_topic": LaunchConfiguration(
+                            "tracking_metrics_ownship_pose_topic"
+                        ),
+                        "engagement_state_topic": LaunchConfiguration(
+                            "tracking_metrics_engagement_state_topic"
+                        ),
+                        "metrics_rate_hz": ParameterValue(
+                            LaunchConfiguration("tracking_metrics_rate_hz"),
+                            value_type=float,
+                        ),
+                        "track_stale_s": ParameterValue(
+                            LaunchConfiguration("tracking_metrics_track_stale_s"),
+                            value_type=float,
+                        ),
+                        "max_reacquisition_gap_s": ParameterValue(
+                            LaunchConfiguration(
+                                "tracking_metrics_max_reacquisition_gap_s"
+                            ),
+                            value_type=float,
+                        ),
+                        "simulated_dropout_horizon_s": ParameterValue(
+                            LaunchConfiguration(
+                                "tracking_metrics_simulated_dropout_horizon_s"
+                            ),
+                            value_type=float,
+                        ),
+                        "path_smoothing_window": ParameterValue(
+                            LaunchConfiguration(
+                                "tracking_metrics_path_smoothing_window"
+                            ),
+                            value_type=int,
+                        ),
+                        "write_video": ParameterValue(
+                            LaunchConfiguration("tracking_metrics_write_video"),
+                            value_type=bool,
+                        ),
+                        "video_fps": ParameterValue(
+                            LaunchConfiguration("tracking_metrics_video_fps"),
+                            value_type=float,
+                        ),
+                        "video_width": ParameterValue(
+                            LaunchConfiguration("tracking_metrics_video_width"),
+                            value_type=int,
+                        ),
+                        "video_height": ParameterValue(
+                            LaunchConfiguration("tracking_metrics_video_height"),
+                            value_type=int,
+                        ),
+                        "video_fourcc": LaunchConfiguration(
+                            "tracking_metrics_video_fourcc"
+                        ),
+                        "postprocess_cleaned_tracks": ParameterValue(
+                            LaunchConfiguration(
+                                "tracking_metrics_postprocess_cleaned_tracks"
+                            ),
+                            value_type=bool,
+                        ),
+                        "reference_video": LaunchConfiguration(
+                            "tracking_metrics_reference_video"
+                        ),
+                        "reference_recording_dir": LaunchConfiguration(
+                            "tracking_metrics_reference_recording_dir"
+                        ),
+                        "reference_video_wait_s": ParameterValue(
+                            LaunchConfiguration(
+                                "tracking_metrics_reference_video_wait_s"
+                            ),
+                            value_type=float,
+                        ),
+                    }
+                ],
+                arguments=["--ros-args", "--log-level", log_level],
+            )
+        )
+
     return [
         pose_bridge_launch,
         tracking_launch,
         mavros_velocity_node,
         milestone3_demo_node,
+        *tracking_metrics_actions,
         *led_actions,
     ]
 
@@ -314,6 +448,18 @@ def generate_launch_description():
             DeclareLaunchArgument("source_pose_topic", default_value=""),
             DeclareLaunchArgument("tracks_topic", default_value=""),
             DeclareLaunchArgument("engagement_state_topic", default_value=""),
+            DeclareLaunchArgument(
+                "enable_predicted_track_control",
+                default_value="false",
+            ),
+            DeclareLaunchArgument("predicted_track_hold_s", default_value="1.5"),
+            DeclareLaunchArgument(
+                "max_predicted_position_uncertainty_m",
+                default_value="0.75",
+            ),
+            DeclareLaunchArgument("predicted_max_vel_xy_mps", default_value="0.25"),
+            DeclareLaunchArgument("predicted_max_vel_z_mps", default_value="0.15"),
+            DeclareLaunchArgument("predicted_max_yaw_rate_rps", default_value="0.25"),
             DeclareLaunchArgument("enable_led_indicator", default_value="true"),
             DeclareLaunchArgument("led_indicator_dry_run", default_value="false"),
             DeclareLaunchArgument("led_indicator_fade_ms", default_value="250"),
@@ -368,12 +514,79 @@ def generate_launch_description():
                 default_value="0.25",
             ),
             DeclareLaunchArgument(
+                "recording_target_map_world_topic",
+                default_value="",
+            ),
+            DeclareLaunchArgument("recording_save_depth_video", default_value="true"),
+            DeclareLaunchArgument(
+                "recording_replace_depth_tile_with_yolo",
+                default_value="false",
+            ),
+            DeclareLaunchArgument("enable_tracking_metrics", default_value="false"),
+            DeclareLaunchArgument(
+                "tracking_metrics_output_dir",
+                default_value=(
+                    "/home/jetson/cdrone_control/mission_recordings/"
+                    "tracking_metrics"
+                ),
+            ),
+            DeclareLaunchArgument("tracking_metrics_experiment_tag", default_value="milestone3"),
+            DeclareLaunchArgument("tracking_metrics_raw_world_topic", default_value=""),
+            DeclareLaunchArgument(
+                "tracking_metrics_target_map_world_topic",
+                default_value="",
+            ),
+            DeclareLaunchArgument(
+                "tracking_metrics_ownship_pose_topic",
+                default_value=_default_arg(defaults, "ownship_pose_topic", ""),
+            ),
+            DeclareLaunchArgument(
+                "tracking_metrics_engagement_state_topic",
+                default_value="",
+            ),
+            DeclareLaunchArgument("tracking_metrics_rate_hz", default_value="10.0"),
+            DeclareLaunchArgument("tracking_metrics_track_stale_s", default_value="0.5"),
+            DeclareLaunchArgument(
+                "tracking_metrics_max_reacquisition_gap_s",
+                default_value="3.0",
+            ),
+            DeclareLaunchArgument(
+                "tracking_metrics_simulated_dropout_horizon_s",
+                default_value="1.0",
+            ),
+            DeclareLaunchArgument(
+                "tracking_metrics_path_smoothing_window",
+                default_value="5",
+            ),
+            DeclareLaunchArgument("tracking_metrics_write_video", default_value="true"),
+            DeclareLaunchArgument("tracking_metrics_video_fps", default_value="10.0"),
+            DeclareLaunchArgument("tracking_metrics_video_width", default_value="1280"),
+            DeclareLaunchArgument("tracking_metrics_video_height", default_value="720"),
+            DeclareLaunchArgument("tracking_metrics_video_fourcc", default_value="mp4v"),
+            DeclareLaunchArgument(
+                "tracking_metrics_postprocess_cleaned_tracks",
+                default_value="true",
+            ),
+            DeclareLaunchArgument("tracking_metrics_reference_video", default_value=""),
+            DeclareLaunchArgument(
+                "tracking_metrics_reference_recording_dir",
+                default_value="/home/jetson/cdrone_control/mission_recordings",
+            ),
+            DeclareLaunchArgument(
+                "tracking_metrics_reference_video_wait_s",
+                default_value="5.0",
+            ),
+            DeclareLaunchArgument(
                 "demo_config",
                 default_value=default_demo_config,
             ),
             DeclareLaunchArgument(
                 "required_completion_count",
                 default_value="1",
+            ),
+            DeclareLaunchArgument(
+                "takeoff_altitude_m",
+                default_value="2.6",
             ),
             DeclareLaunchArgument(
                 "perimeter_config",
@@ -434,10 +647,18 @@ def generate_launch_description():
                 default_value=_default_arg(defaults, "reference_retry_period_s", 1.0),
             ),
             DeclareLaunchArgument("external_pose_publish_rate_hz", default_value="30.0"),
-            DeclareLaunchArgument("external_pose_timeout_s", default_value="0.25"),
+            DeclareLaunchArgument("external_pose_timeout_s", default_value="0.75"),
             DeclareLaunchArgument(
                 "map_frame",
                 default_value=_default_arg(defaults, "map_frame", "map"),
+            ),
+            DeclareLaunchArgument(
+                "frame_rpy_rad",
+                default_value=_default_arg(
+                    defaults,
+                    "frame_rpy_rad",
+                    "[0.0, 0.0, 0.0]",
+                ),
             ),
             DeclareLaunchArgument(
                 "position_offset_m", default_value="[0.0, 0.0, 0.0]"

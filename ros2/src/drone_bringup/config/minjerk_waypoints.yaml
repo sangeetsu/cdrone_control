@@ -1,0 +1,30 @@
+name: minjerk_of_compare_default
+frame_id: map
+
+defaults:
+  cruise_speed_mps: 0.35
+  min_segment_duration_s: 2.0
+  hold_s: 0.5
+  final_hold_s: 2.0
+
+waypoints:
+  - name: east
+    x_m: 0.75
+    y_m: 0.00
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: north_east
+    x_m: 0.75
+    y_m: 0.75
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: north
+    x_m: 0.00
+    y_m: 0.75
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: home_box
+    x_m: 0.00
+    y_m: 0.00
+    z_m: 1.80
+    yaw_deg: 0.0

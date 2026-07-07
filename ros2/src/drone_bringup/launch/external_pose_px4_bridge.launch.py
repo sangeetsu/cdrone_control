@@ -154,6 +154,7 @@ def launch_setup(context, *args, **kwargs):
                     "source_pose_topic": adapter_source_topic,
                     "output_pose_topic": LaunchConfiguration("external_pose_topic"),
                     "map_frame": LaunchConfiguration("map_frame"),
+                    "frame_rpy_rad": LaunchConfiguration("frame_rpy_rad"),
                     "position_offset_m": LaunchConfiguration("position_offset_m"),
                     "rpy_offset_rad": LaunchConfiguration("rpy_offset_rad"),
                     "source_best_effort": ParameterValue(
@@ -327,6 +328,14 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "map_frame",
                 default_value=_default_arg(defaults, "map_frame", "map"),
+            ),
+            DeclareLaunchArgument(
+                "frame_rpy_rad",
+                default_value=_default_arg(
+                    defaults,
+                    "frame_rpy_rad",
+                    "[0.0, 0.0, 0.0]",
+                ),
             ),
             DeclareLaunchArgument(
                 "position_offset_m", default_value="[0.0, 0.0, 0.0]"

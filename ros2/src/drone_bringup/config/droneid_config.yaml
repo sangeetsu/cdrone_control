@@ -16,6 +16,9 @@ mocap:
   mocap_namespace: /cdrone/cdrone3/vrpn_mocap
   rigid_body_name: RigidBody3
   map_frame: map
+  # Current OptiTrack map frame is rotated 180 deg from the saved studio map:
+  # x_source/y_source must become -x/-y before perimeter and PX4 use it.
+  frame_rpy_rad: [0.0, 0.0, 3.141592653589793]
   vrpn_update_freq: 100.0
   vrpn_refresh_freq: 1.0
   vrpn_sensor_data_qos: true
@@ -23,4 +26,5 @@ mocap:
   use_vrpn_timestamps: false
 
 tracking:
+  ownship_pose_topic: /cdrone/cdrone3/external_pose/input_pose
   compare_pose_topic: /cdrone/cdrone3/vrpn_mocap/RigidBody2/pose

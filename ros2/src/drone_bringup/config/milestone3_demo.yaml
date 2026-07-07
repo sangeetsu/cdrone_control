@@ -2,7 +2,7 @@ milestone3_demo_sequence_node:
   ros__parameters:
     scenario_id: milestone3_demo_v1
     required_completion_count: 1
-    takeoff_altitude_m: 2.0
+    takeoff_altitude_m: 2.6
     takeoff_rate_m_s: 0.5
     dwell_time_s: 3.0
     offboard_warmup_s: 1.5

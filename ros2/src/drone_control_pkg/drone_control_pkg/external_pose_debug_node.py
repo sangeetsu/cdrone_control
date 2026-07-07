@@ -360,7 +360,14 @@ class ExternalPoseDebugNode(Node):
             held_pose.header.stamp = self.get_clock().now().to_msg()
             self.held_pose_pub.publish(held_pose)
 
-        self._maybe_warn(now_s, source_stats, max_gap_s, local_stats, source_stats)
+        self._maybe_warn(
+            now_s,
+            source_stats,
+            max_gap_s,
+            local_stats,
+            adapter_stats if adapter_stats is not None else source_stats,
+            reference_label="adapter" if adapter_stats is not None else "source",
+        )
 
     def _maybe_warn(
         self,
@@ -369,6 +376,7 @@ class ExternalPoseDebugNode(Node):
         max_gap_s: float | None,
         local_stats: dict[str, float] | None,
         reference_stats: dict[str, float] | None,
+        reference_label: str,
     ) -> None:
         warn_parts: list[str] = []
         if source_stats is None:
@@ -392,7 +400,7 @@ class ExternalPoseDebugNode(Node):
                 and pos_error > self.warn_position_error_m
             ):
                 detail = (
-                    "source->local pos error "
+                    f"{reference_label}->local pos error "
                     f"{pos_error:.3f}m "
                     f"(dx={source_to_local['dx_m']:+.3f}, "
                     f"dy={source_to_local['dy_m']:+.3f}, "
@@ -416,7 +424,10 @@ class ExternalPoseDebugNode(Node):
                 self.warn_position_error_m > 0.0
                 and abs(source_to_local["dz_m"]) > self.warn_position_error_m
             ):
-                detail = f"source->local vertical mismatch dz={source_to_local['dz_m']:+.3f}m"
+                detail = (
+                    f"{reference_label}->local vertical mismatch "
+                    f"dz={source_to_local['dz_m']:+.3f}m"
+                )
                 if (
                     self.latest_home is not None
                     and source_stats is not None
@@ -430,7 +441,9 @@ class ExternalPoseDebugNode(Node):
                     )
                 warn_parts.append(detail)
             if self.warn_yaw_error_deg > 0.0 and yaw_error > self.warn_yaw_error_deg:
-                warn_parts.append(f"source->local yaw error {yaw_error:.1f}deg")
+                warn_parts.append(
+                    f"{reference_label}->local yaw error {yaw_error:.1f}deg"
+                )
 
         if not warn_parts:
             return

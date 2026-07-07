@@ -42,6 +42,10 @@ setup(
             "drone_control_pkg.position_hover_demo_sequence_node:main",
             "position_goto_demo_sequence_node = "
             "drone_control_pkg.position_goto_demo_sequence_node:main",
+            "minjerk_waypoint_mission_node = "
+            "drone_control_pkg.minjerk_waypoint_mission_node:main",
+            "mocap_of_compare_logger_node = "
+            "drone_control_pkg.mocap_of_compare_logger_node:main",
             "milestone2_demo_sequence_node = "
             "drone_control_pkg.milestone2_demo_sequence_node:main",
             "milestone3_demo_sequence_node = "

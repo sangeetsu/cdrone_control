@@ -129,6 +129,20 @@ ros2 launch drone_bringup milestone3_demo.launch.py \
   required_completion_count:=1
 ```
 
+For a Milestone 3 vs Milestone 4 visual-tracking comparison, enable the metrics
+logger during the Milestone 3 flight:
+
+```bash
+ros2 launch drone_bringup milestone3_demo.launch.py \
+  required_completion_count:=1 \
+  enable_tracking_metrics:=true \
+  tracking_metrics_experiment_tag:=milestone3
+```
+
+This writes raw-visual tracking CSVs and `cleaned_target_path.mp4` under
+`mission_recordings/tracking_metrics/`. Milestone 3 does not use target-map
+predictions, so its metrics are the raw visual baseline.
+
 Useful target-count variants:
 
 - one-target first flight: `required_completion_count:=1`
@@ -174,6 +188,7 @@ cd /home/jetson/cdrone_control/ros2
 colcon build --packages-select drone_msgs drone_control_pkg drone_vision_pkg drone_bringup
 python3 -m pytest src/drone_control_pkg/test/test_milestone2_demo_logic.py -q
 python3 -m pytest src/drone_control_pkg/test/test_speed_profile_configs.py -q
+python3 -m pytest src/drone_vision_pkg/test/test_tracking_metrics.py -q
 ros2 launch drone_bringup milestone3_demo.launch.py --show-args
 ```
 

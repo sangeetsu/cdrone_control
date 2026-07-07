@@ -11,6 +11,7 @@
     <exec_depend>launch</exec_depend>
     <exec_depend>launch_ros</exec_depend>
     <exec_depend>mavros</exec_depend>
+    <exec_depend>mavros_extras</exec_depend>
     <exec_depend>vrpn_mocap</exec_depend>
     <exec_depend>realsense2_camera</exec_depend>
     <exec_depend>cv_bridge</exec_depend>

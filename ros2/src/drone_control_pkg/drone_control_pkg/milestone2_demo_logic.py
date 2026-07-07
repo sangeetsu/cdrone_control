@@ -18,6 +18,9 @@ def select_sequential_target(
     require_target_in_front: bool,
     max_abs_target_y_m: float,
     max_abs_target_z_m: float,
+    allow_predicted_tracks: bool = False,
+    max_predicted_track_age_s: float = 0.0,
+    max_predicted_position_uncertainty_m: float = 0.0,
 ) -> Optional[TrackSnapshot]:
     def is_candidate(track: TrackSnapshot) -> bool:
         if track.track_id in excluded_track_ids:
@@ -31,6 +34,11 @@ def select_sequential_target(
             require_target_in_front=require_target_in_front,
             max_abs_target_y_m=max_abs_target_y_m,
             max_abs_target_z_m=max_abs_target_z_m,
+            allow_predicted_tracks=allow_predicted_tracks,
+            max_predicted_track_age_s=max_predicted_track_age_s,
+            max_predicted_position_uncertainty_m=(
+                max_predicted_position_uncertainty_m
+            ),
         )
 
     current = None

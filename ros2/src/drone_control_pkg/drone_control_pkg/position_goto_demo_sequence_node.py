@@ -19,6 +19,15 @@ from std_srvs.srv import Trigger
 from drone_control_pkg.deployment_config import (
     configured_drone_id,
     configured_mavros_namespace,
+    configured_ownship_pose_topic,
+)
+from drone_control_pkg.minjerk_waypoint_utils import (
+    MinJerkSegment,
+    TrajectoryPose,
+    WaypointMission,
+    build_minjerk_segments,
+    load_waypoint_mission,
+    sample_minjerk_segment,
 )
 from drone_control_pkg.perimeter_utils import PerimeterGuard
 from drone_control_pkg.px4_param_profile import Px4ParamProfile
@@ -55,9 +64,16 @@ def normalize_demo_mode(value: str) -> str:
         "circle": "circle",
         "orbit": "circle",
         "position_circle": "circle",
+        "waypoints": "waypoints",
+        "waypoint": "waypoints",
+        "minjerk": "waypoints",
+        "minimum_jerk": "waypoints",
+        "minjerk_waypoints": "waypoints",
     }
     if normalized not in aliases:
-        raise ValueError("demo_mode must be one of: goto, circle, orbit")
+        raise ValueError(
+            "demo_mode must be one of: goto, circle, orbit, waypoints"
+        )
     return aliases[normalized]
 
 
@@ -140,10 +156,12 @@ class PositionGotoDemoSequenceNode(Node):
         "MOVE_TO_CIRCLE_ENTRY",
         "ORBIT",
         "ORBIT_HOLD",
+        "WAYPOINTS",
+        "WAYPOINT_HOLD",
     }
 
-    def __init__(self) -> None:
-        super().__init__("position_goto_demo_sequence_node")
+    def __init__(self, node_name: str = "position_goto_demo_sequence_node") -> None:
+        super().__init__(node_name)
 
         self.declare_parameter("publish_rate_hz", 20.0)
         self.declare_parameter("drone_id", configured_drone_id())
@@ -186,6 +204,10 @@ class PositionGotoDemoSequenceNode(Node):
         self.declare_parameter("goal_position_tolerance_m", 0.15)
         self.declare_parameter("goal_hold_duration_s", 2.0)
         self.declare_parameter("max_goal_distance_from_start_m", 2.0)
+        self.declare_parameter("waypoints_config", "")
+        self.declare_parameter("mocap_pose_topic", configured_ownship_pose_topic())
+        self.declare_parameter("mocap_pose_timeout_s", 0.5)
+        self.declare_parameter("source_best_effort", True)
         self.declare_parameter("circle_center_x_m", 0.0)
         self.declare_parameter("circle_center_y_m", 0.0)
         self.declare_parameter("circle_radius_m", 0.0)
@@ -305,6 +327,18 @@ class PositionGotoDemoSequenceNode(Node):
         self.max_goal_distance_from_start_m = float(
             self.get_parameter("max_goal_distance_from_start_m").value
         )
+        self.waypoints_config = str(
+            self.get_parameter("waypoints_config").value
+        ).strip()
+        self.mocap_pose_topic = str(
+            self.get_parameter("mocap_pose_topic").value
+        ).strip()
+        self.mocap_pose_timeout_s = float(
+            self.get_parameter("mocap_pose_timeout_s").value
+        )
+        self.source_best_effort = bool(
+            self.get_parameter("source_best_effort").value
+        )
         self.circle_center_x_m = float(
             self.get_parameter("circle_center_x_m").value
         )
@@ -405,10 +439,12 @@ class PositionGotoDemoSequenceNode(Node):
 
         self.latest_state = State()
         self.latest_pose = PoseStamped()
+        self.latest_mocap_pose = PoseStamped()
         self.latest_home_position: Optional[HomePosition] = None
         self.latest_global_origin: Optional[GeoPointStamped] = None
         self.last_state_time_s = 0.0
         self.last_pose_time_s = 0.0
+        self.last_mocap_pose_time_s = 0.0
         self.last_fcu_connect_time_s = 0.0
         self.last_home_position_time_s = 0.0
         self.last_global_origin_time_s = 0.0
@@ -458,6 +494,11 @@ class PositionGotoDemoSequenceNode(Node):
         self.next_param_pull_attempt_s = 0.0
         self.param_pull_attempt_count = 0
         self.offboard_setpoint: Optional[PoseStamped] = None
+        self.waypoint_mission: Optional[WaypointMission] = None
+        self.waypoint_mission_error = ""
+        self.waypoint_segments: tuple[MinJerkSegment, ...] = ()
+        self.waypoint_segment_index = 0
+        self.waypoint_segment_started_s = 0.0
         self.circle_entry_angle_rad: Optional[float] = None
         self.circle_started_s: Optional[float] = None
         self.circle_fixed_yaw_rad: Optional[float] = None
@@ -478,6 +519,7 @@ class PositionGotoDemoSequenceNode(Node):
             history=HistoryPolicy.KEEP_LAST,
             depth=10,
         )
+        source_qos = best_effort_qos if self.source_best_effort else 10
 
         self.create_subscription(State, self.state_topic, self.state_callback, state_qos)
         self.create_subscription(
@@ -485,6 +527,12 @@ class PositionGotoDemoSequenceNode(Node):
             self.local_pose_topic,
             self.pose_callback,
             best_effort_qos,
+        )
+        self.create_subscription(
+            PoseStamped,
+            self.mocap_pose_topic,
+            self.mocap_pose_callback,
+            source_qos,
         )
         self.create_subscription(
             HomePosition,
@@ -534,6 +582,7 @@ class PositionGotoDemoSequenceNode(Node):
         self.timer = self.create_timer(
             1.0 / max(self.publish_rate_hz, 1.0), self.timer_callback
         )
+        self.load_waypoint_mission()
         self.load_perimeter_guard()
         self.load_speed_profile()
         self.get_logger().info(
@@ -562,6 +611,10 @@ class PositionGotoDemoSequenceNode(Node):
     def pose_callback(self, msg: PoseStamped) -> None:
         self.latest_pose = msg
         self.last_pose_time_s = self.now_s()
+
+    def mocap_pose_callback(self, msg: PoseStamped) -> None:
+        self.latest_mocap_pose = msg
+        self.last_mocap_pose_time_s = self.now_s()
 
     def home_position_callback(self, msg: HomePosition) -> None:
         self.latest_home_position = msg
@@ -606,6 +659,15 @@ class PositionGotoDemoSequenceNode(Node):
         if self.demo_state == "SYNC_TAKEOFF_PARAM":
             timeout_s = max(timeout_s, self.local_pose_timeout_during_param_sync_s)
         return (self.now_s() - self.last_pose_time_s) <= timeout_s
+
+    def mocap_pose_fresh(self) -> bool:
+        return (self.now_s() - self.last_mocap_pose_time_s) <= max(
+            self.mocap_pose_timeout_s,
+            0.0,
+        )
+
+    def current_mocap_frame_id(self) -> str:
+        return str(self.latest_mocap_pose.header.frame_id or "").strip()
 
     def active_state_timeout_s(self) -> float:
         timeout_s = self.state_timeout_s
@@ -816,6 +878,34 @@ class PositionGotoDemoSequenceNode(Node):
             f"start=({start_xy[0]:.3f}, {start_xy[1]:.3f})"
         )
 
+    def load_waypoint_mission(self) -> None:
+        self.waypoint_mission = None
+        self.waypoint_mission_error = ""
+        if self.demo_mode != "waypoints":
+            return
+        if not self.waypoints_config:
+            self.waypoint_mission_error = "waypoints_config is empty"
+            self.get_logger().error(
+                "Waypoint mode requires a waypoints_config YAML file."
+            )
+            return
+        try:
+            self.waypoint_mission = load_waypoint_mission(self.waypoints_config)
+        except Exception as exc:  # noqa: BLE001
+            self.waypoint_mission_error = str(exc)
+            self.get_logger().error(
+                f"Failed to load waypoints from {self.waypoints_config}: {exc}"
+            )
+            return
+
+        self.goal_frame_id = self.waypoint_mission.frame_id
+        self.get_logger().info(
+            "Loaded waypoint mission: "
+            f"{self.waypoint_mission.name} "
+            f"frame={self.waypoint_mission.frame_id} "
+            f"waypoints={len(self.waypoint_mission.waypoints)}"
+        )
+
     def load_perimeter_guard(self) -> None:
         self.perimeter_guard = None
         self.perimeter_guard_error = ""
@@ -931,6 +1021,51 @@ class PositionGotoDemoSequenceNode(Node):
         )
         if start_reason is not None:
             return f"start position is unsafe: {start_reason}"
+
+        if self.demo_mode == "waypoints":
+            if self.waypoint_mission is None:
+                return self.waypoint_mission_error or "waypoint mission is unavailable"
+            if not self.perimeter_guard.frame_matches(self.waypoint_mission.frame_id):
+                return (
+                    f"waypoint frame '{self.waypoint_mission.frame_id}' does not "
+                    f"match perimeter frame '{self.perimeter_guard.frame_id}'"
+                )
+            prior_xy = start_xy
+            for waypoint in self.waypoint_mission.waypoints:
+                waypoint_xy = (waypoint.x_m, waypoint.y_m)
+                waypoint_reason = self.perimeter_guard.xy_violation_reason(
+                    waypoint.x_m,
+                    waypoint.y_m,
+                    boundary_tolerance_m=self.perimeter_boundary_tolerance_m,
+                    boundary_margin_m=self.perimeter_boundary_margin_m,
+                    keep_out_margin_m=self.perimeter_keep_out_margin_m,
+                )
+                if waypoint_reason is not None:
+                    label = waypoint.name or "unnamed"
+                    return f"waypoint '{label}' is unsafe: {waypoint_reason}"
+
+                altitude_reason = (
+                    self.perimeter_guard.goal_altitude_violation_reason(
+                        waypoint.z_m
+                    )
+                )
+                if altitude_reason is not None:
+                    label = waypoint.name or "unnamed"
+                    return f"waypoint '{label}' altitude is unsafe: {altitude_reason}"
+
+                path_reason = self.perimeter_guard.segment_violation_reason(
+                    prior_xy,
+                    waypoint_xy,
+                    sample_step_m=self.perimeter_segment_sample_step_m,
+                    boundary_tolerance_m=self.perimeter_boundary_tolerance_m,
+                    boundary_margin_m=self.perimeter_boundary_margin_m,
+                    keep_out_margin_m=self.perimeter_keep_out_margin_m,
+                )
+                if path_reason is not None:
+                    label = waypoint.name or "unnamed"
+                    return f"path to waypoint '{label}' is unsafe: {path_reason}"
+                prior_xy = waypoint_xy
+            return None
 
         if self.demo_mode == "circle":
             keep_out_orbit_error = self.configure_circle_keep_out_orbit()
@@ -1066,6 +1201,29 @@ class PositionGotoDemoSequenceNode(Node):
             return False, "FCU is not connected"
         if not self.pose_fresh():
             return False, "local pose is stale or missing"
+        if self.demo_mode == "waypoints":
+            if self.waypoint_mission is None:
+                return (
+                    False,
+                    self.waypoint_mission_error
+                    or "waypoint mission is unavailable",
+                )
+            if not self.mocap_pose_fresh():
+                return False, "mocap pose is stale or missing"
+            mocap_frame = self.current_mocap_frame_id()
+            if mocap_frame != self.waypoint_mission.frame_id:
+                return (
+                    False,
+                    f"mocap frame '{mocap_frame}' does not match waypoint "
+                    f"frame '{self.waypoint_mission.frame_id}'",
+                )
+            current_frame = self.current_frame_id()
+            if current_frame and current_frame != self.waypoint_mission.frame_id:
+                return (
+                    False,
+                    f"local pose frame '{current_frame}' does not match "
+                    f"waypoint frame '{self.waypoint_mission.frame_id}'",
+                )
         if not self.global_origin_ready():
             return False, "global origin is missing"
         if not self.home_position_ready():
@@ -1092,7 +1250,7 @@ class PositionGotoDemoSequenceNode(Node):
                     f"goal is {goal_offset_m:.2f} m from start, exceeds "
                     f"{self.max_goal_distance_from_start_m:.2f} m limit",
                 )
-        else:
+        elif self.demo_mode == "circle":
             if self.circle_use_keep_out_orbit:
                 keep_out_orbit_error = self.configure_circle_keep_out_orbit()
                 if keep_out_orbit_error is not None:
@@ -1167,6 +1325,9 @@ class PositionGotoDemoSequenceNode(Node):
         self.arm_request_sent = False
         self.disarm_request_sent = False
         self.offboard_setpoint = None
+        self.waypoint_segments = ()
+        self.waypoint_segment_index = 0
+        self.waypoint_segment_started_s = 0.0
         self.circle_started_s = None
         self.circle_fixed_yaw_rad = None
 
@@ -1199,9 +1360,11 @@ class PositionGotoDemoSequenceNode(Node):
             self.circle_started_s = self.stage_started_s
         elif new_state != "MOVE_TO_CIRCLE_ENTRY":
             self.circle_started_s = None
+        if new_state == "WAYPOINTS":
+            self.waypoint_segment_started_s = self.stage_started_s
         if new_state != "WAIT_TOUCHDOWN":
             self.touchdown_started_s = None
-        if new_state not in {"GOAL_HOLD", "ORBIT_HOLD"}:
+        if new_state not in {"GOAL_HOLD", "ORBIT_HOLD", "WAYPOINT_HOLD"}:
             self.goal_reached_started_s = None
         if reason:
             self.get_logger().info(f"State {old_state} -> {new_state}: {reason}")
@@ -1232,6 +1395,14 @@ class PositionGotoDemoSequenceNode(Node):
             return max(self.stage_timeout_s, self.param_sync_timeout_s)
         if self.demo_state in {"GOAL_HOLD", "ORBIT_HOLD"}:
             return max(self.stage_timeout_s, self.goal_hold_duration_s + 2.0)
+        if self.demo_state == "WAYPOINT_HOLD":
+            return max(self.stage_timeout_s, self.goal_hold_duration_s + 2.0)
+        if self.demo_state == "WAYPOINTS":
+            total_s = sum(
+                segment.duration_s + segment.hold_s
+                for segment in self.waypoint_segments
+            )
+            return max(self.stage_timeout_s, total_s + 5.0)
         if self.demo_state == "ORBIT":
             return max(self.stage_timeout_s, self.circle_total_duration_s() + 5.0)
         return self.stage_timeout_s
@@ -1693,6 +1864,74 @@ class PositionGotoDemoSequenceNode(Node):
             yaw_rad,
         )
 
+    def trajectory_pose_from_current(self) -> TrajectoryPose:
+        return TrajectoryPose(
+            x_m=float(self.latest_pose.pose.position.x),
+            y_m=float(self.latest_pose.pose.position.y),
+            z_m=float(self.latest_pose.pose.position.z),
+            yaw_rad=self.current_yaw_rad(),
+        )
+
+    def pose_from_trajectory(self, pose: TrajectoryPose) -> PoseStamped:
+        return self.make_pose_setpoint(
+            pose.x_m,
+            pose.y_m,
+            pose.z_m,
+            pose.yaw_rad,
+        )
+
+    def start_waypoint_plan(self) -> bool:
+        if self.waypoint_mission is None:
+            self.enter_abort(
+                self.waypoint_mission_error or "waypoint mission is unavailable"
+            )
+            return False
+        start_pose = self.trajectory_pose_from_current()
+        self.waypoint_segments = build_minjerk_segments(
+            start_pose,
+            self.waypoint_mission,
+        )
+        if not self.waypoint_segments:
+            self.enter_abort("waypoint mission has no trajectory segments")
+            return False
+        self.waypoint_segment_index = 0
+        self.waypoint_segment_started_s = self.now_s()
+        self.offboard_setpoint = self.pose_from_trajectory(
+            self.waypoint_segments[0].start
+        )
+        self.get_logger().info(
+            "Waypoint plan started: "
+            f"segments={len(self.waypoint_segments)} "
+            f"frame={self.waypoint_mission.frame_id}"
+        )
+        return True
+
+    def update_waypoint_setpoint(self) -> bool:
+        if self.waypoint_segment_index >= len(self.waypoint_segments):
+            return True
+        segment = self.waypoint_segments[self.waypoint_segment_index]
+        elapsed_s = self.now_s() - self.waypoint_segment_started_s
+        if elapsed_s <= segment.duration_s:
+            self.offboard_setpoint = self.pose_from_trajectory(
+                sample_minjerk_segment(segment, elapsed_s)
+            )
+            return False
+        if elapsed_s <= segment.duration_s + segment.hold_s:
+            self.offboard_setpoint = self.pose_from_trajectory(segment.end)
+            return False
+
+        self.waypoint_segment_index += 1
+        if self.waypoint_segment_index >= len(self.waypoint_segments):
+            self.offboard_setpoint = self.pose_from_trajectory(segment.end)
+            return True
+
+        self.waypoint_segment_started_s = self.now_s()
+        next_segment = self.waypoint_segments[self.waypoint_segment_index]
+        self.offboard_setpoint = self.pose_from_trajectory(next_segment.start)
+        label = next_segment.waypoint_name or str(self.waypoint_segment_index + 1)
+        self.get_logger().info(f"Advancing to waypoint segment {label}")
+        return False
+
     def circle_pose(self, angle_rad: float) -> PoseStamped:
         x_m, y_m = self.circle_point_xy(angle_rad)
         yaw_rad = (
@@ -1791,7 +2030,16 @@ class PositionGotoDemoSequenceNode(Node):
                 )
                 return
         if (
-            self.demo_state in {"GOTO", "GOAL_HOLD", "MOVE_TO_CIRCLE_ENTRY", "ORBIT", "ORBIT_HOLD"}
+            self.demo_state
+            in {
+                "GOTO",
+                "GOAL_HOLD",
+                "MOVE_TO_CIRCLE_ENTRY",
+                "ORBIT",
+                "ORBIT_HOLD",
+                "WAYPOINTS",
+                "WAYPOINT_HOLD",
+            }
             and self.mode_future is None
             and not self.mode_matches(self.offboard_mode)
         ):
@@ -1983,6 +2231,12 @@ class PositionGotoDemoSequenceNode(Node):
                             "MOVE_TO_CIRCLE_ENTRY",
                             "OFFBOARD confirmed for circle demo",
                         )
+                elif self.demo_mode == "waypoints":
+                    if self.start_waypoint_plan():
+                        self.transition_to(
+                            "WAYPOINTS",
+                            "OFFBOARD confirmed for waypoint mission",
+                        )
                 else:
                     self.offboard_setpoint = self.goal_pose()
                     self.transition_to("GOTO", "OFFBOARD confirmed")
@@ -2044,6 +2298,16 @@ class PositionGotoDemoSequenceNode(Node):
             self.offboard_setpoint = self.circle_pose(final_angle_rad)
             if self.stage_elapsed_s() >= self.goal_hold_duration_s:
                 self.transition_to("SET_LAND_MODE", "orbit hold complete")
+            return
+
+        if self.demo_state == "WAYPOINTS":
+            if self.update_waypoint_setpoint():
+                self.transition_to("WAYPOINT_HOLD", "waypoint mission complete")
+            return
+
+        if self.demo_state == "WAYPOINT_HOLD":
+            if self.stage_elapsed_s() >= self.goal_hold_duration_s:
+                self.transition_to("SET_LAND_MODE", "waypoint hold complete")
             return
 
         if self.demo_state == "SET_LAND_MODE":

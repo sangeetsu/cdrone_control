@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from drone_control_pkg.follow_utils import (
     FollowCommand,
+    clamp_follow_command_velocity,
     clamp_follow_command_altitude,
     compute_return_to_point_command,
 )
@@ -116,3 +117,29 @@ def test_compute_return_to_point_command_rotates_world_error_into_body_frame() -
     assert command.vy == pytest.approx(-0.5)
     assert command.vz == pytest.approx(0.09)
     assert command.yaw_rate == pytest.approx(-0.4)
+
+
+def test_clamp_follow_command_velocity_caps_predicted_control() -> None:
+    command = FollowCommand(
+        vx=0.6,
+        vy=0.8,
+        vz=-0.4,
+        yaw_rate=0.5,
+        err_forward=1.0,
+        err_lateral=1.0,
+        err_vertical=-1.0,
+        yaw_error=0.5,
+        min_distance_gate_active=False,
+    )
+
+    clamped = clamp_follow_command_velocity(
+        command,
+        max_vel_xy_mps=0.25,
+        max_vel_z_mps=0.15,
+        max_yaw_rate_rps=0.2,
+    )
+
+    assert clamped.vx == pytest.approx(0.15)
+    assert clamped.vy == pytest.approx(0.2)
+    assert clamped.vz == pytest.approx(-0.15)
+    assert clamped.yaw_rate == pytest.approx(0.2)

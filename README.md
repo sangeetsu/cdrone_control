@@ -32,6 +32,7 @@ from that file.
 - Hover, goto, and circle demos with perimeter checks
 - Target-follow control backend using the active `/cdrone/<drone_id>/...` topic tree
 - Milestone 2 and Milestone 3 demo launch flows
+- Milestone 4 target-memory flow for short target-drone dropout prediction
 - RealSense tracking-only bench pipeline for world-track evaluation
 - Retained D455 / VSLAM bridge path for future ownship-pose work
 - Archived legacy autonomy stack preserved under `archive/legacy_stack/`
@@ -51,6 +52,7 @@ points for live testing.
 - [milestone1_runbook.md](milestone1_runbook.md): hover, goto, and circle demo flow
 - [milestone2_runbook.md](milestone2_runbook.md): Milestone 2 demo flow
 - [milestone3_runbook.md](milestone3_runbook.md): Milestone 3 demo flow
+- [milestone4_runbook.md](milestone4_runbook.md): Milestone 4 target-memory flow
 - [error_realsense_runbook.md](error_realsense_runbook.md): RealSense tracking and report workflow
 
 Each runbook assumes the active values come from `droneid_config.yaml`, and the
@@ -63,6 +65,7 @@ root operator-facing runbooks are aligned to the current `cdrone3` defaults.
 - [docs/plans/milestone_planner.md](docs/plans/milestone_planner.md): active implementation plan
 - [docs/milestones/milestone2.md](docs/milestones/milestone2.md): milestone 2 notes and validation context
 - [docs/milestones/milestone3.md](docs/milestones/milestone3.md): milestone 3 notes and validation context
+- [docs/milestones/milestone4.md](docs/milestones/milestone4.md): milestone 4 target-memory notes
 - [docs/protocols/tracking_experiment_protocol.md](docs/protocols/tracking_experiment_protocol.md): tracking experiment workflow
 - [docs/guides/setup/host_setup.md](docs/guides/setup/host_setup.md): host-side setup notes
 - [docs/guides/vio/isaac_vslam_d455.md](docs/guides/vio/isaac_vslam_d455.md): retained VSLAM guide

@@ -18,6 +18,8 @@
   <exec_depend>std_msgs</exec_depend>
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>mavros_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
   <exec_depend>drone_msgs</exec_depend>
   <exec_depend>drone_control_pkg</exec_depend>
 

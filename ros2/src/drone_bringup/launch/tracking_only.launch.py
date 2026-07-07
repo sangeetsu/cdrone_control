@@ -61,6 +61,15 @@ def generate_launch_description():
                 default_value="0.25",
             ),
             DeclareLaunchArgument(
+                "recording_target_map_world_topic",
+                default_value="",
+            ),
+            DeclareLaunchArgument("recording_save_depth_video", default_value="true"),
+            DeclareLaunchArgument(
+                "recording_replace_depth_tile_with_yolo",
+                default_value="false",
+            ),
+            DeclareLaunchArgument(
                 "tracker_config_file",
                 default_value=os.path.join(
                     vision_share,
@@ -105,6 +114,15 @@ def generate_launch_description():
                     ),
                     "publish_track_hold_max_extrapolation_m": LaunchConfiguration(
                         "publish_track_hold_max_extrapolation_m"
+                    ),
+                    "recording_target_map_world_topic": LaunchConfiguration(
+                        "recording_target_map_world_topic"
+                    ),
+                    "recording_save_depth_video": LaunchConfiguration(
+                        "recording_save_depth_video"
+                    ),
+                    "recording_replace_depth_tile_with_yolo": LaunchConfiguration(
+                        "recording_replace_depth_tile_with_yolo"
                     ),
                     "tracker_config_file": LaunchConfiguration("tracker_config_file"),
                 }.items(),

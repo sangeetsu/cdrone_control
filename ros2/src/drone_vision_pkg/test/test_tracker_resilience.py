@@ -79,6 +79,8 @@ def test_select_held_track_states_caps_extrapolation_and_expires() -> None:
     cached_tracks = {
         7: BodyTrackState(
             track_id=7,
+            detector_track_id=7,
+            source=0,
             x_b_m=2.0,
             y_b_m=0.1,
             z_b_m=0.0,
@@ -89,9 +91,15 @@ def test_select_held_track_states_caps_extrapolation_and_expires() -> None:
             bbox_area_px=1234.0,
             inbound=True,
             last_seen_s=10.0,
+            last_observed_age_s=0.0,
+            prediction_horizon_s=0.0,
+            position_uncertainty_m=0.1,
+            velocity_uncertainty_mps=0.25,
         ),
         9: BodyTrackState(
             track_id=9,
+            detector_track_id=9,
+            source=0,
             x_b_m=3.0,
             y_b_m=0.0,
             z_b_m=0.0,
@@ -102,6 +110,10 @@ def test_select_held_track_states_caps_extrapolation_and_expires() -> None:
             bbox_area_px=900.0,
             inbound=False,
             last_seen_s=9.0,
+            last_observed_age_s=0.0,
+            prediction_horizon_s=0.0,
+            position_uncertainty_m=0.1,
+            velocity_uncertainty_mps=0.25,
         ),
     }
 

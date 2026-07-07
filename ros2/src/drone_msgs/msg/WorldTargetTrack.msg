@@ -1,5 +1,10 @@
 builtin_interfaces/Time stamp
+uint8 SOURCE_DETECTED=0
+uint8 SOURCE_HELD=1
+uint8 SOURCE_PREDICTED=2
 int32 track_id
+int32 detector_track_id
+uint8 source
 float32 x_m
 float32 y_m
 float32 z_m
@@ -10,3 +15,7 @@ float32 distance_m
 float32 confidence
 float32 bbox_area_px
 bool inbound
+float32 last_observed_age_s
+float32 prediction_horizon_s
+float32 position_uncertainty_m
+float32 velocity_uncertainty_mps

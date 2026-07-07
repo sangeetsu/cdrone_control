@@ -4,6 +4,11 @@ import math
 from dataclasses import dataclass, replace
 
 
+TRACK_SOURCE_DETECTED = 0
+TRACK_SOURCE_HELD = 1
+TRACK_SOURCE_PREDICTED = 2
+
+
 def clamp(value: float, min_v: float, max_v: float) -> float:
     return max(min(value, max_v), min_v)
 
@@ -30,6 +35,12 @@ class TrackSnapshot:
     bbox_area_px: float
     inbound: bool
     last_seen_s: float
+    detector_track_id: int = -1
+    source: int = TRACK_SOURCE_DETECTED
+    last_observed_age_s: float = 0.0
+    prediction_horizon_s: float = 0.0
+    position_uncertainty_m: float = 0.0
+    velocity_uncertainty_mps: float = 0.0
 
 
 @dataclass(frozen=True)
@@ -123,7 +134,20 @@ def track_is_valid(
     require_target_in_front: bool,
     max_abs_target_y_m: float,
     max_abs_target_z_m: float,
+    allow_predicted_tracks: bool = False,
+    max_predicted_track_age_s: float = 0.0,
+    max_predicted_position_uncertainty_m: float = 0.0,
 ) -> bool:
+    if track.source == TRACK_SOURCE_PREDICTED:
+        if not allow_predicted_tracks:
+            return False
+        if track.last_observed_age_s > max(max_predicted_track_age_s, 0.0):
+            return False
+        if (
+            max_predicted_position_uncertainty_m > 0.0
+            and track.position_uncertainty_m > max_predicted_position_uncertainty_m
+        ):
+            return False
     if track.confidence < min_track_confidence:
         return False
     if track.distance_m > max_target_distance_m:
@@ -135,6 +159,41 @@ def track_is_valid(
     if abs(track.z_b_m) > max_abs_target_z_m:
         return False
     return True
+
+
+def clamp_follow_command_velocity(
+    command: FollowCommand,
+    *,
+    max_vel_xy_mps: float,
+    max_vel_z_mps: float,
+    max_yaw_rate_rps: float,
+) -> FollowCommand:
+    capped_vx = float(command.vx)
+    capped_vy = float(command.vy)
+    xy_norm = math.hypot(capped_vx, capped_vy)
+    xy_cap = max(float(max_vel_xy_mps), 0.0)
+    if xy_cap > 0.0 and xy_norm > xy_cap:
+        scale = xy_cap / max(xy_norm, 1e-6)
+        capped_vx *= scale
+        capped_vy *= scale
+    z_cap = max(float(max_vel_z_mps), 0.0)
+    yaw_cap = max(float(max_yaw_rate_rps), 0.0)
+    capped_vz = clamp(command.vz, -z_cap, z_cap)
+    capped_yaw_rate = clamp(command.yaw_rate, -yaw_cap, yaw_cap)
+    if (
+        capped_vx == command.vx
+        and capped_vy == command.vy
+        and capped_vz == command.vz
+        and capped_yaw_rate == command.yaw_rate
+    ):
+        return command
+    return replace(
+        command,
+        vx=capped_vx,
+        vy=capped_vy,
+        vz=capped_vz,
+        yaw_rate=capped_yaw_rate,
+    )
 
 
 def distance_in_standoff_window(

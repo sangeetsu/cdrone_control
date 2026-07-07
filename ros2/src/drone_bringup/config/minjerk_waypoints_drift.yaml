@@ -1,0 +1,92 @@
+name: minjerk_of_compare_takeoff_centered_drift
+frame_id: map
+
+defaults:
+  cruise_speed_mps: 0.28
+  min_segment_duration_s: 3.0
+  hold_s: 0.5
+  final_hold_s: 3.0
+
+# Longer drift-test path centered on the current cdrone3 takeoff spot observed
+# in the latest mocap/debug run. These are absolute map coordinates.
+waypoints:
+  - name: takeoff_column
+    x_m: -9.545
+    y_m: -2.391
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: east_short
+    x_m: -9.045
+    y_m: -2.391
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: north_east
+    x_m: -9.045
+    y_m: -1.891
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: north_short
+    x_m: -9.545
+    y_m: -1.891
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: west_short
+    x_m: -10.045
+    y_m: -1.891
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: south_west
+    x_m: -10.045
+    y_m: -2.391
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: return_takeoff_column
+    x_m: -9.545
+    y_m: -2.391
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: east_long
+    x_m: -8.745
+    y_m: -2.391
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: north_long
+    x_m: -8.745
+    y_m: -1.591
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: west_long
+    x_m: -10.345
+    y_m: -1.591
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: south_long
+    x_m: -10.345
+    y_m: -2.391
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: diagonal_ne
+    x_m: -8.945
+    y_m: -1.791
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: diagonal_sw
+    x_m: -10.145
+    y_m: -2.291
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: diagonal_nw
+    x_m: -10.145
+    y_m: -1.791
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: diagonal_se
+    x_m: -8.945
+    y_m: -2.291
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: final_takeoff_column
+    x_m: -9.545
+    y_m: -2.391
+    z_m: 1.80
+    yaw_deg: 0.0

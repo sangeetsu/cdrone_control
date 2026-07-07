@@ -23,8 +23,10 @@ from drone_control_pkg.deployment_config import (
 )
 from drone_control_pkg.follow_utils import (
     FollowCommand,
+    TRACK_SOURCE_PREDICTED,
     TrackSnapshot,
     clamp_follow_command_altitude,
+    clamp_follow_command_velocity,
     compute_follow_command,
     compute_return_to_point_command,
     distance_in_standoff_window,
@@ -91,6 +93,7 @@ class Milestone3DemoSequenceNode(Node):
         "WARMUP_OFFBOARD",
         "SET_OFFBOARD_MODE",
         "SYNC_SPEED_PROFILE",
+        "CLIMB_TO_TAKEOFF_ALTITUDE",
         "STAGE_HOVER",
         "RETURN_HOME_HOLD",
     }
@@ -102,7 +105,7 @@ class Milestone3DemoSequenceNode(Node):
         self.declare_parameter("publish_rate_hz", 20.0)
         self.declare_parameter("drone_id", configured_drone_id())
         self.declare_parameter("mavros_namespace", configured_mavros_namespace())
-        self.declare_parameter("takeoff_altitude_m", 1.5)
+        self.declare_parameter("takeoff_altitude_m", 2.6)
         self.declare_parameter("takeoff_rate_m_s", 0.5)
         self.declare_parameter("takeoff_strategy", "AUTO_MODE")
         self.declare_parameter("altitude_tolerance_m", 0.10)
@@ -112,6 +115,7 @@ class Milestone3DemoSequenceNode(Node):
         self.declare_parameter("arm_zero_throttle_hold_s", 1.5)
         self.declare_parameter("offboard_warmup_s", 1.5)
         self.declare_parameter("stage_hover_duration_s", 2.0)
+        self.declare_parameter("climb_handoff_timeout_s", 8.0)
         self.declare_parameter("local_pose_timeout_s", 0.5)
         self.declare_parameter("local_pose_timeout_during_param_sync_s", 1.0)
         self.declare_parameter("state_timeout_s", 2.0)
@@ -153,6 +157,12 @@ class Milestone3DemoSequenceNode(Node):
         self.declare_parameter("require_target_in_front", True)
         self.declare_parameter("max_abs_target_y_m", 4.0)
         self.declare_parameter("max_abs_target_z_m", 2.5)
+        self.declare_parameter("enable_predicted_track_control", False)
+        self.declare_parameter("predicted_track_hold_s", 1.5)
+        self.declare_parameter("max_predicted_position_uncertainty_m", 0.75)
+        self.declare_parameter("predicted_max_vel_xy_mps", 0.25)
+        self.declare_parameter("predicted_max_vel_z_mps", 0.15)
+        self.declare_parameter("predicted_max_yaw_rate_rps", 0.25)
         self.declare_parameter("min_safe_distance_m", 1.0)
         self.declare_parameter("publish_zero_on_block", True)
         self.declare_parameter("block_target_on_perimeter_violation", True)
@@ -205,6 +215,9 @@ class Milestone3DemoSequenceNode(Node):
         self.offboard_warmup_s = float(self.get_parameter("offboard_warmup_s").value)
         self.stage_hover_duration_s = float(
             self.get_parameter("stage_hover_duration_s").value
+        )
+        self.climb_handoff_timeout_s = float(
+            self.get_parameter("climb_handoff_timeout_s").value
         )
         self.local_pose_timeout_s = float(
             self.get_parameter("local_pose_timeout_s").value
@@ -304,6 +317,24 @@ class Milestone3DemoSequenceNode(Node):
         )
         self.max_abs_target_z_m = float(
             self.get_parameter("max_abs_target_z_m").value
+        )
+        self.enable_predicted_track_control = bool(
+            self.get_parameter("enable_predicted_track_control").value
+        )
+        self.predicted_track_hold_s = float(
+            self.get_parameter("predicted_track_hold_s").value
+        )
+        self.max_predicted_position_uncertainty_m = float(
+            self.get_parameter("max_predicted_position_uncertainty_m").value
+        )
+        self.predicted_max_vel_xy_mps = float(
+            self.get_parameter("predicted_max_vel_xy_mps").value
+        )
+        self.predicted_max_vel_z_mps = float(
+            self.get_parameter("predicted_max_vel_z_mps").value
+        )
+        self.predicted_max_yaw_rate_rps = float(
+            self.get_parameter("predicted_max_yaw_rate_rps").value
         )
         self.min_safe_distance_m = float(
             self.get_parameter("min_safe_distance_m").value
@@ -420,6 +451,8 @@ class Milestone3DemoSequenceNode(Node):
         self.takeoff_origin_altitude_m: Optional[float] = None
         self.takeoff_origin_xy: Optional[Tuple[float, float]] = None
         self.takeoff_origin_yaw_rad: Optional[float] = None
+        self.climb_hold_xy: Optional[Tuple[float, float]] = None
+        self.climb_hold_yaw_rad: Optional[float] = None
         self.touchdown_started_s: Optional[float] = None
         self.last_takeoff_progress_log_s = 0.0
 
@@ -622,6 +655,22 @@ class Milestone3DemoSequenceNode(Node):
                 bbox_area_px=float(track.bbox_area_px),
                 inbound=bool(track.inbound),
                 last_seen_s=now_s,
+                detector_track_id=int(
+                    getattr(track, "detector_track_id", int(track.track_id))
+                ),
+                source=int(getattr(track, "source", 0)),
+                last_observed_age_s=float(
+                    getattr(track, "last_observed_age_s", 0.0)
+                ),
+                prediction_horizon_s=float(
+                    getattr(track, "prediction_horizon_s", 0.0)
+                ),
+                position_uncertainty_m=float(
+                    getattr(track, "position_uncertainty_m", 0.0)
+                ),
+                velocity_uncertainty_mps=float(
+                    getattr(track, "velocity_uncertainty_mps", 0.0)
+                ),
             )
             self.tracks[snapshot.track_id] = snapshot
             seen_ids.add(snapshot.track_id)
@@ -855,6 +904,11 @@ class Milestone3DemoSequenceNode(Node):
             return self.takeoff_altitude_m
         return self.takeoff_origin_altitude_m + self.takeoff_altitude_m
 
+    def takeoff_altitude_reached(self) -> bool:
+        return self.current_altitude_m() >= (
+            self.takeoff_target_altitude_m() - self.altitude_tolerance_m
+        )
+
     def touchdown_threshold_altitude_m(self) -> float:
         if self.takeoff_origin_altitude_m is None:
             return self.touchdown_altitude_m
@@ -877,6 +931,40 @@ class Milestone3DemoSequenceNode(Node):
         msg.twist.angular.z = float(command.yaw_rate)
         self.cmd_pub.publish(msg)
 
+    def publish_takeoff_hold_command(self) -> None:
+        target_xy = self.climb_hold_xy or self.current_xy()
+        current_altitude_m = self.current_altitude_m()
+        target_yaw_rad = self.climb_hold_yaw_rad
+        if target_yaw_rad is None:
+            target_yaw_rad = self.current_yaw_rad()
+        current_yaw_rad = self.current_yaw_rad()
+        command = compute_return_to_point_command(
+            current_xy=self.current_xy(),
+            current_altitude_m=current_altitude_m,
+            current_yaw_rad=current_yaw_rad,
+            target_xy=target_xy,
+            target_altitude_m=self.takeoff_target_altitude_m(),
+            target_yaw_rad=target_yaw_rad,
+            xy_deadband_m=self.return_position_tolerance_m,
+            z_deadband_m=self.altitude_tolerance_m,
+            yaw_deadband_rad=self.yaw_deadband_rad,
+            kp_xy=self.kp_xy,
+            kp_z=self.kp_z,
+            kp_yaw=self.kp_yaw,
+            max_vel_xy_mps=self.max_vel_xy_mps,
+            max_vel_z_mps=self.max_vel_z_mps,
+            max_yaw_rate_rps=self.max_yaw_rate_rps,
+        )
+        command = self.clamp_command_to_perimeter_altitude(command)
+        projection_reason = self.command_projection_violation_reason(command)
+        if projection_reason is not None:
+            self.last_blocked_reason = projection_reason
+            self.publish_zero_command()
+            return
+
+        self.min_distance_gate_active = False
+        self.publish_follow_command(command)
+
     def clear_active_target(self) -> None:
         self.active_track_id = None
         self.dwell_started_s = None
@@ -890,6 +978,15 @@ class Milestone3DemoSequenceNode(Node):
         self.stage_started_s = self.now_s()
         if new_state == "TAKEOFF":
             self.last_takeoff_progress_log_s = 0.0
+        if new_state == "CLIMB_TO_TAKEOFF_ALTITUDE":
+            self.climb_hold_xy = self.current_xy()
+            self.climb_hold_yaw_rad = self.current_yaw_rad()
+        elif old_state == "CLIMB_TO_TAKEOFF_ALTITUDE":
+            self.climb_hold_xy = None
+            self.climb_hold_yaw_rad = None
+        elif new_state in {"IDLE", "ABORT", "COMPLETE"}:
+            self.climb_hold_xy = None
+            self.climb_hold_yaw_rad = None
         if new_state != "WAIT_TOUCHDOWN":
             self.touchdown_started_s = None
         if reason:
@@ -1142,6 +1239,11 @@ class Milestone3DemoSequenceNode(Node):
             require_target_in_front=self.require_target_in_front,
             max_abs_target_y_m=self.max_abs_target_y_m,
             max_abs_target_z_m=self.max_abs_target_z_m,
+            allow_predicted_tracks=self.enable_predicted_track_control,
+            max_predicted_track_age_s=self.predicted_track_hold_s,
+            max_predicted_position_uncertainty_m=(
+                self.max_predicted_position_uncertainty_m
+            ),
         )
         if chosen is None:
             if self.active_track_id is not None:
@@ -1235,6 +1337,8 @@ class Milestone3DemoSequenceNode(Node):
         self.takeoff_origin_xy = self.current_xy()
         self.takeoff_origin_altitude_m = self.current_altitude_m()
         self.takeoff_origin_yaw_rad = self.current_yaw_rad()
+        self.climb_hold_xy = None
+        self.climb_hold_yaw_rad = None
         self.touchdown_started_s = None
         self.takeoff_request_sent = False
         self.takeoff_request_accepted = False
@@ -1804,7 +1908,9 @@ class Milestone3DemoSequenceNode(Node):
 
         if (
             self.demo_state
-            in {"STAGE_HOVER"} | self.ACTIVE_ENGAGEMENT_STATES | self.RETURN_STATES
+            in {"CLIMB_TO_TAKEOFF_ALTITUDE", "STAGE_HOVER"}
+            | self.ACTIVE_ENGAGEMENT_STATES
+            | self.RETURN_STATES
             and not self.latest_state.armed
         ):
             self.enter_abort(
@@ -1814,7 +1920,9 @@ class Milestone3DemoSequenceNode(Node):
 
         if (
             self.demo_state
-            in {"STAGE_HOVER"} | self.ACTIVE_ENGAGEMENT_STATES | self.RETURN_STATES
+            in {"CLIMB_TO_TAKEOFF_ALTITUDE", "STAGE_HOVER"}
+            | self.ACTIVE_ENGAGEMENT_STATES
+            | self.RETURN_STATES
             and self.mode_future is None
             and not self.mode_matches(self.offboard_mode)
         ):
@@ -1865,7 +1973,9 @@ class Milestone3DemoSequenceNode(Node):
         msg.active_bearing_rad = (
             float(target_bearing_rad(target)) if target is not None else 0.0
         )
-        msg.target_visible = bool(target is not None)
+        msg.target_visible = bool(
+            target is not None and target.source != TRACK_SOURCE_PREDICTED
+        )
         msg.dwell_remaining_s = float(self.dwell_remaining_s)
         msg.dwell_elapsed_s = float(self.dwell_elapsed_s)
         msg.completed_targets_count = int(len(self.completed_track_ids))
@@ -1885,13 +1995,21 @@ class Milestone3DemoSequenceNode(Node):
             "ARMING",
             "REQUEST_TAKEOFF",
             "TAKEOFF",
-            "WARMUP_OFFBOARD",
-            "SET_OFFBOARD_MODE",
-            "SYNC_SPEED_PROFILE",
             "STAGE_HOVER",
             "RETURN_HOME_HOLD",
         }:
             self.publish_zero_command()
+
+        if self.demo_state in {
+            "WARMUP_OFFBOARD",
+            "SET_OFFBOARD_MODE",
+            "SYNC_SPEED_PROFILE",
+            "CLIMB_TO_TAKEOFF_ALTITUDE",
+        }:
+            if self.takeoff_altitude_reached():
+                self.publish_zero_command()
+            else:
+                self.publish_takeoff_hold_command()
 
         if self.demo_state == "SYNC_TAKEOFF_PARAM":
             if self.takeoff_param_ready:
@@ -2013,7 +2131,7 @@ class Milestone3DemoSequenceNode(Node):
                     f"armed={self.latest_state.armed}"
                 )
                 self.last_takeoff_progress_log_s = self.now_s()
-            if current_altitude_m >= (target_altitude_m - self.altitude_tolerance_m):
+            if self.takeoff_altitude_reached():
                 self.set_demo_state("WARMUP_OFFBOARD", "target altitude reached")
                 return None
             if self.is_takeoff_handoff_mode():
@@ -2022,7 +2140,7 @@ class Milestone3DemoSequenceNode(Node):
                     self.get_logger().warn(
                         "PX4 exited AUTO.TAKEOFF before the demo observed the "
                         f"target altitude; shortfall={shortfall_m:.2f} m "
-                        f"mode={self.latest_state.mode}. Accepting handoff."
+                        f"mode={self.latest_state.mode}. Continuing climb in OFFBOARD."
                     )
                 self.set_demo_state(
                     "WARMUP_OFFBOARD",
@@ -2039,18 +2157,35 @@ class Milestone3DemoSequenceNode(Node):
             if self.mode_matches(self.offboard_mode):
                 if self.use_speed_profile:
                     self.set_demo_state("SYNC_SPEED_PROFILE", "OFFBOARD confirmed")
-                else:
+                elif self.takeoff_altitude_reached():
                     self.set_demo_state("STAGE_HOVER", "OFFBOARD confirmed")
+                else:
+                    self.set_demo_state(
+                        "CLIMB_TO_TAKEOFF_ALTITUDE",
+                        "OFFBOARD confirmed below takeoff altitude",
+                    )
             elif self.mode_future is None and self.mode_request_retry_ready():
                 self.request_mode(self.offboard_mode)
             return None
 
         if self.demo_state == "SYNC_SPEED_PROFILE":
             if not self.use_speed_profile or self.speed_profile is None:
-                self.set_demo_state("STAGE_HOVER", "speed profile disabled")
+                if self.takeoff_altitude_reached():
+                    self.set_demo_state("STAGE_HOVER", "speed profile disabled")
+                else:
+                    self.set_demo_state(
+                        "CLIMB_TO_TAKEOFF_ALTITUDE",
+                        "speed profile disabled below takeoff altitude",
+                    )
                 return None
             if self.speed_profile_apply_complete():
-                self.set_demo_state("STAGE_HOVER", "speed profile configured")
+                if self.takeoff_altitude_reached():
+                    self.set_demo_state("STAGE_HOVER", "speed profile configured")
+                else:
+                    self.set_demo_state(
+                        "CLIMB_TO_TAKEOFF_ALTITUDE",
+                        "speed profile configured below takeoff altitude",
+                    )
                 return None
             if self.param_future is not None or self.param_pull_future is not None:
                 return None
@@ -2063,7 +2198,13 @@ class Milestone3DemoSequenceNode(Node):
                 return None
             param_name = self.next_speed_profile_param_to_apply()
             if param_name is None:
-                self.set_demo_state("STAGE_HOVER", "speed profile configured")
+                if self.takeoff_altitude_reached():
+                    self.set_demo_state("STAGE_HOVER", "speed profile configured")
+                else:
+                    self.set_demo_state(
+                        "CLIMB_TO_TAKEOFF_ALTITUDE",
+                        "speed profile configured below takeoff altitude",
+                    )
                 return None
             if param_name not in self.speed_profile_original_values:
                 self.request_param_get(
@@ -2081,6 +2222,19 @@ class Milestone3DemoSequenceNode(Node):
                 kind="PROFILE_SET_TARGET",
                 param_name=param_name,
             )
+            return None
+
+        if self.demo_state == "CLIMB_TO_TAKEOFF_ALTITUDE":
+            if self.takeoff_altitude_reached():
+                self.set_demo_state(
+                    "STAGE_HOVER",
+                    "takeoff altitude reached in OFFBOARD",
+                )
+            elif self.stage_elapsed_s() >= self.climb_handoff_timeout_s:
+                self.set_demo_state(
+                    "STAGE_HOVER",
+                    "climb handoff timeout reached",
+                )
             return None
 
         if self.demo_state == "STAGE_HOVER":
@@ -2120,6 +2274,13 @@ class Milestone3DemoSequenceNode(Node):
                 max_yaw_rate_rps=self.max_yaw_rate_rps,
                 min_safe_distance_m=self.min_safe_distance_m,
             )
+            if target.source == TRACK_SOURCE_PREDICTED:
+                command = clamp_follow_command_velocity(
+                    command,
+                    max_vel_xy_mps=self.predicted_max_vel_xy_mps,
+                    max_vel_z_mps=self.predicted_max_vel_z_mps,
+                    max_yaw_rate_rps=self.predicted_max_yaw_rate_rps,
+                )
             command = self.clamp_command_to_perimeter_altitude(command)
             self.min_distance_gate_active = command.min_distance_gate_active
 
