@@ -3,7 +3,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Callable, Optional
 
 import yaml
 
@@ -58,10 +58,18 @@ class Waypoint:
 
 
 @dataclass(frozen=True)
+class WaypointRouteConfig:
+    start_policy: str = "fixed"
+    loop: bool = False
+    return_to_start: bool = False
+
+
+@dataclass(frozen=True)
 class WaypointMission:
     name: str
     frame_id: str
     waypoints: tuple[Waypoint, ...]
+    route: WaypointRouteConfig
     cruise_speed_mps: float
     min_segment_duration_s: float
     default_hold_s: float
@@ -75,6 +83,9 @@ class MinJerkSegment:
     duration_s: float
     hold_s: float
     waypoint_name: str = ""
+
+
+WaypointReachability = Callable[[TrajectoryPose, Waypoint], Optional[str]]
 
 
 def load_waypoint_mission(path: str) -> WaypointMission:
@@ -104,6 +115,7 @@ def load_waypoint_mission(path: str) -> WaypointMission:
         name=str(loaded.get("name", "")).strip() or config_path.stem,
         frame_id=str(loaded.get("frame_id", "")).strip() or "map",
         waypoints=waypoints,
+        route=_parse_route_config(loaded.get("route")),
         cruise_speed_mps=max(
             _float_default(defaults, "cruise_speed_mps", 0.35),
             1e-3,
@@ -120,12 +132,15 @@ def load_waypoint_mission(path: str) -> WaypointMission:
 def build_minjerk_segments(
     start_pose: TrajectoryPose,
     mission: WaypointMission,
+    *,
+    waypoints: Optional[tuple[Waypoint, ...]] = None,
 ) -> tuple[MinJerkSegment, ...]:
     segments: list[MinJerkSegment] = []
     previous = start_pose
     previous_yaw = start_pose.yaw_rad
+    mission_waypoints = mission.waypoints if waypoints is None else waypoints
 
-    for index, waypoint in enumerate(mission.waypoints):
+    for index, waypoint in enumerate(mission_waypoints):
         target_yaw = (
             previous_yaw
             if waypoint.yaw_rad is None
@@ -148,7 +163,7 @@ def build_minjerk_segments(
         hold_s = waypoint.hold_s
         if hold_s is None:
             hold_s = mission.default_hold_s
-        if index == len(mission.waypoints) - 1:
+        if index == len(mission_waypoints) - 1:
             hold_s = max(float(hold_s), mission.final_hold_s)
         segments.append(
             MinJerkSegment(
@@ -163,6 +178,64 @@ def build_minjerk_segments(
         previous_yaw = target.yaw_rad
 
     return tuple(segments)
+
+
+def resolve_waypoints_for_start(
+    start_pose: TrajectoryPose,
+    mission: WaypointMission,
+    *,
+    waypoint_reachable: Optional[WaypointReachability] = None,
+    return_pose: Optional[TrajectoryPose] = None,
+) -> tuple[Waypoint, ...]:
+    ordered_waypoints = mission.waypoints
+    route = mission.route
+
+    if route.start_policy == "nearest_reachable":
+        if waypoint_reachable is None:
+            raise ValueError(
+                "nearest_reachable waypoint route requires a reachability checker"
+            )
+        candidates: list[tuple[float, int]] = []
+        for index, waypoint in enumerate(mission.waypoints):
+            reason = waypoint_reachable(start_pose, waypoint)
+            if reason is not None:
+                continue
+            distance_m = math.hypot(
+                waypoint.x_m - start_pose.x_m,
+                waypoint.y_m - start_pose.y_m,
+            )
+            candidates.append((distance_m, index))
+        if not candidates:
+            raise ValueError("no reachable waypoint entry from start position")
+        _, entry_index = min(candidates, key=lambda item: (item[0], item[1]))
+        ordered_waypoints = (
+            mission.waypoints[entry_index:] + mission.waypoints[:entry_index]
+        )
+    elif route.start_policy != "fixed":
+        raise ValueError(
+            "route.start_policy must be one of: fixed, nearest_reachable"
+        )
+
+    resolved_waypoints = tuple(ordered_waypoints)
+    if route.loop and resolved_waypoints:
+        resolved_waypoints = resolved_waypoints + (resolved_waypoints[0],)
+    if route.return_to_start:
+        route_return_pose = start_pose if return_pose is None else return_pose
+        return_z_m = (
+            resolved_waypoints[-1].z_m if resolved_waypoints else start_pose.z_m
+        )
+        resolved_waypoints = resolved_waypoints + (
+            Waypoint(
+                x_m=route_return_pose.x_m,
+                y_m=route_return_pose.y_m,
+                z_m=return_z_m,
+                yaw_rad=None,
+                hold_s=None,
+                duration_s=None,
+                name="return_to_start",
+            ),
+        )
+    return resolved_waypoints
 
 
 def sample_minjerk_segment(
@@ -225,6 +298,25 @@ def _parse_waypoint(
     )
 
 
+def _parse_route_config(raw: object) -> WaypointRouteConfig:
+    if raw is None:
+        raw = {}
+    if not isinstance(raw, dict):
+        raise ValueError("route must be a mapping")
+
+    start_policy = str(raw.get("start_policy", "fixed")).strip() or "fixed"
+    if start_policy not in {"fixed", "nearest_reachable"}:
+        raise ValueError(
+            "route.start_policy must be one of: fixed, nearest_reachable"
+        )
+
+    return WaypointRouteConfig(
+        start_policy=start_policy,
+        loop=_bool_default(raw, "loop", False),
+        return_to_start=_bool_default(raw, "return_to_start", False),
+    )
+
+
 def _float_default(
     mapping: dict[str, Any],
     key: str,
@@ -234,6 +326,27 @@ def _float_default(
     if value is None:
         return float(fallback)
     return float(value)
+
+
+def _bool_default(
+    mapping: dict[str, Any],
+    key: str,
+    fallback: bool,
+) -> bool:
+    value = mapping.get(key, fallback)
+    if value is None:
+        return bool(fallback)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+    if isinstance(value, (int, float)):
+        return bool(value)
+    raise ValueError(f"{key} must be a boolean")
 
 
 def _optional_float(value: object) -> Optional[float]:

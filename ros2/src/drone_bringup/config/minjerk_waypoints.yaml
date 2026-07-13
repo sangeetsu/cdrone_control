@@ -1,5 +1,10 @@
-name: minjerk_of_compare_default
+name: minjerk_of_compare_full_studio_sweep
 frame_id: map
+
+route:
+  start_policy: nearest_reachable
+  loop: true
+  return_to_start: true
 
 defaults:
   cruise_speed_mps: 0.35
@@ -8,23 +13,78 @@ defaults:
   final_hold_s: 2.0
 
 waypoints:
-  - name: east
-    x_m: 0.75
-    y_m: 0.00
+  - name: south_west_sweep
+    x_m: -12.20
+    y_m: -2.35
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: south_east_sweep
+    x_m: 1.70
+    y_m: -2.25
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: east_lower
+    x_m: 2.20
+    y_m: 1.00
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: east_mid
+    x_m: 2.20
+    y_m: 6.00
     z_m: 1.80
     yaw_deg: 0.0
   - name: north_east
-    x_m: 0.75
-    y_m: 0.75
+    x_m: 2.90
+    y_m: 10.80
     z_m: 1.80
     yaw_deg: 0.0
-  - name: north
-    x_m: 0.00
-    y_m: 0.75
+  - name: north_west
+    x_m: -10.80
+    y_m: 10.50
     z_m: 1.80
     yaw_deg: 0.0
-  - name: home_box
-    x_m: 0.00
-    y_m: 0.00
+  - name: west_upper
+    x_m: -11.35
+    y_m: 7.35
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: pillar_west_north
+    x_m: -9.00
+    y_m: 7.20
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: pillar_west_south
+    x_m: -9.00
+    y_m: 1.00
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: south_center
+    x_m: -3.00
+    y_m: 1.00
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: pillar_east_south
+    x_m: -2.00
+    y_m: 1.00
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: pillar_east_north
+    x_m: -2.00
+    y_m: 7.50
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: north_center
+    x_m: -5.50
+    y_m: 9.50
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: west_inner_high
+    x_m: -10.50
+    y_m: 8.60
+    z_m: 1.80
+    yaw_deg: 0.0
+  - name: west_inner_low
+    x_m: -11.40
+    y_m: 0.20
     z_m: 1.80
     yaw_deg: 0.0

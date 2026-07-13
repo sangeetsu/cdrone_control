@@ -735,3 +735,7 @@
 [milestone3_demo_sequence_node-9] [INFO] [1777341274.091829747] [cdrone.cdrone3.milestone3_demo_sequence_node]: Restored MPC_Z_VEL_MAX_DN to 1.50
 [milestone3_demo_sequence_node-9] [INFO] [1777341274.093592701] [cdrone.cdrone3.milestone3_demo_sequence_node]: Requested MPC_LAND_SPEED=0.70
 [milestone3_demo_sequence_node-9] [INFO] [1777341274.141990217] [cdrone.cdrone3.milestone3_demo_sequence_node]: Restored MPC_LAND_SPEED to 0.70
+[external_pose_debug_node-6] [WARN] [1777342372.849274106] [cdrone.cdrone3.external_pose_debug_node]: max source gap 0.32s
+[external_pose_debug_node-6] [WARN] [1777342373.856576464] [cdrone.cdrone3.external_pose_debug_node]: max source gap 0.32s
+[external_pose_debug_node-6] [WARN] [1777342375.849021925] [cdrone.cdrone3.external_pose_debug_node]: max source gap 0.32s
+[external_pose_debug_node-6] [WARN] [1777342376.853489605] [cdrone.cdrone3.external_pose_debug_node]: max source gap 0.32s

@@ -24,9 +24,11 @@ from drone_control_pkg.deployment_config import (
 from drone_control_pkg.minjerk_waypoint_utils import (
     MinJerkSegment,
     TrajectoryPose,
+    Waypoint,
     WaypointMission,
     build_minjerk_segments,
     load_waypoint_mission,
+    resolve_waypoints_for_start,
     sample_minjerk_segment,
 )
 from drone_control_pkg.perimeter_utils import PerimeterGuard
@@ -991,10 +993,103 @@ class PositionGotoDemoSequenceNode(Node):
                 return param_name
         return None
 
+    def waypoint_reachability_reason(
+        self,
+        start_pose: TrajectoryPose,
+        waypoint: Waypoint,
+    ) -> Optional[str]:
+        if self.perimeter_guard is None:
+            return self.perimeter_guard_error or "perimeter guard is unavailable"
+        return self.perimeter_guard.segment_violation_reason(
+            (start_pose.x_m, start_pose.y_m),
+            (waypoint.x_m, waypoint.y_m),
+            sample_step_m=self.perimeter_segment_sample_step_m,
+            boundary_tolerance_m=self.perimeter_boundary_tolerance_m,
+            boundary_margin_m=self.perimeter_boundary_margin_m,
+            keep_out_margin_m=self.perimeter_keep_out_margin_m,
+        )
+
+    def resolve_waypoints_for_start_pose(
+        self,
+        start_pose: TrajectoryPose,
+        *,
+        return_pose: Optional[TrajectoryPose] = None,
+    ) -> tuple[Waypoint, ...]:
+        if self.waypoint_mission is None:
+            raise ValueError(
+                self.waypoint_mission_error or "waypoint mission is unavailable"
+            )
+        waypoint_reachable = None
+        if self.waypoint_mission.route.start_policy == "nearest_reachable":
+            if not self.enable_perimeter_guard:
+                raise ValueError(
+                    "nearest_reachable waypoint route requires perimeter guard"
+                )
+            if self.perimeter_guard is None:
+                raise ValueError(
+                    self.perimeter_guard_error or "perimeter guard is unavailable"
+                )
+            waypoint_reachable = self.waypoint_reachability_reason
+        return resolve_waypoints_for_start(
+            start_pose,
+            self.waypoint_mission,
+            waypoint_reachable=waypoint_reachable,
+            return_pose=return_pose,
+        )
+
+    def waypoint_route_violation_reason(
+        self,
+        start_xy: Tuple[float, float],
+        waypoints: tuple[Waypoint, ...],
+    ) -> Optional[str]:
+        if self.perimeter_guard is None:
+            return self.perimeter_guard_error or "perimeter guard is unavailable"
+        prior_xy = start_xy
+        for waypoint in waypoints:
+            waypoint_xy = (waypoint.x_m, waypoint.y_m)
+            waypoint_reason = self.perimeter_guard.xy_violation_reason(
+                waypoint.x_m,
+                waypoint.y_m,
+                boundary_tolerance_m=self.perimeter_boundary_tolerance_m,
+                boundary_margin_m=self.perimeter_boundary_margin_m,
+                keep_out_margin_m=self.perimeter_keep_out_margin_m,
+            )
+            if waypoint_reason is not None:
+                label = waypoint.name or "unnamed"
+                return f"waypoint '{label}' is unsafe: {waypoint_reason}"
+
+            altitude_reason = self.perimeter_guard.goal_altitude_violation_reason(
+                waypoint.z_m
+            )
+            if altitude_reason is not None:
+                label = waypoint.name or "unnamed"
+                return f"waypoint '{label}' altitude is unsafe: {altitude_reason}"
+
+            path_reason = self.perimeter_guard.segment_violation_reason(
+                prior_xy,
+                waypoint_xy,
+                sample_step_m=self.perimeter_segment_sample_step_m,
+                boundary_tolerance_m=self.perimeter_boundary_tolerance_m,
+                boundary_margin_m=self.perimeter_boundary_margin_m,
+                keep_out_margin_m=self.perimeter_keep_out_margin_m,
+            )
+            if path_reason is not None:
+                label = waypoint.name or "unnamed"
+                return f"path to waypoint '{label}' is unsafe: {path_reason}"
+            prior_xy = waypoint_xy
+        return None
+
     def perimeter_start_violation_reason(
         self,
         start_xy: Tuple[float, float],
     ) -> Optional[str]:
+        if (
+            not self.enable_perimeter_guard
+            and self.demo_mode == "waypoints"
+            and self.waypoint_mission is not None
+            and self.waypoint_mission.route.start_policy == "nearest_reachable"
+        ):
+            return "nearest_reachable waypoint route requires perimeter guard"
         if not self.enable_perimeter_guard:
             return None
         if self.perimeter_guard is None:
@@ -1030,42 +1125,21 @@ class PositionGotoDemoSequenceNode(Node):
                     f"waypoint frame '{self.waypoint_mission.frame_id}' does not "
                     f"match perimeter frame '{self.perimeter_guard.frame_id}'"
                 )
-            prior_xy = start_xy
-            for waypoint in self.waypoint_mission.waypoints:
-                waypoint_xy = (waypoint.x_m, waypoint.y_m)
-                waypoint_reason = self.perimeter_guard.xy_violation_reason(
-                    waypoint.x_m,
-                    waypoint.y_m,
-                    boundary_tolerance_m=self.perimeter_boundary_tolerance_m,
-                    boundary_margin_m=self.perimeter_boundary_margin_m,
-                    keep_out_margin_m=self.perimeter_keep_out_margin_m,
-                )
-                if waypoint_reason is not None:
-                    label = waypoint.name or "unnamed"
-                    return f"waypoint '{label}' is unsafe: {waypoint_reason}"
-
-                altitude_reason = (
-                    self.perimeter_guard.goal_altitude_violation_reason(
-                        waypoint.z_m
+            try:
+                resolved_waypoints = self.resolve_waypoints_for_start_pose(
+                    TrajectoryPose(
+                        x_m=float(start_xy[0]),
+                        y_m=float(start_xy[1]),
+                        z_m=self.current_altitude_m(),
+                        yaw_rad=self.current_yaw_rad(),
                     )
                 )
-                if altitude_reason is not None:
-                    label = waypoint.name or "unnamed"
-                    return f"waypoint '{label}' altitude is unsafe: {altitude_reason}"
-
-                path_reason = self.perimeter_guard.segment_violation_reason(
-                    prior_xy,
-                    waypoint_xy,
-                    sample_step_m=self.perimeter_segment_sample_step_m,
-                    boundary_tolerance_m=self.perimeter_boundary_tolerance_m,
-                    boundary_margin_m=self.perimeter_boundary_margin_m,
-                    keep_out_margin_m=self.perimeter_keep_out_margin_m,
-                )
-                if path_reason is not None:
-                    label = waypoint.name or "unnamed"
-                    return f"path to waypoint '{label}' is unsafe: {path_reason}"
-                prior_xy = waypoint_xy
-            return None
+            except ValueError as exc:
+                return str(exc)
+            return self.waypoint_route_violation_reason(
+                start_xy,
+                resolved_waypoints,
+            )
 
         if self.demo_mode == "circle":
             keep_out_orbit_error = self.configure_circle_keep_out_orbit()
@@ -1887,9 +1961,34 @@ class PositionGotoDemoSequenceNode(Node):
             )
             return False
         start_pose = self.trajectory_pose_from_current()
+        return_pose = start_pose
+        if self.takeoff_origin_xy is not None:
+            return_pose = TrajectoryPose(
+                x_m=float(self.takeoff_origin_xy[0]),
+                y_m=float(self.takeoff_origin_xy[1]),
+                z_m=start_pose.z_m,
+                yaw_rad=start_pose.yaw_rad,
+            )
+        try:
+            resolved_waypoints = self.resolve_waypoints_for_start_pose(
+                start_pose,
+                return_pose=return_pose,
+            )
+        except ValueError as exc:
+            self.enter_abort(str(exc))
+            return False
+        if self.enable_perimeter_guard:
+            route_reason = self.waypoint_route_violation_reason(
+                (start_pose.x_m, start_pose.y_m),
+                resolved_waypoints,
+            )
+            if route_reason is not None:
+                self.enter_abort(route_reason)
+                return False
         self.waypoint_segments = build_minjerk_segments(
             start_pose,
             self.waypoint_mission,
+            waypoints=resolved_waypoints,
         )
         if not self.waypoint_segments:
             self.enter_abort("waypoint mission has no trajectory segments")
@@ -1902,6 +2001,7 @@ class PositionGotoDemoSequenceNode(Node):
         self.get_logger().info(
             "Waypoint plan started: "
             f"segments={len(self.waypoint_segments)} "
+            f"waypoints={len(resolved_waypoints)} "
             f"frame={self.waypoint_mission.frame_id}"
         )
         return True

@@ -7,8 +7,11 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 DURATION_S=6
 MAVROS_NAMESPACE="${MAVROS_NAMESPACE:-}"
-REQUEST_STREAM_RATE=""
+REQUEST_STREAM_RATE="${PX4FLOW_REQUEST_STREAM_RATE:-70}"
 DISCOVERY_SPIN_TIME="${PX4FLOW_DISCOVERY_SPIN_TIME:-2}"
+FLOW_RATE_TARGET_HZ="${PX4FLOW_RATE_TARGET_HZ:-70}"
+LAST_TOPIC_SAMPLE=""
+LAST_HZ_OUTPUT=""
 
 usage() {
   cat <<'EOF'
@@ -21,13 +24,14 @@ Options:
   --mavros-namespace NS       MAVROS namespace. Default: from droneid_config.yaml.
   --duration SEC              Seconds to wait for samples and rate estimates. Default: 6
   --discovery-spin-time SEC   Seconds to wait for ROS discovery list calls. Default: 2
-  --request-stream-rate HZ    Ask PX4/MAVROS to stream OPTICAL_FLOW_RAD and OPTICAL_FLOW at HZ.
+  --request-stream-rate HZ    Ask PX4/MAVROS to stream at HZ. Default: 70 (native-rate target)
+  --no-request-stream         Inspect only; do not request a MAVLink stream rate.
   -h, --help                  Show this help.
 
 Examples:
   scripts/check_px4flow_topics.sh
   scripts/check_px4flow_topics.sh --duration 10
-  scripts/check_px4flow_topics.sh --request-stream-rate 10
+  scripts/check_px4flow_topics.sh --request-stream-rate 70
   scripts/check_px4flow_topics.sh --mavros-namespace /cdrone/cdrone3/mavros
 EOF
 }
@@ -272,6 +276,7 @@ inspect_topic() {
   echo "  sample:"
   local sample
   sample="$(timeout "${DURATION_S}" ros2 topic echo --no-daemon --spin-time "${DISCOVERY_SPIN_TIME}" --once "${topic}" 2>/dev/null || true)"
+  LAST_TOPIC_SAMPLE="${sample}"
   if [[ -n "${sample}" ]]; then
     printf '%s\n' "${sample}" | sed 's/^/    /'
     saw_live_output=1
@@ -282,6 +287,7 @@ inspect_topic() {
   echo "  rate (${DURATION_S}s window):"
   local hz_output
   hz_output="$(timeout "$((DURATION_S + 1))" ros2 topic hz "${topic}" 2>/dev/null || true)"
+  LAST_HZ_OUTPUT="${hz_output}"
   if [[ -n "${hz_output}" ]]; then
     printf '%s\n' "${hz_output}" | tail -n 5 | sed 's/^/    /'
   else
@@ -292,6 +298,53 @@ inspect_topic() {
     return 0
   fi
   return 1
+}
+
+report_flow_timing() {
+  local sample="$1"
+  local hz_output="$2"
+  local integration_time_us
+  local observed_rate_hz
+
+  integration_time_us="$(
+    awk '$1 == "integration_time_us:" {print $2; exit}' <<<"${sample}"
+  )"
+  observed_rate_hz="$(
+    sed -nE 's/.*average rate:[[:space:]]*([0-9]+([.][0-9]+)?).*/\1/p' \
+      <<<"${hz_output}" | tail -n 1
+  )"
+
+  echo ""
+  log "OPTICAL_FLOW_RAD timing coverage"
+  if [[ -z "${integration_time_us}" || -z "${observed_rate_hz}" ]]; then
+    warn "Could not compare delivery rate with integration_time_us; capture a longer sample window."
+    return
+  fi
+
+  python3 - "${observed_rate_hz}" "${integration_time_us}" "${FLOW_RATE_TARGET_HZ}" <<'PY'
+import sys
+
+rate_hz = float(sys.argv[1])
+integration_us = float(sys.argv[2])
+target_hz = float(sys.argv[3])
+integration_s = integration_us / 1_000_000.0
+period_s = 1.0 / rate_hz
+coverage = rate_hz * integration_s
+
+print(f"  observed delivery rate: {rate_hz:.3f} Hz")
+print(f"  observed delivery period: {period_s * 1000.0:.3f} ms")
+print(f"  sensor integration window: {integration_s * 1000.0:.3f} ms")
+print(f"  integration coverage ratio: {coverage:.3f} ({coverage * 100.0:.1f}%)")
+print(f"  native-rate target: {target_hz:.1f} Hz")
+
+if rate_hz < 0.8 * target_hz:
+    print("  WARN: delivery is materially below the native-rate target.")
+if coverage < 0.8:
+    print("  WARN: integration windows leave substantial time unobserved.")
+elif coverage > 1.25:
+    print("  WARN: integration windows appear to overlap delivery intervals; verify timestamps.")
+PY
+  log "Use the source timestamps and integration windows in the estimator; never compensate missing delivery by blindly multiplying flow by a fixed factor."
 }
 
 while [[ $# -gt 0 ]]; do
@@ -315,6 +368,10 @@ while [[ $# -gt 0 ]]; do
       [[ $# -ge 2 ]] || fail "--request-stream-rate requires a value."
       REQUEST_STREAM_RATE="$2"
       shift 2
+      ;;
+    --no-request-stream)
+      REQUEST_STREAM_RATE=""
+      shift
       ;;
     -h|--help)
       usage
@@ -378,11 +435,19 @@ EXPECTED_TYPES=(
 )
 
 LIVE_TOPIC_COUNT=0
+FLOW_RAD_SAMPLE=""
+FLOW_RAD_HZ_OUTPUT=""
 for index in "${!TOPICS[@]}"; do
   if inspect_topic "${TOPICS[$index]}" "${EXPECTED_TYPES[$index]}"; then
     LIVE_TOPIC_COUNT=$((LIVE_TOPIC_COUNT + 1))
   fi
+  if [[ "${TOPICS[$index]}" == "${MAVROS_NAMESPACE}/px4flow/raw/optical_flow_rad" ]]; then
+    FLOW_RAD_SAMPLE="${LAST_TOPIC_SAMPLE}"
+    FLOW_RAD_HZ_OUTPUT="${LAST_HZ_OUTPUT}"
+  fi
 done
+
+report_flow_timing "${FLOW_RAD_SAMPLE}" "${FLOW_RAD_HZ_OUTPUT}"
 
 echo ""
 if [[ "${LIVE_TOPIC_COUNT}" -gt 0 ]]; then

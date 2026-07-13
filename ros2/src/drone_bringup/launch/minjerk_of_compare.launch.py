@@ -114,8 +114,11 @@ def launch_setup(context, *args, **kwargs):
                 "mocap_pose_topic": LaunchConfiguration("mocap_pose_topic"),
                 "flow_rad_topic": LaunchConfiguration("flow_rad_topic"),
                 "flow_range_topic": LaunchConfiguration("flow_range_topic"),
+                "imu_topic": LaunchConfiguration("imu_topic"),
                 "setpoint_topic": LaunchConfiguration("setpoint_topic"),
                 "mission_state_topic": LaunchConfiguration("mission_state_topic"),
+                "fused_pose_topic": LaunchConfiguration("fused_pose_topic"),
+                "imu_only_pose_topic": LaunchConfiguration("imu_only_pose_topic"),
                 "output_dir": LaunchConfiguration("output_dir"),
                 "run_id": LaunchConfiguration("run_id"),
                 "comparison_frame_id": LaunchConfiguration("comparison_frame_id"),
@@ -149,6 +152,139 @@ def launch_setup(context, *args, **kwargs):
                 ),
                 "flow_scale_y": ParameterValue(
                     LaunchConfiguration("flow_scale_y"),
+                    value_type=float,
+                ),
+                "fusion_enabled": ParameterValue(
+                    LaunchConfiguration("fusion_enabled"),
+                    value_type=bool,
+                ),
+                "imu_only_enabled": ParameterValue(
+                    LaunchConfiguration("imu_only_enabled"),
+                    value_type=bool,
+                ),
+                "of_yaw_source": LaunchConfiguration("of_yaw_source"),
+                "fusion_flow_position_weight": ParameterValue(
+                    LaunchConfiguration("fusion_flow_position_weight"),
+                    value_type=float,
+                ),
+                "fusion_flow_velocity_weight": ParameterValue(
+                    LaunchConfiguration("fusion_flow_velocity_weight"),
+                    value_type=float,
+                ),
+                "fusion_range_z_weight": ParameterValue(
+                    LaunchConfiguration("fusion_range_z_weight"),
+                    value_type=float,
+                ),
+                "fusion_subtract_gravity": ParameterValue(
+                    LaunchConfiguration("fusion_subtract_gravity"),
+                    value_type=bool,
+                ),
+                "fusion_gravity_mps2": ParameterValue(
+                    LaunchConfiguration("fusion_gravity_mps2"),
+                    value_type=float,
+                ),
+                "fusion_accel_deadband_mps2": ParameterValue(
+                    LaunchConfiguration("fusion_accel_deadband_mps2"),
+                    value_type=float,
+                ),
+                "fusion_max_accel_mps2": ParameterValue(
+                    LaunchConfiguration("fusion_max_accel_mps2"),
+                    value_type=float,
+                ),
+                "fusion_max_velocity_mps": ParameterValue(
+                    LaunchConfiguration("fusion_max_velocity_mps"),
+                    value_type=float,
+                ),
+                "fusion_max_imu_dt_s": ParameterValue(
+                    LaunchConfiguration("fusion_max_imu_dt_s"),
+                    value_type=float,
+                ),
+                "fusion_velocity_decay_per_s": ParameterValue(
+                    LaunchConfiguration("fusion_velocity_decay_per_s"),
+                    value_type=float,
+                ),
+                "fusion_accel_noise_mps2": ParameterValue(
+                    LaunchConfiguration("fusion_accel_noise_mps2"),
+                    value_type=float,
+                ),
+                "fusion_accel_bias_rw_mps3": ParameterValue(
+                    LaunchConfiguration("fusion_accel_bias_rw_mps3"),
+                    value_type=float,
+                ),
+                "fusion_flow_velocity_noise_mps": ParameterValue(
+                    LaunchConfiguration("fusion_flow_velocity_noise_mps"),
+                    value_type=float,
+                ),
+                "fusion_range_noise_m": ParameterValue(
+                    LaunchConfiguration("fusion_range_noise_m"),
+                    value_type=float,
+                ),
+                "fusion_accel_lpf_tau_s": ParameterValue(
+                    LaunchConfiguration("fusion_accel_lpf_tau_s"),
+                    value_type=float,
+                ),
+                "fusion_innovation_gate_nis": ParameterValue(
+                    LaunchConfiguration("fusion_innovation_gate_nis"),
+                    value_type=float,
+                ),
+                "fusion_range_innovation_gate_nis": ParameterValue(
+                    LaunchConfiguration("fusion_range_innovation_gate_nis"),
+                    value_type=float,
+                ),
+                "fusion_max_sensor_age_s": ParameterValue(
+                    LaunchConfiguration("fusion_max_sensor_age_s"),
+                    value_type=float,
+                ),
+                "fusion_reorder_tolerance_s": ParameterValue(
+                    LaunchConfiguration("fusion_reorder_tolerance_s"),
+                    value_type=float,
+                ),
+                "fusion_max_tilt_rad": ParameterValue(
+                    LaunchConfiguration("fusion_max_tilt_rad"),
+                    value_type=float,
+                ),
+                "fusion_max_flow_gap_s": ParameterValue(
+                    LaunchConfiguration("fusion_max_flow_gap_s"),
+                    value_type=float,
+                ),
+                "fusion_flow_gap_noise_scale": ParameterValue(
+                    LaunchConfiguration("fusion_flow_gap_noise_scale"),
+                    value_type=float,
+                ),
+                "fusion_flow_quality_noise_scale": ParameterValue(
+                    LaunchConfiguration("fusion_flow_quality_noise_scale"),
+                    value_type=float,
+                ),
+                "fusion_flow_range_noise_scale": ParameterValue(
+                    LaunchConfiguration("fusion_flow_range_noise_scale"),
+                    value_type=float,
+                ),
+                "fusion_gyro_fallback_noise_scale": ParameterValue(
+                    LaunchConfiguration("fusion_gyro_fallback_noise_scale"),
+                    value_type=float,
+                ),
+                "fusion_gyro_coverage_tolerance_s": ParameterValue(
+                    LaunchConfiguration("fusion_gyro_coverage_tolerance_s"),
+                    value_type=float,
+                ),
+                "fusion_gyro_buffer_duration_s": ParameterValue(
+                    LaunchConfiguration("fusion_gyro_buffer_duration_s"),
+                    value_type=float,
+                ),
+                "fusion_flow_sensor_yaw_rad": ParameterValue(
+                    LaunchConfiguration("fusion_flow_sensor_yaw_rad"),
+                    value_type=float,
+                ),
+                "fusion_initial_position_std_m": ParameterValue(
+                    LaunchConfiguration("fusion_initial_position_std_m"),
+                    value_type=float,
+                ),
+                "fusion_initial_velocity_std_mps": ParameterValue(
+                    LaunchConfiguration("fusion_initial_velocity_std_mps"),
+                    value_type=float,
+                ),
+                "fusion_initial_accel_bias_std_mps2": ParameterValue(
+                    LaunchConfiguration("fusion_initial_accel_bias_std_mps2"),
                     value_type=float,
                 ),
             }
@@ -277,6 +413,23 @@ def generate_launch_description():
                     "/px4flow/ground_distance",
                 ),
             ),
+            DeclareLaunchArgument(
+                "imu_topic",
+                default_value=_default_arg(
+                    defaults,
+                    "imu_topic",
+                    f"{defaults.get('mavros_namespace', '/mavros')}"
+                    "/imu/data",
+                ),
+            ),
+            DeclareLaunchArgument(
+                "fused_pose_topic",
+                default_value=_cdrone_topic(defaults, "of_compare/fused_pose"),
+            ),
+            DeclareLaunchArgument(
+                "imu_only_pose_topic",
+                default_value=_cdrone_topic(defaults, "of_compare/imu_only_pose"),
+            ),
             DeclareLaunchArgument("output_dir", default_value="flight_logs/of_compare"),
             DeclareLaunchArgument("run_id", default_value=""),
             DeclareLaunchArgument("logger_publish_rate_hz", default_value="20.0"),
@@ -286,6 +439,103 @@ def generate_launch_description():
             DeclareLaunchArgument("gyro_compensation_gain", default_value="1.0"),
             DeclareLaunchArgument("flow_scale_x", default_value="1.0"),
             DeclareLaunchArgument("flow_scale_y", default_value="1.0"),
+            DeclareLaunchArgument("fusion_enabled", default_value="true"),
+            DeclareLaunchArgument("imu_only_enabled", default_value="true"),
+            DeclareLaunchArgument("of_yaw_source", default_value="imu"),
+            DeclareLaunchArgument(
+                "fusion_flow_position_weight",
+                default_value="0.75",
+            ),
+            DeclareLaunchArgument(
+                "fusion_flow_velocity_weight",
+                default_value="0.50",
+            ),
+            DeclareLaunchArgument("fusion_range_z_weight", default_value="0.80"),
+            DeclareLaunchArgument("fusion_subtract_gravity", default_value="true"),
+            DeclareLaunchArgument("fusion_gravity_mps2", default_value="9.80665"),
+            DeclareLaunchArgument(
+                "fusion_accel_deadband_mps2",
+                default_value="0.05",
+            ),
+            DeclareLaunchArgument("fusion_max_accel_mps2", default_value="6.0"),
+            DeclareLaunchArgument("fusion_max_velocity_mps", default_value="4.0"),
+            DeclareLaunchArgument("fusion_max_imu_dt_s", default_value="0.10"),
+            DeclareLaunchArgument(
+                "fusion_velocity_decay_per_s",
+                default_value="0.04",
+            ),
+            DeclareLaunchArgument("fusion_accel_noise_mps2", default_value="0.80"),
+            DeclareLaunchArgument(
+                "fusion_accel_bias_rw_mps3",
+                default_value="0.03",
+            ),
+            DeclareLaunchArgument(
+                "fusion_flow_velocity_noise_mps",
+                default_value="0.20",
+            ),
+            DeclareLaunchArgument("fusion_range_noise_m", default_value="0.08"),
+            DeclareLaunchArgument("fusion_accel_lpf_tau_s", default_value="0.08"),
+            DeclareLaunchArgument(
+                "fusion_innovation_gate_nis",
+                default_value="9.21",
+            ),
+            DeclareLaunchArgument(
+                "fusion_range_innovation_gate_nis",
+                default_value="6.635",
+            ),
+            DeclareLaunchArgument(
+                "fusion_max_sensor_age_s",
+                default_value="0.25",
+            ),
+            DeclareLaunchArgument(
+                "fusion_reorder_tolerance_s",
+                default_value="0.02",
+            ),
+            DeclareLaunchArgument(
+                "fusion_max_tilt_rad",
+                default_value="0.7853981633974483",
+            ),
+            DeclareLaunchArgument("fusion_max_flow_gap_s", default_value="0.50"),
+            DeclareLaunchArgument(
+                "fusion_flow_gap_noise_scale",
+                default_value="0.25",
+            ),
+            DeclareLaunchArgument(
+                "fusion_flow_quality_noise_scale",
+                default_value="3.0",
+            ),
+            DeclareLaunchArgument(
+                "fusion_flow_range_noise_scale",
+                default_value="1.0",
+            ),
+            DeclareLaunchArgument(
+                "fusion_gyro_fallback_noise_scale",
+                default_value="2.0",
+            ),
+            DeclareLaunchArgument(
+                "fusion_gyro_coverage_tolerance_s",
+                default_value="0.005",
+            ),
+            DeclareLaunchArgument(
+                "fusion_gyro_buffer_duration_s",
+                default_value="1.0",
+            ),
+            DeclareLaunchArgument(
+                "fusion_flow_sensor_yaw_rad",
+                default_value="0.0",
+            ),
+            DeclareLaunchArgument(
+                "fusion_initial_position_std_m",
+                default_value="0.25",
+            ),
+            DeclareLaunchArgument(
+                "fusion_initial_velocity_std_mps",
+                default_value="0.50",
+            ),
+            DeclareLaunchArgument(
+                "fusion_initial_accel_bias_std_mps2",
+                default_value="0.30",
+            ),
             OpaqueFunction(function=launch_setup),
         ]
     )
