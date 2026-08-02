@@ -33,6 +33,8 @@ def launch_setup(context, *args, **kwargs):
             "log_level": log_level,
             "drone_id": drone_id,
             "mavros_namespace": mavros_namespace,
+            "drone_namespace": LaunchConfiguration("drone_namespace"),
+            "mocap_namespace": LaunchConfiguration("mocap_namespace"),
             "pose_source": LaunchConfiguration("pose_source"),
             "source_pose_topic": LaunchConfiguration("source_pose_topic"),
             "enable_reference_setup": "true",
@@ -55,6 +57,7 @@ def launch_setup(context, *args, **kwargs):
             "adapter_timeout_s": LaunchConfiguration("external_pose_timeout_s"),
             "publish_companion_status": "true",
             "map_frame": LaunchConfiguration("map_frame"),
+            "frame_rpy_rad": LaunchConfiguration("frame_rpy_rad"),
             "position_offset_m": LaunchConfiguration("position_offset_m"),
             "rpy_offset_rad": LaunchConfiguration("rpy_offset_rad"),
             "optitrack_server": LaunchConfiguration("optitrack_server"),
@@ -223,6 +226,16 @@ def generate_launch_description():
                 default_value=_default_arg(defaults, "mavros_namespace", "mavros"),
             ),
             DeclareLaunchArgument(
+                "drone_namespace",
+                default_value=_default_arg(defaults, "drone_namespace", "/cdrone"),
+            ),
+            DeclareLaunchArgument(
+                "mocap_namespace",
+                default_value=_default_arg(
+                    defaults, "mocap_namespace", "/cdrone/vrpn_mocap"
+                ),
+            ),
+            DeclareLaunchArgument(
                 "pose_source",
                 default_value=_default_arg(defaults, "pose_source", "optitrack"),
             ),
@@ -270,6 +283,14 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "map_frame",
                 default_value=_default_arg(defaults, "map_frame", "map"),
+            ),
+            DeclareLaunchArgument(
+                "frame_rpy_rad",
+                default_value=_default_arg(
+                    defaults,
+                    "frame_rpy_rad",
+                    "[0.0, 0.0, 0.0]",
+                ),
             ),
             DeclareLaunchArgument(
                 "position_offset_m", default_value="[0.0, 0.0, 0.0]"

@@ -197,7 +197,7 @@ Useful overrides:
 scripts/run_minjerk_of_compare.sh \
   --waypoints-config /home/jetson/cdrone_control/ros2/src/drone_bringup/config/minjerk_waypoints.yaml \
   --output-dir /home/jetson/cdrone_control/flight_logs/of_compare \
-  --run-id minjerk_of_005 \
+  --run-id minjerk_of_001 \
   -- \
   quality_min:=20 \
   range_min_m:=0.3 \
@@ -240,6 +240,367 @@ scripts/run_minjerk_of_compare.sh \
   --run-id minjerk_of_drift_001
 ```
 
+## RigidBody4 Optical-Flow Waypoint Flight
+
+Use this section for the physical `cdrone4` vehicle with OptiTrack
+`RigidBody4`. Waypoint control uses PX4 external vision from mocap only;
+PX4Flow, VIO, IMU-only, IMU+PX4Flow fusion, and ZED images are observational
+logs and must not publish to PX4's `/mavros/vision_pose/pose` input.
+
+The launch requests native practical data rates automatically:
+`HIGHRES_IMU` and `ATTITUDE_QUATERNION` at 250 Hz, and
+`OPTICAL_FLOW_RAD`/`OPTICAL_FLOW` at 70 Hz. Keep the PX4Flow sensor at least
+`0.3 m` above the surface before trusting `range_min_m:=0.3` flow/fusion
+validity.
+
+The ZED 2i records the left color image at 2 Hz as JPEG files under:
+
+```text
+flight_logs/of_compare/${RUN_ID}/images_dataset/
+flight_logs/of_compare/${RUN_ID}/images_dataset/images.csv
+```
+
+The comparison CSV is timer-sampled at `logger_publish_rate_hz`, but raw IMU
+and optical-flow messages are also written directly from their ROS callbacks.
+Those raw logs preserve the variable source rate MAVROS is delivering at that
+instant:
+
+```text
+flight_logs/of_compare/${RUN_ID}/imu_raw.csv
+flight_logs/of_compare/${RUN_ID}/optical_flow_raw.csv
+flight_logs/of_compare/${RUN_ID}/state_raw.csv
+flight_logs/of_compare/${RUN_ID}/mocap_raw.csv
+flight_logs/of_compare/${RUN_ID}/px4_vision_pose_raw.csv
+flight_logs/of_compare/${RUN_ID}/px4_local_pose_raw.csv
+```
+
+RigidBody4 mocap is rotated by the external-pose bridge with a yaw of `pi`.
+Use the transformed waypoint file with the normal studio perimeter:
+
+```text
+ros2/src/drone_bringup/config/minjerk_waypoints_rigidbody4_external.yaml
+ros2/src/drone_bringup/config/drone_studio_perimeter.yaml
+```
+
+The raw mirrored RigidBody4 files are only for a no-transform setup:
+`minjerk_waypoints_rigidbody4.yaml` and
+`drone_studio_perimeter_rigidbody4.yaml`.
+
+For the first cdrone4 drift-stabilization run, use the indoor profile:
+
+```text
+ros2/src/drone_bringup/config/indoor_speed_profile.yaml
+```
+
+This profile limits horizontal cruise, max velocity, acceleration, and jerk. It
+does not change low-level PX4 position-loop gains, and the mission node should
+restore the FCU's original values on exit.
+
+### Copy/Paste cdrone4 Run Commands
+
+Terminal 1, MAVLink router:
+
+```bash
+/home/jetson/.local/bin/start_mavlink_router.sh
+```
+
+Terminal 2, build and launch:
+
+```bash
+cd /home/jetson/cdrone_control/ros2
+source /opt/ros/humble/setup.bash
+colcon build --packages-select drone_msgs drone_control_pkg drone_bringup
+
+cd /home/jetson/cdrone_control
+source /opt/ros/humble/setup.bash
+source ros2/install/setup.bash
+
+RUN_ID="minjerk_of_cdrone4_rb4_of_$(date -u +%Y%m%dT%H%M%SZ)"
+
+scripts/run_minjerk_of_compare.sh \
+  --waypoints-config /home/jetson/cdrone_control/ros2/src/drone_bringup/config/minjerk_waypoints_rigidbody4_external.yaml \
+  --output-dir /home/jetson/cdrone_control/flight_logs/of_compare \
+  --run-id "${RUN_ID}" \
+  --request-sensor-stream-rates \
+  --imu-stream-rate-hz 250 \
+  --flow-stream-rate-hz 70 \
+  --capture-images \
+  --image-rate-hz 2 \
+  --image-format jpg \
+  -- \
+  drone_id:=cdrone4 \
+  drone_namespace:=/cdrone/cdrone4 \
+  mavros_namespace:=/cdrone/cdrone4/mavros \
+  mocap_namespace:=/cdrone/cdrone4/vrpn_mocap \
+  rigid_body_name:=RigidBody4 \
+  source_pose_topic:=/cdrone/cdrone4/vrpn_mocap/RigidBody4/pose \
+  mocap_pose_topic:=/cdrone/cdrone4/external_pose/input_pose \
+  frame_rpy_rad:="[0.0, 0.0, 3.141592653589793]" \
+  perimeter_config:=/home/jetson/cdrone_control/ros2/src/drone_bringup/config/drone_studio_perimeter.yaml \
+  setpoint_topic:=/cdrone/cdrone4/mavros/setpoint_position/local \
+  mission_state_topic:=/cdrone/cdrone4/demo/minjerk_waypoints_state \
+  mavros_state_topic:=/cdrone/cdrone4/mavros/state \
+  px4_local_pose_topic:=/cdrone/cdrone4/mavros/local_position/pose \
+  px4_vision_pose_topic:=/cdrone/cdrone4/mavros/vision_pose/pose \
+  start_service:=/cdrone/cdrone4/demo/minjerk_waypoints_start \
+  abort_service:=/cdrone/cdrone4/demo/minjerk_waypoints_abort \
+  flow_rad_topic:=/cdrone/cdrone4/mavros/px4flow/raw/optical_flow_rad \
+  flow_range_topic:=/cdrone/cdrone4/mavros/px4flow/ground_distance \
+  imu_topic:=/cdrone/cdrone4/mavros/imu/data \
+  fused_pose_topic:=/cdrone/cdrone4/of_compare/fused_pose \
+  imu_only_pose_topic:=/cdrone/cdrone4/of_compare/imu_only_pose \
+  use_speed_profile:=true \
+  speed_profile_config:=/home/jetson/cdrone_control/ros2/src/drone_bringup/config/indoor_speed_profile.yaml \
+  restore_speed_profile_on_exit:=true \
+  quality_min:=20 \
+  range_min_m:=0.3 \
+  range_max_m:=4.5 \
+  fusion_enabled:=true \
+  imu_only_enabled:=true \
+  fusion_max_sensor_age_s:=0.15 \
+  fusion_max_flow_gap_s:=0.25
+```
+
+Terminal 3, pre-start checks:
+
+```bash
+cd /home/jetson/cdrone_control
+source /opt/ros/humble/setup.bash
+source ros2/install/setup.bash
+
+ros2 topic list | rg '^/cdrone/cdrone4/'
+
+lsusb | rg -i 'stereolabs|zed'
+lsusb -t | rg '5000M|STEREOLABS|ZED|uvcvideo'
+python3 -c "import pyzed.sl as sl; print(sl.Camera.get_sdk_version())"
+
+ros2 param get /mavlink_stream_rate_node enabled
+ros2 param get /mavlink_stream_rate_node imu_rate_hz
+ros2 param get /mavlink_stream_rate_node flow_rate_hz
+ros2 param get /zed_image_capture_node enabled
+ros2 param get /zed_image_capture_node rate_hz
+ros2 param get /zed_image_capture_node image_format
+
+ros2 topic echo --once /cdrone/cdrone4/demo/minjerk_waypoints_state
+ros2 topic echo --once /cdrone/cdrone4/mavros/state
+ros2 topic echo --once /cdrone/cdrone4/mavros/local_position/pose
+ros2 topic echo --once /cdrone/cdrone4/mavros/vision_pose/pose
+timeout 10 ros2 topic hz /cdrone/cdrone4/mavros/imu/data
+scripts/check_px4flow_topics.sh --mavros-namespace /cdrone/cdrone4/mavros --no-request-stream --duration 10
+ros2 topic echo --once /cdrone/cdrone4/mavros/px4flow/raw/optical_flow_rad
+ros2 topic echo --once /cdrone/cdrone4/mavros/px4flow/ground_distance
+ros2 topic echo --once /cdrone/cdrone4/external_pose/debug/summary
+ros2 topic echo --once /cdrone/cdrone4/external_pose/input_pose
+ros2 node info /cdrone/cdrone4/external_pose_bridge_node | sed -n '/Subscribers:/,/Publishers:/p'
+ros2 param get /cdrone/cdrone4/mavros/param EKF2_EV_CTRL
+ros2 param get /cdrone/cdrone4/mavros/param EKF2_OF_CTRL
+ros2 topic echo --once /cdrone/cdrone4/of_compare/fused_pose
+ros2 topic echo --once /cdrone/cdrone4/of_compare/imu_only_pose
+ros2 param get /minjerk_waypoint_mission_node waypoints_config
+ros2 param get /minjerk_waypoint_mission_node perimeter_config
+ros2 param get /minjerk_waypoint_mission_node speed_profile_config
+ros2 param get /mocap_of_compare_logger_node fusion_enabled
+ros2 param get /mocap_of_compare_logger_node imu_only_enabled
+ros2 param get /mocap_of_compare_logger_node mavros_state_topic
+ros2 param get /mocap_of_compare_logger_node px4_local_pose_topic
+ros2 param get /mocap_of_compare_logger_node px4_vision_pose_topic
+
+ls -lh "/home/jetson/cdrone_control/flight_logs/of_compare/${RUN_ID}/images_dataset" | tail
+sed -n '1,5p' "/home/jetson/cdrone_control/flight_logs/of_compare/${RUN_ID}/images_dataset/images.csv"
+```
+
+Expected before start:
+
+- mission state is `IDLE`
+- MAVROS is `connected: true`, `armed: false`, and normally `AUTO.LOITER`
+- RigidBody4 external pose is fresh, transformed to frame `map`, and has no
+  source timeout or source-gap warnings
+- `/cdrone/cdrone4/external_pose_bridge_node` subscribes to
+  `/cdrone/cdrone4/external_pose/input_pose` only for PX4 vision input; it
+  must not subscribe to `/cdrone/cdrone4/vio/input_pose`
+- PX4 estimator aiding is mocap/external-vision only for position control:
+  `EKF2_EV_CTRL` is enabled for external vision and `EKF2_OF_CTRL` is `0`.
+  PX4's onboard IMU remains part of its internal attitude estimator; the ROS
+  `/mavros/imu/data` topic is only logged by this run.
+- the ZED 2i appears on USB3 at `5000M`, the SDK import prints a version, and
+  `/zed_image_capture_node` has `enabled=True`, `rate_hz=2.0`, and
+  `image_format=jpg`
+- PX4Flow raw and range topics pass the checker, preferably with at least 80%
+  integration coverage after the launch-time 70 Hz stream request
+- `/cdrone/cdrone4/mavros/imu/data` is materially above the old 20 Hz logger
+  rate after the launch-time 250 Hz IMU stream request
+- PX4Flow quality is above `quality_min` and range is finite; range may be
+  rejected while the vehicle is sitting below `0.3 m`, but should become valid
+  after takeoff
+- image files and `images.csv` are appearing under
+  `flight_logs/of_compare/${RUN_ID}/images_dataset/`
+- mission waypoints are `minjerk_waypoints_rigidbody4_external.yaml`
+- perimeter is `drone_studio_perimeter.yaml`
+- speed profile is `indoor_speed_profile.yaml`
+- logger has `fusion_enabled=True` and `imu_only_enabled=True`
+
+### Manual STABILIZED Hover Diagnostics
+
+The previous hover attempt did not fly in `STABILIZED`; it armed in
+`AUTO.TAKEOFF`, aborted during takeoff, briefly requested `AUTO.LAND`, was
+force-disarmed, and later returned to `POSCTL`. Do not run the autonomous
+waypoint follower in `STABILIZED`: that mode does not follow ROS position
+setpoints or hold altitude/position autonomously.
+
+Use this diagnostic to log the same sensors and PX4 pose paths while the
+operator manually flies a short STABILIZED hover. Launch the stack, keep the
+mission state at `IDLE`, and do not call the start service.
+
+```bash
+RUN_ID="stabilized_hover_cdrone4_rb4_diag_$(date -u +%Y%m%dT%H%M%SZ)"
+
+scripts/run_minjerk_of_compare.sh \
+  --waypoints-config /home/jetson/cdrone_control/ros2/src/drone_bringup/config/minjerk_waypoints_rigidbody4_external.yaml \
+  --output-dir /home/jetson/cdrone_control/flight_logs/of_compare \
+  --run-id "${RUN_ID}" \
+  --request-sensor-stream-rates \
+  --imu-stream-rate-hz 250 \
+  --flow-stream-rate-hz 70 \
+  --capture-images \
+  --image-rate-hz 2 \
+  --image-format jpg \
+  -- \
+  drone_id:=cdrone4 \
+  drone_namespace:=/cdrone/cdrone4 \
+  mavros_namespace:=/cdrone/cdrone4/mavros \
+  mocap_namespace:=/cdrone/cdrone4/vrpn_mocap \
+  rigid_body_name:=RigidBody4 \
+  source_pose_topic:=/cdrone/cdrone4/vrpn_mocap/RigidBody4/pose \
+  mocap_pose_topic:=/cdrone/cdrone4/external_pose/input_pose \
+  frame_rpy_rad:="[0.0, 0.0, 3.141592653589793]" \
+  perimeter_config:=/home/jetson/cdrone_control/ros2/src/drone_bringup/config/drone_studio_perimeter.yaml \
+  setpoint_topic:=/cdrone/cdrone4/mavros/setpoint_position/local \
+  mission_state_topic:=/cdrone/cdrone4/demo/minjerk_waypoints_state \
+  mavros_state_topic:=/cdrone/cdrone4/mavros/state \
+  px4_local_pose_topic:=/cdrone/cdrone4/mavros/local_position/pose \
+  px4_vision_pose_topic:=/cdrone/cdrone4/mavros/vision_pose/pose \
+  start_service:=/cdrone/cdrone4/demo/minjerk_waypoints_start \
+  abort_service:=/cdrone/cdrone4/demo/minjerk_waypoints_abort \
+  flow_rad_topic:=/cdrone/cdrone4/mavros/px4flow/raw/optical_flow_rad \
+  flow_range_topic:=/cdrone/cdrone4/mavros/px4flow/ground_distance \
+  imu_topic:=/cdrone/cdrone4/mavros/imu/data \
+  fused_pose_topic:=/cdrone/cdrone4/of_compare/fused_pose \
+  imu_only_pose_topic:=/cdrone/cdrone4/of_compare/imu_only_pose \
+  use_speed_profile:=false \
+  restore_speed_profile_on_exit:=false \
+  quality_min:=20 \
+  range_min_m:=0.3 \
+  range_max_m:=4.5 \
+  fusion_enabled:=true \
+  imu_only_enabled:=true \
+  fusion_max_sensor_age_s:=0.15 \
+  fusion_max_flow_gap_s:=0.25
+```
+
+Before arming in QGC/operator setup:
+
+- select `STABILIZED` before arming
+- confirm RC/manual input is active and the kill/disarm switch is ready
+- keep `EKF2_OF_CTRL=0`; optical flow, VIO, ROS fusion, and ZED images are
+  logging-only
+- confirm `/cdrone/cdrone4/mavros/vision_pose/pose` is mocap/external-vision
+  input from `RigidBody4`, not VIO or optical-flow fusion
+
+Monitor during the manual hover:
+
+```bash
+while true; do
+  date -u +"[stabilized-hover-cdrone4-rb4] %H:%M:%S UTC"
+  ros2 topic echo --once /cdrone/cdrone4/mavros/state 2>/dev/null | rg 'connected:|armed:|guided:|manual_input:|mode:|system_status:'
+  ros2 topic echo --once /cdrone/cdrone4/mavros/local_position/pose 2>/dev/null | rg 'x:|y:|z:' | head -6
+  ros2 topic echo --once /cdrone/cdrone4/mavros/vision_pose/pose 2>/dev/null | rg 'x:|y:|z:' | head -6
+  ros2 topic echo --once /cdrone/cdrone4/external_pose/debug/summary 2>/dev/null | sed -n '1,12p'
+  tail -n 3 "/home/jetson/cdrone_control/flight_logs/of_compare/${RUN_ID}/state_raw.csv" 2>/dev/null
+  tail -n 3 "/home/jetson/cdrone_control/flight_logs/of_compare/${RUN_ID}/mocap_raw.csv" 2>/dev/null
+  tail -n 3 "/home/jetson/cdrone_control/flight_logs/of_compare/${RUN_ID}/px4_vision_pose_raw.csv" 2>/dev/null
+  tail -n 3 "/home/jetson/cdrone_control/flight_logs/of_compare/${RUN_ID}/px4_local_pose_raw.csv" 2>/dev/null
+  tail -n 3 "/home/jetson/cdrone_control/flight_logs/of_compare/${RUN_ID}/imu_raw.csv" 2>/dev/null
+  find "/home/jetson/cdrone_control/flight_logs/of_compare/${RUN_ID}/images_dataset" -maxdepth 1 -name '*.jpg' 2>/dev/null | wc -l
+  sleep 1
+done
+```
+
+Abort/force-disarm are emergency actions only; for this manual test, the
+operator normally lands and disarms from the RC/QGC controls. After disarm,
+generate the diagnostics:
+
+```bash
+scripts/of_compare_stats.py "flight_logs/of_compare/${RUN_ID}/of_mocap_compare.csv" --plots
+```
+
+If the start service rejects with `global origin is missing`, publish a fresh
+transient-local copy of the indoor origin, then start again:
+
+```bash
+ros2 topic pub --once \
+  --qos-reliability reliable \
+  --qos-durability transient_local \
+  /cdrone/cdrone4/mavros/global_position/gp_origin \
+  geographic_msgs/msg/GeoPointStamped \
+  "{header: {frame_id: earth}, position: {latitude: 0.0, longitude: 0.0, altitude: 17.163000000000004}}"
+```
+
+After a fresh operator go/no-go, start:
+
+```bash
+ros2 service call /cdrone/cdrone4/demo/minjerk_waypoints_start std_srvs/srv/Trigger "{}"
+```
+
+Monitor state, arming, mode, local pose, external pose health, logs, and image
+count:
+
+```bash
+while true; do
+  date -u +"[minjerk-cdrone4-rb4] %H:%M:%S UTC"
+  ros2 topic echo --once /cdrone/cdrone4/demo/minjerk_waypoints_state 2>/dev/null | sed -n '1,4p'
+  ros2 topic echo --once /cdrone/cdrone4/mavros/state 2>/dev/null | rg 'connected:|armed:|mode:|system_status:'
+  ros2 topic echo --once /cdrone/cdrone4/mavros/local_position/pose 2>/dev/null | rg 'x:|y:|z:' | head -6
+  ros2 topic echo --once /cdrone/cdrone4/external_pose/debug/summary 2>/dev/null | sed -n '1,12p'
+  tail -n 3 "/home/jetson/cdrone_control/flight_logs/of_compare/${RUN_ID}/fusion_events.csv" 2>/dev/null
+  tail -n 3 "/home/jetson/cdrone_control/flight_logs/of_compare/${RUN_ID}/of_mocap_compare.csv" 2>/dev/null
+  tail -n 3 "/home/jetson/cdrone_control/flight_logs/of_compare/${RUN_ID}/imu_raw.csv" 2>/dev/null
+  tail -n 3 "/home/jetson/cdrone_control/flight_logs/of_compare/${RUN_ID}/optical_flow_raw.csv" 2>/dev/null
+  find "/home/jetson/cdrone_control/flight_logs/of_compare/${RUN_ID}/images_dataset" -maxdepth 1 -name '*.jpg' 2>/dev/null | wc -l
+  sleep 2
+done
+```
+
+Abort immediately on operator command, stale external pose, FCU disconnect,
+unexpected mode behavior, perimeter violation, uncontrolled drift, or a bad
+takeoff. For this cdrone4 drift run, also abort if takeoff/hover forward drift
+exceeds about `0.5 m` or position error grows steadily for more than `3 s`.
+
+```bash
+ros2 service call /cdrone/cdrone4/demo/minjerk_waypoints_abort std_srvs/srv/Trigger "{}"
+```
+
+After abort or landing, verify safe state, restored parameters, image capture,
+and post-run stats:
+
+```bash
+ros2 topic echo --once /cdrone/cdrone4/mavros/state
+ros2 topic echo --once /cdrone/cdrone4/mavros/local_position/pose
+
+ros2 service call /cdrone/cdrone4/mavros/param/get_parameters \
+  rcl_interfaces/srv/GetParameters \
+  "{names: [MIS_TAKEOFF_ALT, MPC_XY_CRUISE, MPC_XY_VEL_MAX, MPC_ACC_HOR, MPC_JERK_AUTO, MPC_JERK_MAX, MPC_TKO_SPEED, MPC_Z_V_AUTO_UP, MPC_Z_V_AUTO_DN, MPC_Z_VEL_MAX_DN, MPC_LAND_SPEED]}"
+
+wc -l "/home/jetson/cdrone_control/flight_logs/of_compare/${RUN_ID}/images_dataset/images.csv"
+scripts/of_compare_stats.py "flight_logs/of_compare/${RUN_ID}/of_mocap_compare.csv" --plots
+```
+
+If PX4 remains in an undesired mode after the vehicle is safely disarmed, return
+it to loiter:
+
+```bash
+ros2 service call /cdrone/cdrone4/mavros/set_mode mavros_msgs/srv/SetMode "{base_mode: 0, custom_mode: 'AUTO.LOITER'}"
+```
+
 ## Start
 
 Run this only after the launch command above is still running, MAVROS is
@@ -247,7 +608,7 @@ connected, mocap is live, PX4Flow topics pass the checker, and the props-off
 frame sanity check passes:
 
 ```bash
-ros2 service call /cdrone/cdrone3/demo/minjerk_waypoints_start std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone4/demo/minjerk_waypoints_start std_srvs/srv/Trigger "{}"
 ```
 
 The mission will take off, switch to OFFBOARD, run the minimum-jerk waypoint
@@ -257,7 +618,7 @@ the existing cleanup path.
 ## Abort
 
 ```bash
-ros2 service call /cdrone/cdrone3/demo/minjerk_waypoints_abort std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone4/demo/minjerk_waypoints_abort std_srvs/srv/Trigger "{}"
 ```
 
 ## Outputs
@@ -273,6 +634,18 @@ Raw callback events and resolved launch/runtime configuration are written to:
 ```text
 flight_logs/of_compare/<run_id>/fusion_events.csv
 flight_logs/of_compare/<run_id>/run_metadata.json
+```
+
+Variable-rate raw sensor logs are written at callback cadence, not at the
+comparison CSV timer rate:
+
+```text
+flight_logs/of_compare/<run_id>/imu_raw.csv
+flight_logs/of_compare/<run_id>/optical_flow_raw.csv
+flight_logs/of_compare/<run_id>/state_raw.csv
+flight_logs/of_compare/<run_id>/mocap_raw.csv
+flight_logs/of_compare/<run_id>/px4_vision_pose_raw.csv
+flight_logs/of_compare/<run_id>/px4_local_pose_raw.csv
 ```
 
 Important columns:
@@ -299,6 +672,11 @@ Important columns:
 - source/receive timestamps, age, frame, flow sequence, inter-message interval,
   and integration-coverage columns
 - `flow_quality`, `flow_distance_m`, `range_m`, `sample_valid`
+- `px4_mode`, `px4_armed`, `px4_connected`, local pose columns,
+  vision-pose-input columns, and local/vision-vs-mocap XY error columns
+- raw sensor logs include `source_dt_s`, `receive_dt_s`, `source_rate_hz`, and
+  `receive_rate_hz` so delivered IMU and optical-flow rates can vary sample by
+  sample
 
 At `COMPLETE`, the logger zeroes estimator velocities and freezes OF, IMU-only,
 and fused poses so post-landing callbacks cannot inflate drift metrics.
@@ -316,6 +694,11 @@ flight_logs/of_compare/<run_id>/report/summary.json
 flight_logs/of_compare/<run_id>/report/summary.md
 flight_logs/of_compare/<run_id>/report/drift_timeseries.csv
 flight_logs/of_compare/<run_id>/report/fusion_timeseries.csv
+flight_logs/of_compare/<run_id>/report/plots/flight_mode_over_time.png
+flight_logs/of_compare/<run_id>/report/plots/px4_imu_health_over_time.png
+flight_logs/of_compare/<run_id>/report/plots/mocap_health_over_time.png
+flight_logs/of_compare/<run_id>/report/plots/px4_pose_vs_mocap_over_time.png
+flight_logs/of_compare/<run_id>/report/plots/px4_vision_input_vs_mocap_over_time.png
 ```
 
 The stats include separate X, Y, Z, horizontal XY, and 3D error summaries,
@@ -360,7 +743,8 @@ snapshots rather than every IMU callback. New runs should use
   checks each waypoint and each leg before arming.
 - `sample_valid=0`: inspect `reject_reason`, `flow_quality`, and range columns.
 - `fusion_pose_valid=0`: confirm the estimator received mocap at startup and
-  the launch stack is publishing `/cdrone/cdrone3/mavros/imu/data`.
+  the launch stack is publishing the configured IMU topic. For the cdrone4
+  RigidBody4 run, that is `/cdrone/cdrone4/mavros/imu/data`.
 - `fusion_flow_valid=0`: inspect `fusion_reject_reason`, `flow_quality`, and
   range columns, then inspect NIS, gyro source, sensor age, and integration
   coverage.
