@@ -74,6 +74,11 @@ except Exception:  # pragma: no cover - platform specific
     rs = None
 
 try:
+    import pyzed.sl as sl
+except Exception:  # pragma: no cover - platform specific
+    sl = None
+
+try:
     from norfair import Detection, Tracker
 except Exception:  # pragma: no cover - platform specific
     Detection = None
@@ -269,6 +274,60 @@ def compute_mean_depth(
     return float(np.median(crop[mask]))
 
 
+def normalize_zed_enum_name(
+    value: object,
+    *,
+    parameter_name: str,
+    allowed: set[str],
+) -> str:
+    normalized = str(value or "").strip().upper()
+    if normalized in allowed:
+        return normalized
+    options = ", ".join(sorted(name.lower() for name in allowed))
+    raise ValueError(f"{parameter_name} must be one of: {options}")
+
+
+def normalize_zed_flip_mode(value: object) -> str:
+    if isinstance(value, bool):
+        return "ON" if value else "OFF"
+    normalized = str(value or "").strip().upper()
+    aliases = {
+        "TRUE": "ON",
+        "YES": "ON",
+        "1": "ON",
+        "FALSE": "OFF",
+        "NO": "OFF",
+        "0": "OFF",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized in {"ON", "OFF", "AUTO"}:
+        return normalized
+    raise ValueError("zed_flip_mode must be one of: ON, OFF, AUTO")
+
+
+def normalize_zed_image_view(value: object) -> str:
+    normalized = str(value or "").strip().upper()
+    aliases = {
+        "L": "LEFT_BGR",
+        "LEFT": "LEFT_BGR",
+        "LEFT_COLOR": "LEFT_BGR",
+        "LEFT_BGR": "LEFT_BGR",
+        "R": "RIGHT_BGR",
+        "RIGHT": "RIGHT_BGR",
+        "RIGHT_COLOR": "RIGHT_BGR",
+        "RIGHT_BGR": "RIGHT_BGR",
+    }
+    result = aliases.get(normalized)
+    if result is not None:
+        return result
+    raise ValueError("zed_image_view must be one of: left, left_bgr, right, right_bgr")
+
+
+def zed_timestamp_key(timestamp_ns: int) -> tuple[int, int]:
+    timestamp_ns = int(timestamp_ns)
+    return (timestamp_ns // 1_000_000_000, timestamp_ns % 1_000_000_000)
+
+
 def bbox_to_dict(
     bbox: list[float] | tuple[float, float, float, float] | None,
 ) -> dict[str, float] | None:
@@ -407,6 +466,15 @@ class RealsenseTrackerNode(Node):
         self.declare_parameter("direct_depth_width", 848)
         self.declare_parameter("direct_depth_height", 480)
         self.declare_parameter("direct_depth_fps", 15)
+        self.declare_parameter("zed_camera_resolution", "HD720")
+        self.declare_parameter("zed_camera_fps", 30)
+        self.declare_parameter("zed_depth_mode", "PERFORMANCE")
+        self.declare_parameter("zed_coordinate_system", "RIGHT_HANDED_Z_UP_X_FWD")
+        self.declare_parameter("zed_coordinate_units", "METER")
+        self.declare_parameter("zed_flip_mode", "ON")
+        self.declare_parameter("zed_depth_minimum_distance_m", 0.3)
+        self.declare_parameter("zed_depth_maximum_distance_m", 20.0)
+        self.declare_parameter("zed_image_view", "left")
         self.declare_parameter("mavros_namespace", configured_mavros_namespace())
         self.declare_parameter("record_mission_video", True)
         self.declare_parameter("recording_output_dir", "mission_recordings")
@@ -528,6 +596,27 @@ class RealsenseTrackerNode(Node):
         self.direct_depth_width = int(self.get_parameter("direct_depth_width").value)
         self.direct_depth_height = int(self.get_parameter("direct_depth_height").value)
         self.direct_depth_fps = int(self.get_parameter("direct_depth_fps").value)
+        self.zed_camera_resolution = str(
+            self.get_parameter("zed_camera_resolution").value
+        ).strip()
+        self.zed_camera_fps = int(self.get_parameter("zed_camera_fps").value)
+        self.zed_depth_mode = str(self.get_parameter("zed_depth_mode").value).strip()
+        self.zed_coordinate_system = str(
+            self.get_parameter("zed_coordinate_system").value
+        ).strip()
+        self.zed_coordinate_units = str(
+            self.get_parameter("zed_coordinate_units").value
+        ).strip()
+        self.zed_flip_mode = self.get_parameter("zed_flip_mode").value
+        self.zed_depth_minimum_distance_m = float(
+            self.get_parameter("zed_depth_minimum_distance_m").value
+        )
+        self.zed_depth_maximum_distance_m = float(
+            self.get_parameter("zed_depth_maximum_distance_m").value
+        )
+        self.zed_image_view_name = str(
+            self.get_parameter("zed_image_view").value
+        ).strip()
         self.mavros_namespace = (
             str(self.get_parameter("mavros_namespace").value).strip()
             or configured_mavros_namespace()
@@ -609,10 +698,10 @@ class RealsenseTrackerNode(Node):
             for value in self.get_parameter("camera_rpy_body_rad").value
         ]
 
-        if self.source_mode not in {"direct", "ros"}:
+        if self.source_mode not in {"direct", "ros", "zed_sdk"}:
             raise RuntimeError(
-                "Unsupported source_mode. Expected 'direct' or 'ros', got "
-                f"'{self.source_mode}'."
+                "Unsupported source_mode. Expected 'direct', 'ros', or "
+                f"'zed_sdk', got '{self.source_mode}'."
             )
         if cv2 is None or YOLO is None or Detection is None or Tracker is None:
             raise RuntimeError(
@@ -626,6 +715,10 @@ class RealsenseTrackerNode(Node):
         if self.source_mode == "direct" and rs is None:
             raise RuntimeError(
                 "Direct source_mode requires pyrealsense2 to be installed."
+            )
+        if self.source_mode == "zed_sdk" and sl is None:
+            raise RuntimeError(
+                "ZED SDK source_mode requires pyzed.sl to be installed."
             )
 
         self.model_path = resolve_model_path(
@@ -670,6 +763,11 @@ class RealsenseTrackerNode(Node):
         self.cached_body_track_debug: dict[int, dict[str, object]] = {}
         self.rs_pipeline = None
         self.rs_align = None
+        self.zed_camera = None
+        self.zed_runtime = None
+        self.zed_color_mat = None
+        self.zed_depth_mat = None
+        self.zed_image_view = None
         self.depth_scale_m = 0.001
         self.latest_compare_pose: PoseStamped | None = None
         self.latest_engagement_state = EngagementState()
@@ -720,8 +818,10 @@ class RealsenseTrackerNode(Node):
                 self.camera_info_callback,
                 qos_profile_sensor_data,
             )
-        else:
+        elif self.source_mode == "direct":
             self._start_direct_pipeline()
+        else:
+            self._start_zed_sdk_pipeline()
 
         if self.publish_world_tracks:
             self.create_subscription(
@@ -892,6 +992,19 @@ class RealsenseTrackerNode(Node):
             finally:
                 self.rs_pipeline = None
                 self.rs_align = None
+        if self.zed_camera is not None:
+            try:
+                self.zed_camera.close()
+            except Exception as exc:  # pragma: no cover - device specific cleanup
+                self.get_logger().warn(
+                    f"Closing direct ZED SDK camera raised: {exc}"
+                )
+            finally:
+                self.zed_camera = None
+                self.zed_runtime = None
+                self.zed_color_mat = None
+                self.zed_depth_mat = None
+                self.zed_image_view = None
         return super().destroy_node()
 
     def color_callback(self, msg: Image) -> None:
@@ -1996,6 +2109,11 @@ class RealsenseTrackerNode(Node):
             if direct_frame is None:
                 return
             frame, depth_frame, stamp_key = direct_frame
+        elif self.source_mode == "zed_sdk":
+            zed_frame = self._read_zed_sdk_frame()
+            if zed_frame is None:
+                return
+            frame, depth_frame, stamp_key = zed_frame
         else:
             color_msg = self.latest_color_msg
             if color_msg is None:
@@ -2200,6 +2318,124 @@ class RealsenseTrackerNode(Node):
 
         frame_number = int(color_frame.get_frame_number())
         return color, depth, (frame_number, 0)
+
+    def _start_zed_sdk_pipeline(self) -> None:
+        assert sl is not None
+
+        resolution_name = normalize_zed_enum_name(
+            self.zed_camera_resolution,
+            parameter_name="zed_camera_resolution",
+            allowed={name for name in dir(sl.RESOLUTION) if name.isupper()},
+        )
+        depth_mode_name = normalize_zed_enum_name(
+            self.zed_depth_mode,
+            parameter_name="zed_depth_mode",
+            allowed={name for name in dir(sl.DEPTH_MODE) if name.isupper()},
+        )
+        coordinate_system_name = normalize_zed_enum_name(
+            self.zed_coordinate_system,
+            parameter_name="zed_coordinate_system",
+            allowed={name for name in dir(sl.COORDINATE_SYSTEM) if name.isupper()},
+        )
+        coordinate_units_name = normalize_zed_enum_name(
+            self.zed_coordinate_units,
+            parameter_name="zed_coordinate_units",
+            allowed={name for name in dir(sl.UNIT) if name.isupper()},
+        )
+        flip_name = normalize_zed_flip_mode(self.zed_flip_mode)
+        image_view_name = normalize_zed_image_view(self.zed_image_view_name)
+
+        init = sl.InitParameters()
+        init.camera_resolution = getattr(sl.RESOLUTION, resolution_name)
+        init.camera_fps = max(int(self.zed_camera_fps), 1)
+        init.depth_mode = getattr(sl.DEPTH_MODE, depth_mode_name)
+        init.coordinate_system = getattr(sl.COORDINATE_SYSTEM, coordinate_system_name)
+        init.coordinate_units = getattr(sl.UNIT, coordinate_units_name)
+        init.camera_image_flip = getattr(sl.FLIP_MODE, flip_name)
+        init.depth_minimum_distance = float(self.zed_depth_minimum_distance_m)
+        init.depth_maximum_distance = float(self.zed_depth_maximum_distance_m)
+
+        self.zed_camera = sl.Camera()
+        status = self.zed_camera.open(init)
+        if status != sl.ERROR_CODE.SUCCESS:
+            self.zed_camera = None
+            raise RuntimeError(f"Could not open ZED SDK camera: {status}")
+
+        calibration = (
+            self.zed_camera.get_camera_information()
+            .camera_configuration
+            .calibration_parameters
+        )
+        left_cam = calibration.left_cam
+        self.projector.set_intrinsics(
+            fx=float(left_cam.fx),
+            fy=float(left_cam.fy),
+            cx=float(left_cam.cx),
+            cy=float(left_cam.cy),
+        )
+
+        self.zed_runtime = sl.RuntimeParameters()
+        self.zed_runtime.enable_depth = True
+        self.zed_color_mat = sl.Mat()
+        self.zed_depth_mat = sl.Mat()
+        self.zed_image_view = getattr(sl.VIEW, image_view_name)
+        self.depth_scale_m = 1.0
+
+        self.get_logger().info(
+            "Started direct ZED SDK pipeline: "
+            f"resolution={resolution_name}, fps={init.camera_fps}, "
+            f"depth_mode={depth_mode_name}, image_view={image_view_name}, "
+            f"depth_range={init.depth_minimum_distance:.2f}-"
+            f"{init.depth_maximum_distance:.2f}m, "
+            f"intrinsics=fx:{float(left_cam.fx):.1f} fy:{float(left_cam.fy):.1f} "
+            f"cx:{float(left_cam.cx):.1f} cy:{float(left_cam.cy):.1f}"
+        )
+
+    def _read_zed_sdk_frame(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray | None, tuple[int, int]] | None:
+        if (
+            self.zed_camera is None
+            or self.zed_runtime is None
+            or self.zed_color_mat is None
+            or self.zed_depth_mat is None
+            or self.zed_image_view is None
+        ):
+            return None
+        assert sl is not None
+
+        status = self.zed_camera.grab(self.zed_runtime)
+        if status != sl.ERROR_CODE.SUCCESS:
+            self._warn_throttled(
+                f"Waiting for direct ZED SDK frames failed: {status}",
+                attr_name="last_wait_warn_s",
+            )
+            return None
+
+        self.zed_camera.retrieve_image(self.zed_color_mat, self.zed_image_view)
+        self.zed_camera.retrieve_measure(self.zed_depth_mat, sl.MEASURE.DEPTH)
+        color = self.zed_color_mat.get_data()
+        if color is None or color.ndim < 3 or color.shape[2] < 3:
+            self._warn_throttled(
+                "Waiting for the first color frame from the direct ZED SDK "
+                "pipeline.",
+                attr_name="last_wait_warn_s",
+            )
+            return None
+        color_bgr = np.ascontiguousarray(color[:, :, :3])
+
+        depth = self.zed_depth_mat.get_data()
+        depth_m = None
+        if depth is not None:
+            depth_m = np.asarray(depth, dtype=np.float32)
+            if depth_m.ndim == 3:
+                depth_m = depth_m[:, :, 0]
+            depth_m = np.ascontiguousarray(depth_m)
+
+        timestamp_ns = int(
+            self.zed_camera.get_timestamp(sl.TIME_REFERENCE.IMAGE).get_nanoseconds()
+        )
+        return color_bgr, depth_m, zed_timestamp_key(timestamp_ns)
 
     def _build_body_tracks(
         self,
@@ -2693,6 +2929,18 @@ class RealsenseTrackerNode(Node):
                 "direct_depth_width": int(self.direct_depth_width),
                 "direct_depth_height": int(self.direct_depth_height),
                 "direct_depth_fps": int(self.direct_depth_fps),
+                "zed_camera_resolution": self.zed_camera_resolution,
+                "zed_camera_fps": int(self.zed_camera_fps),
+                "zed_depth_mode": self.zed_depth_mode,
+                "zed_coordinate_system": self.zed_coordinate_system,
+                "zed_coordinate_units": self.zed_coordinate_units,
+                "zed_depth_minimum_distance_m": float(
+                    self.zed_depth_minimum_distance_m
+                ),
+                "zed_depth_maximum_distance_m": float(
+                    self.zed_depth_maximum_distance_m
+                ),
+                "zed_image_view": self.zed_image_view_name,
                 "depth_scale_m": float(self.depth_scale_m),
             },
             "counts": {
