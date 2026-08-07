@@ -196,6 +196,7 @@ class PositionGotoDemoSequenceNode(Node):
         self.declare_parameter("use_speed_profile", False)
         self.declare_parameter("speed_profile_config", "")
         self.declare_parameter("restore_speed_profile_on_exit", True)
+        self.declare_parameter("offboard_hold_test", False)
         self.declare_parameter("offboard_setpoint_warmup_s", 1.5)
         self.declare_parameter("goal_frame_id", "map")
         self.declare_parameter("goal_x_m", 0.5)
@@ -308,6 +309,9 @@ class PositionGotoDemoSequenceNode(Node):
         ).strip()
         self.restore_speed_profile_on_exit = bool(
             self.get_parameter("restore_speed_profile_on_exit").value
+        )
+        self.offboard_hold_test = bool(
+            self.get_parameter("offboard_hold_test").value
         )
         self.offboard_setpoint_warmup_s = float(
             self.get_parameter("offboard_setpoint_warmup_s").value
@@ -1275,7 +1279,7 @@ class PositionGotoDemoSequenceNode(Node):
             return False, "FCU is not connected"
         if not self.pose_fresh():
             return False, "local pose is stale or missing"
-        if self.demo_mode == "waypoints":
+        if self.demo_mode == "waypoints" and not self.offboard_hold_test:
             if self.waypoint_mission is None:
                 return (
                     False,
@@ -1348,9 +1352,10 @@ class PositionGotoDemoSequenceNode(Node):
                         f"circle entry is {entry_distance_m:.2f} m from start, exceeds "
                         f"{self.max_circle_entry_distance_from_start_m:.2f} m limit",
                     )
-        perimeter_reason = self.perimeter_start_violation_reason(start_xy)
-        if perimeter_reason is not None:
-            return False, perimeter_reason
+        if not self.offboard_hold_test:
+            perimeter_reason = self.perimeter_start_violation_reason(start_xy)
+            if perimeter_reason is not None:
+                return False, perimeter_reason
         if self.demo_mode == "circle" and self.circle_entry_angle_rad is None:
             entry_angle_rad, _ = self.choose_circle_entry_angle(start_xy)
             self.circle_entry_angle_rad = entry_angle_rad
@@ -2321,7 +2326,13 @@ class PositionGotoDemoSequenceNode(Node):
 
         if self.demo_state == "SET_OFFBOARD_MODE":
             if self.mode_matches(self.offboard_mode):
-                if self.demo_mode == "circle":
+                if self.offboard_hold_test:
+                    self.offboard_setpoint = self.current_hold_pose()
+                    self.transition_to(
+                        "GOAL_HOLD",
+                        "OFFBOARD confirmed for current-position hold test",
+                    )
+                elif self.demo_mode == "circle":
                     self.circle_fixed_yaw_rad = self.current_yaw_rad()
                     self.offboard_setpoint = self.circle_entry_pose()
                     if self.offboard_setpoint is None:

@@ -57,6 +57,8 @@ setup(
             "drone_control_pkg.external_pose_bridge_node:main",
             "external_pose_debug_node = "
             "drone_control_pkg.external_pose_debug_node:main",
+            "optical_flow_hover_estimator_node = "
+            "drone_control_pkg.optical_flow_hover_estimator_node:main",
             "target_follow_controller_node = "
             "drone_control_pkg.target_follow_controller_node:main",
             "vio_bridge_node = drone_control_pkg.vio_bridge_node:main",

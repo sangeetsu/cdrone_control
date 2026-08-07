@@ -36,6 +36,8 @@ class DroneSetup(Node):
         self.declare_parameter("home_position_z_m", 0.0)
         self.declare_parameter("home_approach_z_m", 1.0)
         self.declare_parameter("retry_period_s", 1.0)
+        self.declare_parameter("assume_global_origin_after_publish", False)
+        self.declare_parameter("assume_home_position_after_publish", False)
 
         self.mavros_namespace = str(self.get_parameter("mavros_namespace").value)
         self.global_origin_latitude_deg = float(
@@ -54,6 +56,12 @@ class DroneSetup(Node):
         self.retry_period_s = max(
             float(self.get_parameter("retry_period_s").value),
             0.1,
+        )
+        self.assume_home_position_after_publish = bool(
+            self.get_parameter("assume_home_position_after_publish").value
+        )
+        self.assume_global_origin_after_publish = bool(
+            self.get_parameter("assume_global_origin_after_publish").value
         )
 
         self.state_topic = join_topic(self.mavros_namespace, "state")
@@ -192,8 +200,12 @@ class DroneSetup(Node):
         self.publish_attempt_count += 1
         if not self.global_origin_ready():
             self.set_gp_pub.publish(self.make_global_origin_msg())
+            if self.assume_global_origin_after_publish:
+                self.last_global_origin_time_s = self.now_s()
         if not self.home_position_ready():
             self.set_home_pub.publish(self.make_home_position_msg())
+            if self.assume_home_position_after_publish:
+                self.last_home_position_time_s = self.now_s()
 
         self.get_logger().info(
             "Publishing indoor reference setup "

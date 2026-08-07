@@ -129,6 +129,9 @@ class PositionHoverDemoSequenceNode(Node):
         self.declare_parameter("home_position_topic", "")
         self.declare_parameter("global_origin_topic", "")
         self.declare_parameter("companion_status_topic", "")
+        self.declare_parameter("require_global_origin", True)
+        self.declare_parameter("allow_synthetic_home_position", False)
+        self.declare_parameter("synthetic_home_position_z_m", 0.0)
         self.declare_parameter("status_topic", "")
         self.declare_parameter("start_service", "")
         self.declare_parameter("abort_service", "")
@@ -245,6 +248,15 @@ class PositionHoverDemoSequenceNode(Node):
         self.companion_status_topic = (
             str(self.get_parameter("companion_status_topic").value).strip()
             or join_topic(self.mavros_namespace, "companion_process/status")
+        )
+        self.require_global_origin = bool(
+            self.get_parameter("require_global_origin").value
+        )
+        self.allow_synthetic_home_position = bool(
+            self.get_parameter("allow_synthetic_home_position").value
+        )
+        self.synthetic_home_position_z_m = float(
+            self.get_parameter("synthetic_home_position_z_m").value
         )
         self.status_topic = (
             str(self.get_parameter("status_topic").value).strip()
@@ -469,14 +481,16 @@ class PositionHoverDemoSequenceNode(Node):
         return self.takeoff_origin_altitude_m + self.touchdown_altitude_m
 
     def current_altitude_above_home_m(self) -> Optional[float]:
-        if self.latest_home_position is None:
+        home_z_m = self.home_position_z_m()
+        if home_z_m is None:
             return None
-        return self.current_altitude_m() - float(self.latest_home_position.position.z)
+        return self.current_altitude_m() - home_z_m
 
     def takeoff_origin_above_home_m(self) -> Optional[float]:
-        if self.latest_home_position is None or self.takeoff_origin_altitude_m is None:
+        home_z_m = self.home_position_z_m()
+        if home_z_m is None or self.takeoff_origin_altitude_m is None:
             return None
-        return self.takeoff_origin_altitude_m - float(self.latest_home_position.position.z)
+        return self.takeoff_origin_altitude_m - home_z_m
 
     def current_yaw_rad(self) -> float:
         orientation = self.latest_pose.pose.orientation
@@ -515,9 +529,44 @@ class PositionHoverDemoSequenceNode(Node):
         ) <= self.companion_status_timeout_s
 
     def home_position_ready(self) -> bool:
+        if self.last_home_position_time_s >= self.last_fcu_connect_time_s > 0.0:
+            return True
+        return self.synthetic_home_position_ready()
+
+    def synthetic_home_position_ready(self) -> bool:
+        return (
+            self.allow_synthetic_home_position
+            and self.last_fcu_connect_time_s > 0.0
+            and math.isfinite(self.synthetic_home_position_z_m)
+        )
+
+    def home_position_z_m(self) -> Optional[float]:
+        if self.latest_home_position is not None:
+            return float(self.latest_home_position.position.z)
+        if self.synthetic_home_position_ready():
+            return self.synthetic_home_position_z_m
+        return None
+
+    def home_position_source(self) -> str:
+        if self.latest_home_position is not None:
+            return "mavros"
+        if self.synthetic_home_position_ready():
+            return "synthetic"
+        return "missing"
+
+    def home_position_missing_reason(self) -> str:
+        if not self.allow_synthetic_home_position:
+            return "home position is missing"
+        if not math.isfinite(self.synthetic_home_position_z_m):
+            return "home position is missing and synthetic home z is invalid"
+        return "home position is missing"
+
+    def mavros_home_position_ready(self) -> bool:
         return self.last_home_position_time_s >= self.last_fcu_connect_time_s > 0.0
 
     def global_origin_ready(self) -> bool:
+        if not self.require_global_origin:
+            return True
         return self.last_global_origin_time_s >= self.last_fcu_connect_time_s > 0.0
 
     def active_connection_loss_timeout_s(self) -> float:
@@ -661,10 +710,10 @@ class PositionHoverDemoSequenceNode(Node):
             return False, "FCU is not connected"
         if not self.pose_fresh():
             return False, "local pose is stale or missing"
-        if not self.global_origin_ready():
+        if self.require_global_origin and not self.global_origin_ready():
             return False, "global origin is missing"
         if not self.home_position_ready():
-            return False, "home position is missing"
+            return False, self.home_position_missing_reason()
         if self.require_companion_active:
             if not self.companion_status_fresh():
                 return False, "external pose status is stale or missing"
@@ -715,11 +764,13 @@ class PositionHoverDemoSequenceNode(Node):
         self.param_pull_attempt_count = 0
 
         start_above_home_m = self.takeoff_origin_above_home_m()
+        home_z_m = self.home_position_z_m()
         if start_above_home_m is not None:
             self.get_logger().info(
                 "Takeoff reference: "
                 f"start_z={self.takeoff_origin_altitude_m:.2f} m "
-                f"home_z={self.latest_home_position.position.z:.2f} m "
+                f"home_z={home_z_m:.2f} m "
+                f"home_source={self.home_position_source()} "
                 f"start_minus_home={start_above_home_m:.2f} m"
             )
 

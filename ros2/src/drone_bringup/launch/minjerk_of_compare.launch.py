@@ -36,10 +36,15 @@ def launch_setup(context, *args, **kwargs):
             "log_level": log_level,
             "drone_id": drone_id,
             "mavros_namespace": mavros_namespace,
+            "drone_namespace": LaunchConfiguration("drone_namespace"),
+            "mocap_namespace": LaunchConfiguration("mocap_namespace"),
             "pose_source": LaunchConfiguration("pose_source"),
             "source_pose_topic": LaunchConfiguration("source_pose_topic"),
             "enable_reference_setup": "true",
             "map_frame": LaunchConfiguration("comparison_frame_id"),
+            "frame_rpy_rad": LaunchConfiguration("frame_rpy_rad"),
+            "position_offset_m": LaunchConfiguration("position_offset_m"),
+            "rpy_offset_rad": LaunchConfiguration("rpy_offset_rad"),
             "optitrack_server": LaunchConfiguration("optitrack_server"),
             "optitrack_port": LaunchConfiguration("optitrack_port"),
             "rigid_body_name": LaunchConfiguration("rigid_body_name"),
@@ -77,6 +82,19 @@ def launch_setup(context, *args, **kwargs):
                     value_type=float,
                 ),
                 "takeoff_strategy": LaunchConfiguration("takeoff_strategy"),
+                "use_speed_profile": ParameterValue(
+                    LaunchConfiguration("use_speed_profile"),
+                    value_type=bool,
+                ),
+                "speed_profile_config": LaunchConfiguration("speed_profile_config"),
+                "restore_speed_profile_on_exit": ParameterValue(
+                    LaunchConfiguration("restore_speed_profile_on_exit"),
+                    value_type=bool,
+                ),
+                "offboard_hold_test": ParameterValue(
+                    LaunchConfiguration("offboard_hold_test"),
+                    value_type=bool,
+                ),
                 "goal_hold_duration_s": ParameterValue(
                     LaunchConfiguration("goal_hold_duration_s"),
                     value_type=float,
@@ -333,6 +351,18 @@ def generate_launch_description():
                 default_value=_default_arg(defaults, "mavros_namespace", "mavros"),
             ),
             DeclareLaunchArgument(
+                "drone_namespace",
+                default_value=_default_arg(defaults, "drone_namespace", "/cdrone"),
+            ),
+            DeclareLaunchArgument(
+                "mocap_namespace",
+                default_value=_default_arg(
+                    defaults,
+                    "mocap_namespace",
+                    "/cdrone/vrpn_mocap",
+                ),
+            ),
+            DeclareLaunchArgument(
                 "pose_source",
                 default_value=_default_arg(defaults, "pose_source", "optitrack"),
             ),
@@ -345,6 +375,16 @@ def generate_launch_description():
                 "comparison_frame_id",
                 default_value=_default_arg(defaults, "map_frame", "map"),
             ),
+            DeclareLaunchArgument(
+                "frame_rpy_rad",
+                default_value=_default_arg(
+                    defaults,
+                    "frame_rpy_rad",
+                    "[0.0, 0.0, 0.0]",
+                ),
+            ),
+            DeclareLaunchArgument("position_offset_m", default_value="[0.0, 0.0, 0.0]"),
+            DeclareLaunchArgument("rpy_offset_rad", default_value="[0.0, 0.0, 0.0]"),
             DeclareLaunchArgument(
                 "optitrack_server",
                 default_value=_default_arg(
@@ -377,6 +417,10 @@ def generate_launch_description():
             DeclareLaunchArgument("takeoff_altitude_m", default_value="1.2"),
             DeclareLaunchArgument("takeoff_rate_m_s", default_value="0.5"),
             DeclareLaunchArgument("takeoff_strategy", default_value="AUTO_MODE"),
+            DeclareLaunchArgument("use_speed_profile", default_value="false"),
+            DeclareLaunchArgument("speed_profile_config", default_value=""),
+            DeclareLaunchArgument("restore_speed_profile_on_exit", default_value="true"),
+            DeclareLaunchArgument("offboard_hold_test", default_value="false"),
             DeclareLaunchArgument("goal_hold_duration_s", default_value="2.0"),
             DeclareLaunchArgument("goal_position_tolerance_m", default_value="0.15"),
             DeclareLaunchArgument("offboard_setpoint_warmup_s", default_value="1.5"),
