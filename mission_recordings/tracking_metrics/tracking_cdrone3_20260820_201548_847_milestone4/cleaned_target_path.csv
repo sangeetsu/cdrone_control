@@ -1,0 +1,1 @@
+run_id,experiment_tag,timestamp_s,sample_kind,track_id,source,source_label,x_m,y_m,z_m,cleaned_x_m,cleaned_y_m,cleaned_z_m,confidence,position_uncertainty_m

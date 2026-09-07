@@ -56,6 +56,7 @@ class Milestone2DemoSequenceNode(Node):
         self.declare_parameter("local_pose_timeout_s", 0.5)
         self.declare_parameter("companion_status_timeout_s", 0.5)
         self.declare_parameter("min_track_confidence", 0.35)
+        self.declare_parameter("min_target_distance_m", 0.0)
         self.declare_parameter("max_target_distance_m", 2.6)
         self.declare_parameter("require_target_in_front", True)
         self.declare_parameter("max_abs_target_y_m", 4.0)
@@ -121,6 +122,9 @@ class Milestone2DemoSequenceNode(Node):
         )
         self.min_track_confidence = float(
             self.get_parameter("min_track_confidence").value
+        )
+        self.min_target_distance_m = float(
+            self.get_parameter("min_target_distance_m").value
         )
         self.max_target_distance_m = float(
             self.get_parameter("max_target_distance_m").value
@@ -536,6 +540,7 @@ class Milestone2DemoSequenceNode(Node):
             track_timeout_s=self.track_timeout_s,
             min_track_confidence=self.min_track_confidence,
             max_target_distance_m=self.max_target_distance_m,
+            min_target_distance_m=self.min_target_distance_m,
             require_target_in_front=self.require_target_in_front,
             max_abs_target_y_m=self.max_abs_target_y_m,
             max_abs_target_z_m=self.max_abs_target_z_m,

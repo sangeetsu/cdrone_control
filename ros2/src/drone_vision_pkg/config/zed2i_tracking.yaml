@@ -1,0 +1,62 @@
+realsense_tracker_node:
+  ros__parameters:
+    source_mode: zed_sdk
+    tracker_rate_hz: 10.0
+    device_id: 0
+    model_path: ""
+    model_input_size: 640
+    detection_conf_threshold: 0.40
+    norfair_distance_threshold: 80.0
+    track_hit_counter_max: 12
+    max_valid_depth_m: 20.0
+    depth_window_px: 5
+    publish_world_tracks: true
+    publish_world_track_compare: true
+    save_world_track_compare_frames: true
+    save_world_track_compare_csv: true
+    save_world_track_compare_frame_csv: true
+    world_track_compare_frame_dump_interval_s: 3.0
+    world_track_compare_csv_dump_interval_s: 3.0
+    world_track_compare_frame_dump_dir: /home/jetson/output_dump
+    world_track_compare_csv_filename: world_track_compare_tracks.csv
+    experiment_tag: ""
+    world_frame: map
+    camera_offset_body_m: [0.0, 0.0, 0.0]
+    camera_rpy_body_rad: [0.0, 0.0, 0.0]
+    # Current ZED 2i mount reports front-of-camera targets with inverted
+    # body-frame forward sign in Milestone 4 follow gating. Flip only body X;
+    # image-space 180 degree rotation already handles pixel left/right/up/down.
+    camera_body_axis_signs: [-1.0, 1.0, 1.0]
+    zed_camera_resolution: HD720
+    zed_camera_fps: 30
+    zed_depth_mode: NEURAL
+    zed_coordinate_system: RIGHT_HANDED_Z_UP_X_FWD
+    zed_coordinate_units: METER
+    zed_flip_mode: "OFF"
+    zed_rotate_180: true
+    zed_depth_minimum_distance_m: 0.4
+    zed_depth_maximum_distance_m: 20.0
+    zed_image_view: left
+    record_mission_video: true
+    recording_output_dir: /home/jetson/cdrone_control/mission_recordings
+    recording_fps: 10.0
+    recording_width: 1280
+    recording_height: 720
+    recording_fourcc: mp4v
+    recording_depth_max_m: 6.0
+    recording_save_depth_video: true
+    recording_replace_depth_tile_with_yolo: false
+    recording_state_topic: ""
+    recording_mavros_state_topic: ""
+    recording_local_pose_topic: ""
+    recording_flow_range_topic: ""
+    recording_target_map_world_topic: ""
+    recording_target_map_history_s: 3.0
+    # Identity-sensitive topics are supplied by launch defaults sourced from
+    # droneid_config.yaml. Keeping these blank avoids per-drone drift here.
+    pose_topic: ""
+    compare_pose_topic: ""
+    tracks_topic: ""
+    world_tracks_topic: ""
+    world_track_compare_topic: ""
+    perception_status_topic: ""

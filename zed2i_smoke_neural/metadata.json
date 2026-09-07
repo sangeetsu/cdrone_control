@@ -1,0 +1,24 @@
+{
+  "captured_wall_time_s": 1787278245.23952,
+  "sdk_version": "5.4.1",
+  "serial_number": 38736187,
+  "camera_model": "ZED 2i",
+  "resolution": {
+    "width": 1280,
+    "height": 720
+  },
+  "fps": 30,
+  "depth_mode": "NEURAL",
+  "depth_min_m": 0.4,
+  "depth_max_m": 20.0,
+  "intrinsics": {
+    "fx": 1160.28662109375,
+    "fy": 1160.28662109375,
+    "cx": 649.7013549804688,
+    "cy": 349.50665283203125
+  },
+  "outputs": {
+    "rgb": "/home/jetson/cdrone_control/zed2i_smoke_neural/rgb.png",
+    "depth": "/home/jetson/cdrone_control/zed2i_smoke_neural/depth.png"
+  }
+}

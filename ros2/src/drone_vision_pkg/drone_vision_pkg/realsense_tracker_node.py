@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 from dataclasses import dataclass
 import json
+import math
 from pathlib import Path
 import time
 
@@ -11,9 +12,11 @@ import rclpy
 from drone_control_pkg.deployment_config import (
     configured_compare_pose_topic,
     configured_drone_id,
+    configured_mavros_namespace,
 )
-from drone_control_pkg.topic_utils import cdrone_topic, external_pose_input_topic
+from drone_control_pkg.topic_utils import cdrone_topic, external_pose_input_topic, join_topic
 from drone_msgs.msg import (
+    EngagementState,
     PerceptionStatus,
     TargetTrack,
     TargetTrackArray,
@@ -21,6 +24,7 @@ from drone_msgs.msg import (
     WorldTargetTrackArray,
 )
 from geometry_msgs.msg import PoseStamped
+from mavros_msgs.msg import State
 from rclpy.node import Node
 from rclpy.qos import (
     HistoryPolicy,
@@ -28,13 +32,15 @@ from rclpy.qos import (
     ReliabilityPolicy,
     qos_profile_sensor_data,
 )
-from sensor_msgs.msg import CameraInfo, Image
+from sensor_msgs.msg import CameraInfo, Image, Range
 from std_msgs.msg import String
 
 from drone_vision_pkg.model_paths import resolve_model_path
 from drone_vision_pkg.projection import RealsenseProjection
 from drone_vision_pkg.tracker_resilience import (
     BodyTrackState,
+    TRACK_SOURCE_DETECTED,
+    TRACK_SOURCE_HELD,
     compute_lab_histogram_embedding,
     select_held_track_states,
     tracked_object_reid_distance,
@@ -68,6 +74,11 @@ except Exception:  # pragma: no cover - platform specific
     rs = None
 
 try:
+    import pyzed.sl as sl
+except Exception:  # pragma: no cover - platform specific
+    sl = None
+
+try:
     from norfair import Detection, Tracker
 except Exception:  # pragma: no cover - platform specific
     Detection = None
@@ -88,6 +99,119 @@ except Exception:  # pragma: no cover - platform specific
 class TrackVelocity:
     vector_mps: np.ndarray
     inbound: bool
+
+
+STARTUP_LED_STATES = {
+    "SYNC_TAKEOFF_PARAM",
+    "SYNC_PRE_TAKEOFF_PROFILE",
+    "SET_TAKEOFF_MODE",
+    "ARMING",
+    "REQUEST_TAKEOFF",
+    "TAKEOFF",
+    "WARMUP_OFFBOARD",
+    "SET_OFFBOARD_MODE",
+    "SYNC_SPEED_PROFILE",
+    "CLIMB_TO_TAKEOFF_ALTITUDE",
+    "STAGE_HOVER",
+}
+RETURN_LED_STATES = {"RETURN_TO_START", "RETURN_HOME_HOLD"}
+LANDING_LED_STATES = {
+    "SET_LAND_MODE",
+    "WAIT_TOUCHDOWN",
+    "DISARMING",
+    "RESTORE_TAKEOFF_PARAM",
+    "RESTORE_SPEED_PROFILE",
+}
+MISSION_TERMINAL_STATES = {"IDLE", "COMPLETE", "ABORT"}
+LED_RGB_BY_NAME: dict[str, tuple[int, int, int]] = {
+    "off": (0, 0, 0),
+    "startup": (0, 80, 255),
+    "search": (255, 220, 0),
+    "follow": (0, 255, 0),
+    "dwell": (0, 255, 255),
+    "return": (180, 0, 255),
+    "landing": (255, 120, 0),
+    "complete": (255, 255, 255),
+    "blocked": (255, 60, 0),
+    "abort": (255, 0, 0),
+    "unknown": (120, 120, 120),
+}
+TARGET_TRACK_SOURCE_DETECTED = 0
+TARGET_TRACK_SOURCE_HELD = 1
+TARGET_TRACK_SOURCE_PREDICTED = 2
+TARGET_MAP_SOURCE_LABELS = {
+    TARGET_TRACK_SOURCE_DETECTED: "det",
+    TARGET_TRACK_SOURCE_HELD: "held",
+    TARGET_TRACK_SOURCE_PREDICTED: "pred",
+}
+TARGET_MAP_SOURCE_BGR = {
+    TARGET_TRACK_SOURCE_DETECTED: (40, 220, 70),
+    TARGET_TRACK_SOURCE_HELD: (0, 220, 255),
+    TARGET_TRACK_SOURCE_PREDICTED: (0, 130, 255),
+}
+
+
+def led_color_name_for_engagement_state(
+    *, state: str, blocked_reason: str = "", estop_latched: bool = False
+) -> str:
+    state_upper = str(state or "").strip().upper()
+    blocked = bool(str(blocked_reason or "").strip())
+
+    if estop_latched or state_upper == "ABORT":
+        return "abort"
+    if blocked and state_upper not in {"IDLE", "COMPLETE"}:
+        return "blocked"
+    if state_upper == "IDLE":
+        return "off"
+    if state_upper == "COMPLETE":
+        return "complete"
+    if state_upper in STARTUP_LED_STATES:
+        return "startup"
+    if state_upper == "SEARCH":
+        return "search"
+    if state_upper == "FOLLOW":
+        return "follow"
+    if state_upper == "DWELL":
+        return "dwell"
+    if state_upper in RETURN_LED_STATES:
+        return "return"
+    if state_upper in LANDING_LED_STATES:
+        return "landing"
+    return "unknown"
+
+
+def led_bgr_for_color_name(color_name: str) -> tuple[int, int, int]:
+    rgb = LED_RGB_BY_NAME.get(str(color_name), LED_RGB_BY_NAME["unknown"])
+    return (int(rgb[2]), int(rgb[1]), int(rgb[0]))
+
+
+def is_active_mission_state(state: str) -> bool:
+    state_upper = str(state or "").strip().upper()
+    return bool(state_upper) and state_upper not in MISSION_TERMINAL_STATES
+
+
+def make_depth_colormap(
+    depth_frame: np.ndarray | None,
+    *,
+    max_depth_m: float,
+    output_size: tuple[int, int],
+) -> np.ndarray:
+    width_px, height_px = output_size
+    if cv2 is None or depth_frame is None:
+        return np.zeros((height_px, width_px, 3), dtype=np.uint8)
+
+    depth = np.asarray(depth_frame, dtype=np.float32)
+    if depth.ndim == 3:
+        depth = depth[:, :, 0]
+    max_depth_m = max(float(max_depth_m), 0.1)
+    finite_depth = np.nan_to_num(depth, nan=0.0, posinf=0.0, neginf=0.0)
+    clipped = np.clip(finite_depth, 0.0, max_depth_m)
+    normalized = (255.0 * (clipped / max_depth_m)).astype(np.uint8)
+    colored = cv2.applyColorMap(normalized, cv2.COLORMAP_TURBO)
+    invalid_mask = finite_depth <= 0.0
+    if np.any(invalid_mask):
+        colored[invalid_mask] = (0, 0, 0)
+    return cv2.resize(colored, output_size, interpolation=cv2.INTER_AREA)
 
 
 def get_centroid(points: np.ndarray) -> np.ndarray:
@@ -148,6 +272,77 @@ def compute_mean_depth(
     if not np.any(mask):
         return 0.0
     return float(np.median(crop[mask]))
+
+
+def normalize_zed_enum_name(
+    value: object,
+    *,
+    parameter_name: str,
+    allowed: set[str],
+) -> str:
+    normalized = str(value or "").strip().upper()
+    if normalized in allowed:
+        return normalized
+    options = ", ".join(sorted(name.lower() for name in allowed))
+    raise ValueError(f"{parameter_name} must be one of: {options}")
+
+
+def normalize_zed_flip_mode(value: object) -> str:
+    if isinstance(value, bool):
+        return "ON" if value else "OFF"
+    normalized = str(value or "").strip().upper()
+    aliases = {
+        "TRUE": "ON",
+        "YES": "ON",
+        "1": "ON",
+        "FALSE": "OFF",
+        "NO": "OFF",
+        "0": "OFF",
+    }
+    normalized = aliases.get(normalized, normalized)
+    if normalized in {"ON", "OFF", "AUTO"}:
+        return normalized
+    raise ValueError("zed_flip_mode must be one of: ON, OFF, AUTO")
+
+
+def normalize_zed_image_view(value: object) -> str:
+    normalized = str(value or "").strip().upper()
+    aliases = {
+        "L": "LEFT_BGR",
+        "LEFT": "LEFT_BGR",
+        "LEFT_COLOR": "LEFT_BGR",
+        "LEFT_BGR": "LEFT_BGR",
+        "R": "RIGHT_BGR",
+        "RIGHT": "RIGHT_BGR",
+        "RIGHT_COLOR": "RIGHT_BGR",
+        "RIGHT_BGR": "RIGHT_BGR",
+    }
+    result = aliases.get(normalized)
+    if result is not None:
+        return result
+    raise ValueError("zed_image_view must be one of: left, left_bgr, right, right_bgr")
+
+
+def zed_timestamp_key(timestamp_ns: int) -> tuple[int, int]:
+    timestamp_ns = int(timestamp_ns)
+    return (timestamp_ns // 1_000_000_000, timestamp_ns % 1_000_000_000)
+
+
+def rotate_camera_intrinsics_180(
+    *,
+    width_px: int,
+    height_px: int,
+    fx: float,
+    fy: float,
+    cx: float,
+    cy: float,
+) -> tuple[float, float, float, float]:
+    return (
+        float(fx),
+        float(fy),
+        max(float(width_px) - 1.0 - float(cx), 0.0),
+        max(float(height_px) - 1.0 - float(cy), 0.0),
+    )
 
 
 def bbox_to_dict(
@@ -270,6 +465,7 @@ class RealsenseTrackerNode(Node):
         self.declare_parameter("world_frame", "map")
         self.declare_parameter("camera_offset_body_m", [0.0, 0.0, 0.0])
         self.declare_parameter("camera_rpy_body_rad", [0.0, 0.0, 0.0])
+        self.declare_parameter("camera_body_axis_signs", [1.0, 1.0, 1.0])
         self.declare_parameter("color_topic", "/camera/color/image_raw")
         self.declare_parameter(
             "depth_topic", "/camera/aligned_depth_to_color/image_raw"
@@ -288,6 +484,32 @@ class RealsenseTrackerNode(Node):
         self.declare_parameter("direct_depth_width", 848)
         self.declare_parameter("direct_depth_height", 480)
         self.declare_parameter("direct_depth_fps", 15)
+        self.declare_parameter("zed_camera_resolution", "HD720")
+        self.declare_parameter("zed_camera_fps", 30)
+        self.declare_parameter("zed_depth_mode", "NEURAL")
+        self.declare_parameter("zed_coordinate_system", "RIGHT_HANDED_Z_UP_X_FWD")
+        self.declare_parameter("zed_coordinate_units", "METER")
+        self.declare_parameter("zed_flip_mode", "OFF")
+        self.declare_parameter("zed_rotate_180", False)
+        self.declare_parameter("zed_depth_minimum_distance_m", 0.4)
+        self.declare_parameter("zed_depth_maximum_distance_m", 20.0)
+        self.declare_parameter("zed_image_view", "left")
+        self.declare_parameter("mavros_namespace", configured_mavros_namespace())
+        self.declare_parameter("record_mission_video", True)
+        self.declare_parameter("recording_output_dir", "mission_recordings")
+        self.declare_parameter("recording_fps", 10.0)
+        self.declare_parameter("recording_width", 1280)
+        self.declare_parameter("recording_height", 720)
+        self.declare_parameter("recording_fourcc", "mp4v")
+        self.declare_parameter("recording_depth_max_m", 6.0)
+        self.declare_parameter("recording_save_depth_video", True)
+        self.declare_parameter("recording_replace_depth_tile_with_yolo", False)
+        self.declare_parameter("recording_state_topic", "")
+        self.declare_parameter("recording_mavros_state_topic", "")
+        self.declare_parameter("recording_local_pose_topic", "")
+        self.declare_parameter("recording_flow_range_topic", "")
+        self.declare_parameter("recording_target_map_world_topic", "")
+        self.declare_parameter("recording_target_map_history_s", 3.0)
 
         self.drone_id = str(self.get_parameter("drone_id").value)
         self.source_mode = str(self.get_parameter("source_mode").value).strip().lower()
@@ -393,6 +615,77 @@ class RealsenseTrackerNode(Node):
         self.direct_depth_width = int(self.get_parameter("direct_depth_width").value)
         self.direct_depth_height = int(self.get_parameter("direct_depth_height").value)
         self.direct_depth_fps = int(self.get_parameter("direct_depth_fps").value)
+        self.zed_camera_resolution = str(
+            self.get_parameter("zed_camera_resolution").value
+        ).strip()
+        self.zed_camera_fps = int(self.get_parameter("zed_camera_fps").value)
+        self.zed_depth_mode = str(self.get_parameter("zed_depth_mode").value).strip()
+        self.zed_coordinate_system = str(
+            self.get_parameter("zed_coordinate_system").value
+        ).strip()
+        self.zed_coordinate_units = str(
+            self.get_parameter("zed_coordinate_units").value
+        ).strip()
+        self.zed_flip_mode = self.get_parameter("zed_flip_mode").value
+        self.zed_rotate_180 = bool(self.get_parameter("zed_rotate_180").value)
+        self.zed_depth_minimum_distance_m = float(
+            self.get_parameter("zed_depth_minimum_distance_m").value
+        )
+        self.zed_depth_maximum_distance_m = float(
+            self.get_parameter("zed_depth_maximum_distance_m").value
+        )
+        self.zed_image_view_name = str(
+            self.get_parameter("zed_image_view").value
+        ).strip()
+        self.mavros_namespace = (
+            str(self.get_parameter("mavros_namespace").value).strip()
+            or configured_mavros_namespace()
+        )
+        self.record_mission_video = bool(
+            self.get_parameter("record_mission_video").value
+        )
+        self.recording_output_dir = Path(
+            str(self.get_parameter("recording_output_dir").value).strip()
+            or "mission_recordings"
+        )
+        self.recording_fps = float(self.get_parameter("recording_fps").value)
+        self.recording_width = int(self.get_parameter("recording_width").value)
+        self.recording_height = int(self.get_parameter("recording_height").value)
+        self.recording_fourcc = (
+            str(self.get_parameter("recording_fourcc").value).strip() or "mp4v"
+        )
+        self.recording_depth_max_m = float(
+            self.get_parameter("recording_depth_max_m").value
+        )
+        self.recording_save_depth_video = bool(
+            self.get_parameter("recording_save_depth_video").value
+        )
+        self.recording_replace_depth_tile_with_yolo = bool(
+            self.get_parameter("recording_replace_depth_tile_with_yolo").value
+        )
+        self.recording_state_topic = (
+            str(self.get_parameter("recording_state_topic").value).strip()
+            or cdrone_topic(self.drone_id, "engagement/state")
+        )
+        self.recording_mavros_state_topic = (
+            str(self.get_parameter("recording_mavros_state_topic").value).strip()
+            or join_topic(self.mavros_namespace, "state")
+        )
+        self.recording_local_pose_topic = (
+            str(self.get_parameter("recording_local_pose_topic").value).strip()
+            or join_topic(self.mavros_namespace, "local_position/pose")
+        )
+        self.recording_flow_range_topic = (
+            str(self.get_parameter("recording_flow_range_topic").value).strip()
+            or join_topic(self.mavros_namespace, "px4flow/ground_distance")
+        )
+        self.recording_target_map_world_topic = (
+            str(self.get_parameter("recording_target_map_world_topic").value).strip()
+            or cdrone_topic(self.drone_id, "target_map/world_tracks")
+        )
+        self.recording_target_map_history_s = float(
+            self.get_parameter("recording_target_map_history_s").value
+        )
         pose_topic = str(self.get_parameter("pose_topic").value).strip()
         self.pose_topic = pose_topic or external_pose_input_topic(self.drone_id)
         self.compare_pose_topic = (
@@ -424,11 +717,15 @@ class RealsenseTrackerNode(Node):
             float(value)
             for value in self.get_parameter("camera_rpy_body_rad").value
         ]
+        camera_body_axis_signs = [
+            float(value)
+            for value in self.get_parameter("camera_body_axis_signs").value
+        ]
 
-        if self.source_mode not in {"direct", "ros"}:
+        if self.source_mode not in {"direct", "ros", "zed_sdk"}:
             raise RuntimeError(
-                "Unsupported source_mode. Expected 'direct' or 'ros', got "
-                f"'{self.source_mode}'."
+                "Unsupported source_mode. Expected 'direct', 'ros', or "
+                f"'zed_sdk', got '{self.source_mode}'."
             )
         if cv2 is None or YOLO is None or Detection is None or Tracker is None:
             raise RuntimeError(
@@ -443,6 +740,10 @@ class RealsenseTrackerNode(Node):
             raise RuntimeError(
                 "Direct source_mode requires pyrealsense2 to be installed."
             )
+        if self.source_mode == "zed_sdk" and sl is None:
+            raise RuntimeError(
+                "ZED SDK source_mode requires pyzed.sl to be installed."
+            )
 
         self.model_path = resolve_model_path(
             str(self.get_parameter("model_path").value)
@@ -452,6 +753,7 @@ class RealsenseTrackerNode(Node):
             camera_offset_body_m=camera_offset_body_m,
             camera_rpy_body_rad=camera_rpy_body_rad,
             world_frame=self.world_frame,
+            camera_body_axis_signs=camera_body_axis_signs,
         )
         self.model = YOLO(self.model_path, task="detect")
         self.tracker = self._build_tracker()
@@ -486,8 +788,35 @@ class RealsenseTrackerNode(Node):
         self.cached_body_track_debug: dict[int, dict[str, object]] = {}
         self.rs_pipeline = None
         self.rs_align = None
+        self.zed_camera = None
+        self.zed_runtime = None
+        self.zed_color_mat = None
+        self.zed_depth_mat = None
+        self.zed_image_view = None
         self.depth_scale_m = 0.001
         self.latest_compare_pose: PoseStamped | None = None
+        self.latest_engagement_state = EngagementState()
+        self.latest_engagement_state.state = "IDLE"
+        self.latest_mavros_state = State()
+        self.latest_local_pose: PoseStamped | None = None
+        self.latest_flow_range: Range | None = None
+        self.latest_target_map_world_tracks: list[WorldTargetTrack] = []
+        self.last_engagement_state_s = 0.0
+        self.last_mavros_state_s = 0.0
+        self.last_local_pose_s = 0.0
+        self.last_flow_range_s = 0.0
+        self.last_target_map_world_s = 0.0
+        self.target_map_world_history: dict[int, list[tuple[float, np.ndarray]]] = {}
+        self.mission_ownship_history: list[tuple[float, np.ndarray]] = []
+        self.mission_target_map_world_history: dict[
+            int, list[tuple[float, np.ndarray]]
+        ] = {}
+        self.mission_recording_writers: dict[str, object] = {}
+        self.mission_recording_paths: dict[str, Path] = {}
+        self.mission_recording_started_wall_time_s = 0.0
+        self.mission_recording_last_write_s = 0.0
+        self.mission_recording_frame_count = 0
+        self.mission_recording_warned_unavailable = False
 
         best_effort_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
@@ -514,8 +843,10 @@ class RealsenseTrackerNode(Node):
                 self.camera_info_callback,
                 qos_profile_sensor_data,
             )
-        else:
+        elif self.source_mode == "direct":
             self._start_direct_pipeline()
+        else:
+            self._start_zed_sdk_pipeline()
 
         if self.publish_world_tracks:
             self.create_subscription(
@@ -542,6 +873,38 @@ class RealsenseTrackerNode(Node):
             if self.save_world_track_compare_frame_csv:
                 self._ensure_world_track_compare_frames_csv_ready()
             self._write_world_track_compare_manifest()
+
+        if self.record_mission_video:
+            self.create_subscription(
+                EngagementState,
+                self.recording_state_topic,
+                self.engagement_state_callback,
+                10,
+            )
+            self.create_subscription(
+                State,
+                self.recording_mavros_state_topic,
+                self.mavros_state_callback,
+                10,
+            )
+            self.create_subscription(
+                PoseStamped,
+                self.recording_local_pose_topic,
+                self.local_pose_callback,
+                best_effort_qos,
+            )
+            self.create_subscription(
+                Range,
+                self.recording_flow_range_topic,
+                self.flow_range_callback,
+                qos_profile_sensor_data,
+            )
+            self.create_subscription(
+                WorldTargetTrackArray,
+                self.recording_target_map_world_topic,
+                self.target_map_world_callback,
+                10,
+            )
 
         self.tracks_pub = self.create_publisher(TargetTrackArray, self.tracks_topic, 10)
         self.world_tracks_pub = self.create_publisher(
@@ -599,7 +962,9 @@ class RealsenseTrackerNode(Node):
             "tracks_csv="
             f"{tracks_csv_log_path}, "
             "frames_csv="
-            f"{frames_csv_log_path}"
+            f"{frames_csv_log_path}, "
+            "mission_recording="
+            f"{self.recording_output_dir if self.record_mission_video else 'disabled'}"
         )
         if self.enable_motion_estimator and self.motion_estimator is None:
             self.get_logger().warn(
@@ -639,6 +1004,7 @@ class RealsenseTrackerNode(Node):
         return self.get_clock().now().nanoseconds / 1e9
 
     def destroy_node(self) -> bool:
+        self._stop_mission_recording("node shutdown")
         self._flush_world_track_compare_csv(force=True)
         self._write_world_track_compare_manifest(completed=True)
         if self.rs_pipeline is not None:
@@ -651,6 +1017,19 @@ class RealsenseTrackerNode(Node):
             finally:
                 self.rs_pipeline = None
                 self.rs_align = None
+        if self.zed_camera is not None:
+            try:
+                self.zed_camera.close()
+            except Exception as exc:  # pragma: no cover - device specific cleanup
+                self.get_logger().warn(
+                    f"Closing direct ZED SDK camera raised: {exc}"
+                )
+            finally:
+                self.zed_camera = None
+                self.zed_runtime = None
+                self.zed_color_mat = None
+                self.zed_depth_mat = None
+                self.zed_image_view = None
         return super().destroy_node()
 
     def color_callback(self, msg: Image) -> None:
@@ -668,6 +1047,1084 @@ class RealsenseTrackerNode(Node):
     def compare_pose_callback(self, msg: PoseStamped) -> None:
         self.latest_compare_pose = msg
 
+    def engagement_state_callback(self, msg: EngagementState) -> None:
+        self.latest_engagement_state = msg
+        self.last_engagement_state_s = self.now_s()
+        if is_active_mission_state(msg.state):
+            self._start_mission_recording(str(msg.state))
+        else:
+            self._stop_mission_recording(str(msg.state or "terminal"))
+
+    def mavros_state_callback(self, msg: State) -> None:
+        self.latest_mavros_state = msg
+        self.last_mavros_state_s = self.now_s()
+
+    def local_pose_callback(self, msg: PoseStamped) -> None:
+        self.latest_local_pose = msg
+        now_s = self.now_s()
+        self.last_local_pose_s = now_s
+        if self.mission_recording_writers:
+            self.mission_ownship_history.append(
+                (
+                    now_s,
+                    np.array(
+                        [
+                            msg.pose.position.x,
+                            msg.pose.position.y,
+                            msg.pose.position.z,
+                        ],
+                        dtype=np.float64,
+                    ),
+                )
+            )
+            self.mission_ownship_history = self.mission_ownship_history[-6000:]
+
+    def flow_range_callback(self, msg: Range) -> None:
+        self.latest_flow_range = msg
+        self.last_flow_range_s = self.now_s()
+
+    def target_map_world_callback(self, msg: WorldTargetTrackArray) -> None:
+        now_s = self.now_s()
+        self.latest_target_map_world_tracks = list(msg.tracks)
+        self.last_target_map_world_s = now_s
+        seen_ids: set[int] = set()
+        for track in msg.tracks:
+            track_id = int(track.track_id)
+            seen_ids.add(track_id)
+            history = self.target_map_world_history.setdefault(track_id, [])
+            history.append(
+                (
+                    now_s,
+                    np.array([track.x_m, track.y_m, track.z_m], dtype=np.float64),
+                )
+            )
+            keep_after_s = now_s - max(self.recording_target_map_history_s, 0.0)
+            self.target_map_world_history[track_id] = [
+                item for item in history if item[0] >= keep_after_s
+            ][-120:]
+            if self.mission_recording_writers:
+                mission_history = self.mission_target_map_world_history.setdefault(
+                    track_id,
+                    [],
+                )
+                mission_history.append(
+                    (
+                        now_s,
+                        np.array([track.x_m, track.y_m, track.z_m], dtype=np.float64),
+                    )
+                )
+                self.mission_target_map_world_history[track_id] = mission_history[-6000:]
+
+        keep_after_s = now_s - max(self.recording_target_map_history_s, 0.0)
+        for track_id in list(self.target_map_world_history.keys()):
+            history = [
+                item
+                for item in self.target_map_world_history[track_id]
+                if item[0] >= keep_after_s
+            ]
+            if history:
+                self.target_map_world_history[track_id] = history
+            elif track_id not in seen_ids:
+                self.target_map_world_history.pop(track_id, None)
+
+    def _mission_recording_output_size(self) -> tuple[int, int]:
+        width_px = max(int(self.recording_width), 640)
+        height_px = max(int(self.recording_height), 480)
+        if width_px % 2:
+            width_px += 1
+        if height_px % 2:
+            height_px += 1
+        return width_px, height_px
+
+    def _start_mission_recording(self, state: str) -> None:
+        if not self.record_mission_video or cv2 is None:
+            return
+        if self.mission_recording_writers:
+            return
+
+        width_px, height_px = self._mission_recording_output_size()
+        tile_size = (width_px // 2, height_px // 2)
+        output_dir = self.recording_output_dir
+        try:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        except OSError as exc:
+            if not self.mission_recording_warned_unavailable:
+                self.get_logger().warn(
+                    "Mission recording disabled because the output directory "
+                    f"could not be created: {exc}"
+                )
+                self.mission_recording_warned_unavailable = True
+            return
+
+        started_wall_time_s = time.time()
+        timestamp = time.strftime(
+            "%Y%m%d_%H%M%S",
+            time.localtime(started_wall_time_s),
+        )
+        timestamp = f"{timestamp}_{int((started_wall_time_s % 1.0) * 1000):03d}"
+        safe_state = "".join(
+            ch.lower() if ch.isalnum() else "_" for ch in str(state or "mission")
+        ).strip("_")
+        output_stem = f"mission_{self.drone_id}_{timestamp}_{safe_state or 'active'}"
+        fourcc_text = (self.recording_fourcc or "mp4v")[:4].ljust(4)
+        fourcc = cv2.VideoWriter_fourcc(*fourcc_text)
+        fps = max(float(self.recording_fps), 1.0)
+        stream_specs = {
+            "combined": (
+                (width_px, height_px),
+                output_dir / f"{output_stem}_combined.mp4",
+            ),
+            "rgb": (tile_size, output_dir / f"{output_stem}_rgb.mp4"),
+            "yolo": (tile_size, output_dir / f"{output_stem}_yolo.mp4"),
+            "stats": (tile_size, output_dir / f"{output_stem}_stats.mp4"),
+            "target_map": (
+                (width_px, height_px),
+                output_dir / f"{output_stem}_target_map.mp4",
+            ),
+        }
+        if self.recording_save_depth_video:
+            stream_specs["depth"] = (
+                tile_size,
+                output_dir / f"{output_stem}_depth.mp4",
+            )
+
+        writers = {}
+        paths = {}
+        for stream_name, (stream_size, output_path) in stream_specs.items():
+            writer = cv2.VideoWriter(
+                str(output_path),
+                fourcc,
+                fps,
+                stream_size,
+            )
+            if not writer.isOpened():
+                writer.release()
+                for opened_writer in writers.values():
+                    opened_writer.release()
+                self.get_logger().warn(
+                    "Mission recording could not open MP4 writer "
+                    f"for {stream_name} at {output_path}"
+                )
+                return
+            writers[stream_name] = writer
+            paths[stream_name] = output_path
+
+        self.mission_recording_writers = writers
+        self.mission_recording_paths = paths
+        self.mission_recording_started_wall_time_s = started_wall_time_s
+        self.mission_recording_last_write_s = 0.0
+        self.mission_recording_frame_count = 0
+        self.mission_ownship_history = []
+        self.mission_target_map_world_history = {}
+        self.get_logger().info(
+            "Mission recording started: "
+            + ", ".join(f"{name}={path}" for name, path in paths.items())
+        )
+
+    def _stop_mission_recording(self, reason: str) -> None:
+        writers = self.mission_recording_writers
+        if not writers:
+            return
+        for writer in writers.values():
+            writer.release()
+        output_paths = dict(self.mission_recording_paths)
+        frame_count = self.mission_recording_frame_count
+        self.mission_recording_writers = {}
+        self.mission_recording_paths = {}
+        self.mission_recording_started_wall_time_s = 0.0
+        self.mission_recording_last_write_s = 0.0
+        self.mission_recording_frame_count = 0
+        self.get_logger().info(
+            "Mission recording stopped "
+            f"({reason}): "
+            + ", ".join(f"{name}={path}" for name, path in output_paths.items())
+            + f" frames={frame_count}"
+        )
+
+    def _maybe_record_mission_frame(
+        self,
+        *,
+        frame: np.ndarray,
+        depth_frame: np.ndarray | None,
+        body_tracks: list[TargetTrack],
+        body_track_debug: dict[int, dict[str, object]],
+        detections_count: int,
+        active_tracks_count: int,
+        tracker_fps: float,
+        now_s: float,
+    ) -> None:
+        if not self.record_mission_video:
+            return
+        if is_active_mission_state(self.latest_engagement_state.state):
+            self._start_mission_recording(self.latest_engagement_state.state)
+        writers = self.mission_recording_writers
+        if not writers:
+            return
+
+        min_period_s = 1.0 / max(float(self.recording_fps), 1.0)
+        if (
+            self.mission_recording_last_write_s > 0.0
+            and now_s - self.mission_recording_last_write_s < min_period_s
+        ):
+            return
+
+        output_frames = self._compose_mission_recording_frames(
+            frame=frame,
+            depth_frame=depth_frame,
+            body_tracks=body_tracks,
+            body_track_debug=body_track_debug,
+            detections_count=detections_count,
+            active_tracks_count=active_tracks_count,
+            tracker_fps=tracker_fps,
+        )
+        for stream_name, output_frame in output_frames.items():
+            writer = writers.get(stream_name)
+            if writer is not None:
+                writer.write(output_frame)
+        self.mission_recording_last_write_s = now_s
+        self.mission_recording_frame_count += 1
+
+    def _compose_mission_recording_frames(
+        self,
+        *,
+        frame: np.ndarray,
+        depth_frame: np.ndarray | None,
+        body_tracks: list[TargetTrack],
+        body_track_debug: dict[int, dict[str, object]],
+        detections_count: int,
+        active_tracks_count: int,
+        tracker_fps: float,
+    ) -> dict[str, np.ndarray]:
+        output_w, output_h = self._mission_recording_output_size()
+        tile_w = output_w // 2
+        tile_h = output_h // 2
+
+        rgb_tile = cv2.resize(frame, (tile_w, tile_h), interpolation=cv2.INTER_AREA)
+        depth_tile = make_depth_colormap(
+            depth_frame,
+            max_depth_m=self.recording_depth_max_m,
+            output_size=(tile_w, tile_h),
+        )
+        yolo_detector_tile = cv2.resize(
+            self._make_yolo_overlay(
+                frame,
+                body_track_debug,
+                include_target_map=False,
+            ),
+            (tile_w, tile_h),
+            interpolation=cv2.INTER_AREA,
+        )
+        annotated_tile = cv2.resize(
+            self._make_yolo_overlay(
+                frame,
+                body_track_debug,
+                include_target_map=True,
+            ),
+            (tile_w, tile_h),
+            interpolation=cv2.INTER_AREA,
+        )
+        stats_tile = self._make_stats_panel(
+            size=(tile_w, tile_h),
+            body_tracks=body_tracks,
+            detections_count=detections_count,
+            active_tracks_count=active_tracks_count,
+            tracker_fps=tracker_fps,
+        )
+        target_map_frame = self._make_target_map_recording_frame(
+            size=(output_w, output_h)
+        )
+
+        first_tile = (
+            yolo_detector_tile
+            if self.recording_replace_depth_tile_with_yolo
+            else depth_tile
+        )
+        first_tile_label = (
+            "RGB + YOLO"
+            if self.recording_replace_depth_tile_with_yolo
+            else "Depth Map"
+        )
+        self._draw_tile_label(first_tile, first_tile_label)
+        self._draw_tile_label(rgb_tile, "RGB")
+        annotated_label = (
+            "YOLO + Target Map"
+            if self.latest_target_map_world_tracks
+            else "RGB + YOLO"
+        )
+        self._draw_tile_label(annotated_tile, annotated_label)
+        mosaic = np.vstack(
+            (
+                np.hstack((first_tile, rgb_tile)),
+                np.hstack((annotated_tile, stats_tile)),
+            )
+        )
+        output_frames = {
+            "combined": mosaic,
+            "rgb": rgb_tile,
+            "yolo": annotated_tile,
+            "stats": stats_tile,
+            "target_map": target_map_frame,
+        }
+        if self.recording_save_depth_video:
+            output_frames["depth"] = depth_tile
+        return output_frames
+
+    def _make_yolo_overlay(
+        self,
+        frame: np.ndarray,
+        body_track_debug: dict[int, dict[str, object]],
+        *,
+        include_target_map: bool,
+    ) -> np.ndarray:
+        annotated = frame.copy()
+        for track_id, debug_info in body_track_debug.items():
+            yolo_bbox = debug_info.get("yolo_bbox_px")
+            if not isinstance(yolo_bbox, dict):
+                continue
+            x1 = int(round(float(yolo_bbox.get("x1", 0.0))))
+            y1 = int(round(float(yolo_bbox.get("y1", 0.0))))
+            x2 = int(round(float(yolo_bbox.get("x2", 0.0))))
+            y2 = int(round(float(yolo_bbox.get("y2", 0.0))))
+            x1 = max(0, min(annotated.shape[1] - 1, x1))
+            x2 = max(0, min(annotated.shape[1] - 1, x2))
+            y1 = max(0, min(annotated.shape[0] - 1, y1))
+            y2 = max(0, min(annotated.shape[0] - 1, y2))
+            cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
+            label_parts = [f"id {track_id}"]
+            depth_m = debug_info.get("depth_z_m")
+            if depth_m is not None:
+                label_parts.append(f"z {float(depth_m):.2f}m")
+            cv2.putText(
+                annotated,
+                " ".join(label_parts),
+                (x1, max(20, y1 - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (0, 255, 0),
+                2,
+                cv2.LINE_AA,
+            )
+        if include_target_map:
+            self._draw_target_map_video_overlay(annotated)
+        return annotated
+
+    def _project_world_to_pixel(
+        self,
+        world_point_m: np.ndarray,
+        *,
+        image_shape: tuple[int, ...],
+    ) -> tuple[int, int, float] | None:
+        if not self.projector.has_pose() or not self.projector.has_intrinsics():
+            return None
+        camera_point_m = self.projector.world_to_camera(world_point_m)
+        if camera_point_m is None:
+            return None
+        z_m = float(camera_point_m[2])
+        if z_m <= 0.05:
+            return None
+        intrinsics = self.projector.intrinsics
+        if intrinsics is None:
+            return None
+        x_px = (float(camera_point_m[0]) * intrinsics.fx / z_m) + intrinsics.cx
+        y_px = (float(camera_point_m[1]) * intrinsics.fy / z_m) + intrinsics.cy
+        if not np.isfinite(x_px) or not np.isfinite(y_px):
+            return None
+        height_px, width_px = image_shape[:2]
+        margin_px = max(width_px, height_px) * 0.25
+        if (
+            x_px < -margin_px
+            or x_px > width_px + margin_px
+            or y_px < -margin_px
+            or y_px > height_px + margin_px
+        ):
+            return None
+        return int(round(x_px)), int(round(y_px)), z_m
+
+    def _draw_target_map_video_overlay(self, image: np.ndarray) -> None:
+        if cv2 is None or not self.latest_target_map_world_tracks:
+            return
+        now_s = self.now_s()
+        topic_age_s = now_s - self.last_target_map_world_s
+        if topic_age_s > 2.0:
+            return
+
+        height_px, width_px = image.shape[:2]
+        legend_lines = [
+            f"Target map overlay age={topic_age_s:.1f}s",
+            "green=detected yellow=held orange=predicted",
+        ]
+        overlay_w = min(width_px - 20, 620)
+        overlay_h = 16 + (len(legend_lines) * 22)
+        cv2.rectangle(image, (10, height_px - overlay_h - 10), (10 + overlay_w, height_px - 10), (0, 0, 0), -1)
+        cv2.rectangle(image, (10, height_px - overlay_h - 10), (10 + overlay_w, height_px - 10), (0, 130, 255), 2)
+        for idx, line in enumerate(legend_lines):
+            cv2.putText(
+                image,
+                line,
+                (22, height_px - overlay_h + 14 + (idx * 22)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (245, 245, 245),
+                1,
+                cv2.LINE_AA,
+            )
+
+        for track in self.latest_target_map_world_tracks:
+            source = int(getattr(track, "source", TARGET_TRACK_SOURCE_DETECTED))
+            color = TARGET_MAP_SOURCE_BGR.get(source, (220, 220, 220))
+            world_position_m = np.array(
+                [track.x_m, track.y_m, track.z_m],
+                dtype=np.float64,
+            )
+            projected = self._project_world_to_pixel(
+                world_position_m,
+                image_shape=image.shape,
+            )
+            if projected is None:
+                continue
+            x_px, y_px, depth_z_m = projected
+            x_px = max(0, min(width_px - 1, x_px))
+            y_px = max(0, min(height_px - 1, y_px))
+
+            self._draw_target_map_history(
+                image,
+                track_id=int(track.track_id),
+                color=color,
+            )
+            uncertainty_m = max(float(getattr(track, "position_uncertainty_m", 0.0)), 0.0)
+            uncertainty_px = self._uncertainty_radius_px(
+                uncertainty_m,
+                depth_z_m=depth_z_m,
+            )
+            if uncertainty_px > 2:
+                cv2.circle(image, (x_px, y_px), uncertainty_px, color, 1, cv2.LINE_AA)
+
+            marker_radius_px = 7 if source == TARGET_TRACK_SOURCE_PREDICTED else 5
+            cv2.circle(image, (x_px, y_px), marker_radius_px, color, thickness=-1)
+            cv2.circle(image, (x_px, y_px), marker_radius_px + 2, (0, 0, 0), thickness=1)
+            velocity_endpoint = self._project_world_to_pixel(
+                world_position_m
+                + (np.array([track.vx_mps, track.vy_mps, track.vz_mps], dtype=np.float64) * 0.5),
+                image_shape=image.shape,
+            )
+            if velocity_endpoint is not None:
+                end_x = max(0, min(width_px - 1, velocity_endpoint[0]))
+                end_y = max(0, min(height_px - 1, velocity_endpoint[1]))
+                cv2.arrowedLine(
+                    image,
+                    (x_px, y_px),
+                    (end_x, end_y),
+                    color,
+                    2,
+                    cv2.LINE_AA,
+                    tipLength=0.25,
+                )
+
+            source_label = TARGET_MAP_SOURCE_LABELS.get(source, "unk")
+            label = (
+                f"M{int(track.track_id)} {source_label} "
+                f"age={float(getattr(track, 'last_observed_age_s', 0.0)):.1f}s "
+                f"unc={uncertainty_m:.2f}m"
+            )
+            cv2.putText(
+                image,
+                label,
+                (min(width_px - 260, x_px + 10), max(22, y_px - 12)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (0, 0, 0),
+                3,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                image,
+                label,
+                (min(width_px - 260, x_px + 10), max(22, y_px - 12)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                color,
+                1,
+                cv2.LINE_AA,
+            )
+
+    def _uncertainty_radius_px(self, uncertainty_m: float, *, depth_z_m: float) -> int:
+        if uncertainty_m <= 0.0 or depth_z_m <= 0.05:
+            return 0
+        intrinsics = self.projector.intrinsics
+        if intrinsics is None:
+            return 0
+        focal_px = (float(intrinsics.fx) + float(intrinsics.fy)) / 2.0
+        return int(round(min(120.0, max(0.0, focal_px * uncertainty_m / depth_z_m))))
+
+    def _draw_target_map_history(
+        self,
+        image: np.ndarray,
+        *,
+        track_id: int,
+        color: tuple[int, int, int],
+    ) -> None:
+        history = self.target_map_world_history.get(int(track_id), [])
+        if len(history) < 2:
+            return
+        points: list[tuple[int, int]] = []
+        for _, world_position_m in history:
+            projected = self._project_world_to_pixel(
+                world_position_m,
+                image_shape=image.shape,
+            )
+            if projected is None:
+                points = []
+                continue
+            x_px = max(0, min(image.shape[1] - 1, projected[0]))
+            y_px = max(0, min(image.shape[0] - 1, projected[1]))
+            points.append((x_px, y_px))
+        for start, end in zip(points[:-1], points[1:]):
+            cv2.line(image, start, end, color, 2, cv2.LINE_AA)
+
+    def _make_target_map_recording_frame(
+        self,
+        *,
+        size: tuple[int, int],
+    ) -> np.ndarray:
+        width_px, height_px = size
+        frame = np.full((height_px, width_px, 3), (22, 24, 28), dtype=np.uint8)
+        self._draw_tile_label(frame, "Target Map Recording", accent_bgr=(0, 130, 255))
+
+        map_rect = (70, 70, width_px - 40, height_px - 80)
+        map_points = self._recording_map_points()
+        if not map_points:
+            cv2.putText(
+                frame,
+                "Waiting for ownship pose or target-map tracks",
+                (90, 130),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.75,
+                (230, 230, 230),
+                2,
+                cv2.LINE_AA,
+            )
+            return frame
+
+        bounds = self._recording_map_bounds(map_points)
+        self._draw_recording_map_grid(frame, map_rect=map_rect, bounds=bounds)
+        self._draw_recording_map_ownship(frame, map_rect=map_rect, bounds=bounds)
+        self._draw_recording_map_targets(frame, map_rect=map_rect, bounds=bounds)
+        self._draw_recording_map_legend(frame, map_rect=map_rect)
+        return frame
+
+    def _recording_map_points(self) -> list[np.ndarray]:
+        points: list[np.ndarray] = []
+        points.extend(position for _, position in self.mission_ownship_history)
+        for history in self.mission_target_map_world_history.values():
+            points.extend(position for _, position in history)
+        if self.latest_local_pose is not None:
+            points.append(
+                np.array(
+                    [
+                        self.latest_local_pose.pose.position.x,
+                        self.latest_local_pose.pose.position.y,
+                        self.latest_local_pose.pose.position.z,
+                    ],
+                    dtype=np.float64,
+                )
+            )
+        for track in self.latest_target_map_world_tracks:
+            points.append(
+                np.array([track.x_m, track.y_m, track.z_m], dtype=np.float64)
+            )
+        return [point for point in points if np.all(np.isfinite(point[:2]))]
+
+    def _recording_map_bounds(
+        self,
+        points: list[np.ndarray],
+    ) -> tuple[float, float, float, float]:
+        xs = [float(point[0]) for point in points]
+        ys = [float(point[1]) for point in points]
+        min_x, max_x = min(xs), max(xs)
+        min_y, max_y = min(ys), max(ys)
+        span_x = max(max_x - min_x, 1.0)
+        span_y = max(max_y - min_y, 1.0)
+        margin = max(0.75, 0.18 * max(span_x, span_y))
+        return min_x - margin, max_x + margin, min_y - margin, max_y + margin
+
+    def _map_world_to_pixel(
+        self,
+        point_m: np.ndarray,
+        *,
+        map_rect: tuple[int, int, int, int],
+        bounds: tuple[float, float, float, float],
+    ) -> tuple[int, int]:
+        left, top, right, bottom = map_rect
+        min_x, max_x, min_y, max_y = bounds
+        usable_w = max(right - left, 1)
+        usable_h = max(bottom - top, 1)
+        x_ratio = (float(point_m[0]) - min_x) / max(max_x - min_x, 1e-6)
+        y_ratio = (float(point_m[1]) - min_y) / max(max_y - min_y, 1e-6)
+        x_px = left + int(round(x_ratio * usable_w))
+        y_px = bottom - int(round(y_ratio * usable_h))
+        return (
+            max(left, min(right, x_px)),
+            max(top, min(bottom, y_px)),
+        )
+
+    def _draw_recording_map_grid(
+        self,
+        image: np.ndarray,
+        *,
+        map_rect: tuple[int, int, int, int],
+        bounds: tuple[float, float, float, float],
+    ) -> None:
+        left, top, right, bottom = map_rect
+        cv2.rectangle(image, (left, top), (right, bottom), (12, 14, 18), -1)
+        cv2.rectangle(image, (left, top), (right, bottom), (120, 120, 120), 1)
+        min_x, max_x, min_y, max_y = bounds
+        span = max(max_x - min_x, max_y - min_y)
+        grid_step = 0.5 if span <= 5.0 else 1.0 if span <= 12.0 else 2.0
+        x_start = math.floor(min_x / grid_step) * grid_step
+        y_start = math.floor(min_y / grid_step) * grid_step
+
+        x_value = x_start
+        while x_value <= max_x + 1e-6:
+            point_a = self._map_world_to_pixel(
+                np.array([x_value, min_y, 0.0], dtype=np.float64),
+                map_rect=map_rect,
+                bounds=bounds,
+            )
+            point_b = self._map_world_to_pixel(
+                np.array([x_value, max_y, 0.0], dtype=np.float64),
+                map_rect=map_rect,
+                bounds=bounds,
+            )
+            color = (80, 80, 80) if abs(x_value) > 1e-6 else (120, 120, 120)
+            cv2.line(image, point_a, point_b, color, 1, cv2.LINE_AA)
+            x_value += grid_step
+
+        y_value = y_start
+        while y_value <= max_y + 1e-6:
+            point_a = self._map_world_to_pixel(
+                np.array([min_x, y_value, 0.0], dtype=np.float64),
+                map_rect=map_rect,
+                bounds=bounds,
+            )
+            point_b = self._map_world_to_pixel(
+                np.array([max_x, y_value, 0.0], dtype=np.float64),
+                map_rect=map_rect,
+                bounds=bounds,
+            )
+            color = (80, 80, 80) if abs(y_value) > 1e-6 else (120, 120, 120)
+            cv2.line(image, point_a, point_b, color, 1, cv2.LINE_AA)
+            y_value += grid_step
+
+        cv2.putText(
+            image,
+            f"frame={self.projector.frame_id} x[{min_x:.1f},{max_x:.1f}] y[{min_y:.1f},{max_y:.1f}]",
+            (left, bottom + 28),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (210, 210, 210),
+            1,
+            cv2.LINE_AA,
+        )
+
+    def _draw_recording_map_ownship(
+        self,
+        image: np.ndarray,
+        *,
+        map_rect: tuple[int, int, int, int],
+        bounds: tuple[float, float, float, float],
+    ) -> None:
+        if len(self.mission_ownship_history) >= 2:
+            points = [
+                self._map_world_to_pixel(
+                    position,
+                    map_rect=map_rect,
+                    bounds=bounds,
+                )
+                for _, position in self.mission_ownship_history
+            ]
+            for start, end in zip(points[:-1], points[1:]):
+                cv2.line(image, start, end, (255, 160, 40), 2, cv2.LINE_AA)
+
+        if self.latest_local_pose is None:
+            return
+        current = np.array(
+            [
+                self.latest_local_pose.pose.position.x,
+                self.latest_local_pose.pose.position.y,
+                self.latest_local_pose.pose.position.z,
+            ],
+            dtype=np.float64,
+        )
+        current_px = self._map_world_to_pixel(
+            current,
+            map_rect=map_rect,
+            bounds=bounds,
+        )
+        cv2.circle(image, current_px, 8, (255, 160, 40), -1, cv2.LINE_AA)
+        cv2.circle(image, current_px, 10, (0, 0, 0), 1, cv2.LINE_AA)
+        cv2.putText(
+            image,
+            "defense",
+            (current_px[0] + 12, current_px[1] - 8),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.55,
+            (255, 190, 80),
+            2,
+            cv2.LINE_AA,
+        )
+
+    def _draw_recording_map_targets(
+        self,
+        image: np.ndarray,
+        *,
+        map_rect: tuple[int, int, int, int],
+        bounds: tuple[float, float, float, float],
+    ) -> None:
+        source_by_track_id = {
+            int(track.track_id): int(
+                getattr(track, "source", TARGET_TRACK_SOURCE_DETECTED)
+            )
+            for track in self.latest_target_map_world_tracks
+        }
+        for track_id, history in sorted(self.mission_target_map_world_history.items()):
+            source = source_by_track_id.get(track_id, TARGET_TRACK_SOURCE_PREDICTED)
+            color = TARGET_MAP_SOURCE_BGR.get(source, (220, 220, 220))
+            points = [
+                self._map_world_to_pixel(
+                    position,
+                    map_rect=map_rect,
+                    bounds=bounds,
+                )
+                for _, position in history
+            ]
+            for start, end in zip(points[:-1], points[1:]):
+                cv2.line(image, start, end, color, 2, cv2.LINE_AA)
+
+        for track in self.latest_target_map_world_tracks:
+            source = int(getattr(track, "source", TARGET_TRACK_SOURCE_DETECTED))
+            color = TARGET_MAP_SOURCE_BGR.get(source, (220, 220, 220))
+            position = np.array([track.x_m, track.y_m, track.z_m], dtype=np.float64)
+            point_px = self._map_world_to_pixel(
+                position,
+                map_rect=map_rect,
+                bounds=bounds,
+            )
+            uncertainty_m = max(
+                float(getattr(track, "position_uncertainty_m", 0.0)),
+                0.0,
+            )
+            if uncertainty_m > 0.0:
+                radius_px = self._map_uncertainty_radius_px(
+                    uncertainty_m,
+                    map_rect=map_rect,
+                    bounds=bounds,
+                )
+                if radius_px > 1:
+                    cv2.circle(image, point_px, radius_px, color, 1, cv2.LINE_AA)
+            cv2.circle(image, point_px, 7, color, -1, cv2.LINE_AA)
+            cv2.circle(image, point_px, 9, (0, 0, 0), 1, cv2.LINE_AA)
+            label = (
+                f"M{int(track.track_id)} "
+                f"{TARGET_MAP_SOURCE_LABELS.get(source, 'unk')} "
+                f"{float(getattr(track, 'last_observed_age_s', 0.0)):.1f}s"
+            )
+            cv2.putText(
+                image,
+                label,
+                (point_px[0] + 12, point_px[1] + 18),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.52,
+                color,
+                2,
+                cv2.LINE_AA,
+            )
+
+    def _map_uncertainty_radius_px(
+        self,
+        uncertainty_m: float,
+        *,
+        map_rect: tuple[int, int, int, int],
+        bounds: tuple[float, float, float, float],
+    ) -> int:
+        left, top, right, bottom = map_rect
+        min_x, max_x, min_y, max_y = bounds
+        px_per_m_x = (right - left) / max(max_x - min_x, 1e-6)
+        px_per_m_y = (bottom - top) / max(max_y - min_y, 1e-6)
+        px_per_m = min(px_per_m_x, px_per_m_y)
+        return int(round(min(160.0, max(0.0, uncertainty_m * px_per_m))))
+
+    def _draw_recording_map_legend(
+        self,
+        image: np.ndarray,
+        *,
+        map_rect: tuple[int, int, int, int],
+    ) -> None:
+        left, top, right, _ = map_rect
+        legend_x = max(left + 12, right - 390)
+        legend_y = top + 14
+        rows = [
+            ((255, 160, 40), "defense drone path"),
+            (TARGET_MAP_SOURCE_BGR[TARGET_TRACK_SOURCE_DETECTED], "target detected"),
+            (TARGET_MAP_SOURCE_BGR[TARGET_TRACK_SOURCE_HELD], "target held"),
+            (TARGET_MAP_SOURCE_BGR[TARGET_TRACK_SOURCE_PREDICTED], "target predicted"),
+        ]
+        cv2.rectangle(
+            image,
+            (legend_x - 10, legend_y - 6),
+            (legend_x + 360, legend_y + (len(rows) * 24) + 8),
+            (0, 0, 0),
+            -1,
+        )
+        cv2.rectangle(
+            image,
+            (legend_x - 10, legend_y - 6),
+            (legend_x + 360, legend_y + (len(rows) * 24) + 8),
+            (80, 80, 80),
+            1,
+        )
+        for idx, (color, label) in enumerate(rows):
+            y_px = legend_y + (idx * 24) + 14
+            cv2.circle(image, (legend_x + 8, y_px - 5), 5, color, -1, cv2.LINE_AA)
+            cv2.putText(
+                image,
+                label,
+                (legend_x + 24, y_px),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (230, 230, 230),
+                1,
+                cv2.LINE_AA,
+            )
+
+    def _draw_tile_label(
+        self,
+        image: np.ndarray,
+        label: str,
+        *,
+        accent_bgr: tuple[int, int, int] | None = None,
+    ) -> None:
+        accent = (255, 255, 255) if accent_bgr is None else accent_bgr
+        cv2.rectangle(image, (0, 0), (image.shape[1], 34), (0, 0, 0), -1)
+        cv2.rectangle(image, (0, 0), (image.shape[1], 34), accent, 2)
+        cv2.putText(
+            image,
+            label,
+            (12, 24),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
+            2,
+            cv2.LINE_AA,
+        )
+
+    def _make_stats_panel(
+        self,
+        *,
+        size: tuple[int, int],
+        body_tracks: list[TargetTrack],
+        detections_count: int,
+        active_tracks_count: int,
+        tracker_fps: float,
+    ) -> np.ndarray:
+        width_px, height_px = size
+        panel = np.full((height_px, width_px, 3), (24, 24, 24), dtype=np.uint8)
+        engagement = self.latest_engagement_state
+        color_name = led_color_name_for_engagement_state(
+            state=engagement.state,
+            blocked_reason=engagement.blocked_reason,
+            estop_latched=engagement.estop_latched,
+        )
+        led_bgr = led_bgr_for_color_name(color_name)
+        self._draw_tile_label(panel, "Stats", accent_bgr=led_bgr)
+        cv2.circle(panel, (width_px - 32, 17), 10, led_bgr, thickness=-1)
+        cv2.circle(panel, (width_px - 32, 17), 11, (255, 255, 255), thickness=1)
+
+        lines = self._mission_stats_lines(
+            body_tracks=body_tracks,
+            detections_count=detections_count,
+            active_tracks_count=active_tracks_count,
+            tracker_fps=tracker_fps,
+            led_color_name=color_name,
+        )
+        y_px = 62
+        line_height_px = 25
+        for label, value, color in lines:
+            if y_px > height_px - 12:
+                break
+            cv2.putText(
+                panel,
+                label,
+                (16, y_px),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.55,
+                (170, 170, 170),
+                1,
+                cv2.LINE_AA,
+            )
+            cv2.putText(
+                panel,
+                value,
+                (190, y_px),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.62,
+                color,
+                2,
+                cv2.LINE_AA,
+            )
+            y_px += line_height_px
+        return panel
+
+    def _mission_stats_lines(
+        self,
+        *,
+        body_tracks: list[TargetTrack],
+        detections_count: int,
+        active_tracks_count: int,
+        tracker_fps: float,
+        led_color_name: str,
+    ) -> list[tuple[str, str, tuple[int, int, int]]]:
+        now_s = self.now_s()
+        engagement = self.latest_engagement_state
+        mavros_state = self.latest_mavros_state
+        active_track = self._select_stats_track(body_tracks)
+        pose = self.latest_local_pose
+        flow_range = self.latest_flow_range
+        white = (245, 245, 245)
+        muted = (180, 180, 180)
+        warn = (0, 180, 255)
+        bad = (40, 40, 255)
+        good = (80, 255, 80)
+
+        lines: list[tuple[str, str, tuple[int, int, int]]] = [
+            (
+                "Mission state",
+                str(engagement.state or "UNKNOWN"),
+                led_bgr_for_color_name(led_color_name),
+            ),
+            ("LED color", led_color_name, led_bgr_for_color_name(led_color_name)),
+        ]
+        if engagement.blocked_reason:
+            lines.append(("Blocked", str(engagement.blocked_reason), warn))
+        if engagement.estop_latched:
+            lines.append(("ESTOP", "LATCHED", bad))
+
+        state_age_s = now_s - self.last_mavros_state_s
+        state_color = good if state_age_s <= 1.0 and mavros_state.connected else warn
+        lines.extend(
+            [
+                ("PX4 mode", str(mavros_state.mode or "unknown"), state_color),
+                (
+                    "MAVROS",
+                    f"conn={int(mavros_state.connected)} armed={int(mavros_state.armed)}",
+                    state_color,
+                ),
+                (
+                    "Target",
+                    self._format_target_stats(active_track, engagement),
+                    good if engagement.target_visible else muted,
+                ),
+                (
+                    "Dwell",
+                    f"{engagement.dwell_elapsed_s:.1f}s / rem {engagement.dwell_remaining_s:.1f}s",
+                    white,
+                ),
+                (
+                    "Completed",
+                    f"{engagement.completed_targets_count}/{engagement.required_targets_count}",
+                    white,
+                ),
+                (
+                    "Perception",
+                    f"det={detections_count} tracks={active_tracks_count} fps={tracker_fps:.1f}",
+                    white,
+                ),
+                (
+                    "Target map",
+                    self._format_target_map_recording_stats(now_s=now_s),
+                    good if now_s - self.last_target_map_world_s <= 1.0 else muted,
+                ),
+                ("Inference", f"{self.last_inference_ms:.1f} ms", white),
+                (
+                    "Local pose",
+                    self._format_pose_stats(pose, now_s=now_s),
+                    good if now_s - self.last_local_pose_s <= 1.0 else warn,
+                ),
+                (
+                    "Flow range",
+                    self._format_flow_range_stats(flow_range, now_s=now_s),
+                    good if now_s - self.last_flow_range_s <= 1.0 else warn,
+                ),
+                (
+                    "Recording",
+                    f"{self.mission_recording_frame_count} frames",
+                    white,
+                ),
+            ]
+        )
+        return lines
+
+    def _format_target_map_recording_stats(self, *, now_s: float) -> str:
+        if not self.latest_target_map_world_tracks:
+            return "waiting"
+        predicted_count = sum(
+            1
+            for track in self.latest_target_map_world_tracks
+            if int(getattr(track, "source", TARGET_TRACK_SOURCE_DETECTED))
+            == TARGET_TRACK_SOURCE_PREDICTED
+        )
+        max_age_s = max(
+            float(getattr(track, "last_observed_age_s", 0.0))
+            for track in self.latest_target_map_world_tracks
+        )
+        topic_age_s = max(now_s - self.last_target_map_world_s, 0.0)
+        return (
+            f"tracks={len(self.latest_target_map_world_tracks)} "
+            f"pred={predicted_count} max_age={max_age_s:.1f}s topic={topic_age_s:.1f}s"
+        )
+
+    def _select_stats_track(self, body_tracks: list[TargetTrack]) -> TargetTrack | None:
+        active_id = int(self.latest_engagement_state.active_track_id)
+        if active_id >= 0:
+            for track in body_tracks:
+                if int(track.track_id) == active_id:
+                    return track
+        if not body_tracks:
+            return None
+        return max(body_tracks, key=lambda track: float(track.confidence))
+
+    def _format_target_stats(
+        self,
+        track: TargetTrack | None,
+        engagement: EngagementState,
+    ) -> str:
+        if track is None:
+            if engagement.target_visible:
+                return (
+                    f"id={engagement.active_track_id} "
+                    f"dist={engagement.active_distance_m:.2f}m"
+                )
+            return "none"
+        return (
+            f"id={track.track_id} dist={track.distance_m:.2f}m "
+            f"conf={track.confidence:.2f}"
+        )
+
+    def _format_pose_stats(self, pose: PoseStamped | None, *, now_s: float) -> str:
+        if pose is None:
+            return "missing"
+        age_s = now_s - self.last_local_pose_s
+        position = pose.pose.position
+        return (
+            f"x={position.x:.2f} y={position.y:.2f} "
+            f"z={position.z:.2f} age={age_s:.1f}s"
+        )
+
+    def _format_flow_range_stats(self, flow_range: Range | None, *, now_s: float) -> str:
+        if flow_range is None:
+            return "missing"
+        age_s = now_s - self.last_flow_range_s
+        return f"{float(flow_range.range):.2f}m age={age_s:.1f}s"
+
     def process_latest_frame(self) -> None:
         frame: np.ndarray | None = None
         depth_frame: np.ndarray | None = None
@@ -677,6 +2134,11 @@ class RealsenseTrackerNode(Node):
             if direct_frame is None:
                 return
             frame, depth_frame, stamp_key = direct_frame
+        elif self.source_mode == "zed_sdk":
+            zed_frame = self._read_zed_sdk_frame()
+            if zed_frame is None:
+                return
+            frame, depth_frame, stamp_key = zed_frame
         else:
             color_msg = self.latest_color_msg
             if color_msg is None:
@@ -788,6 +2250,16 @@ class RealsenseTrackerNode(Node):
         status.paired_detections = 0
         status.active_tracks = int(len(body_tracks))
         self.status_pub.publish(status)
+        self._maybe_record_mission_frame(
+            frame=frame,
+            depth_frame=depth_frame,
+            body_tracks=body_tracks,
+            body_track_debug=body_track_debug,
+            detections_count=len(detections),
+            active_tracks_count=len(tracked_objects),
+            tracker_fps=tracker_fps,
+            now_s=process_time_s,
+        )
 
     def _start_direct_pipeline(self) -> None:
         config = rs.config()
@@ -872,6 +2344,143 @@ class RealsenseTrackerNode(Node):
         frame_number = int(color_frame.get_frame_number())
         return color, depth, (frame_number, 0)
 
+    def _start_zed_sdk_pipeline(self) -> None:
+        assert sl is not None
+
+        resolution_name = normalize_zed_enum_name(
+            self.zed_camera_resolution,
+            parameter_name="zed_camera_resolution",
+            allowed={name for name in dir(sl.RESOLUTION) if name.isupper()},
+        )
+        depth_mode_name = normalize_zed_enum_name(
+            self.zed_depth_mode,
+            parameter_name="zed_depth_mode",
+            allowed={name for name in dir(sl.DEPTH_MODE) if name.isupper()},
+        )
+        coordinate_system_name = normalize_zed_enum_name(
+            self.zed_coordinate_system,
+            parameter_name="zed_coordinate_system",
+            allowed={name for name in dir(sl.COORDINATE_SYSTEM) if name.isupper()},
+        )
+        coordinate_units_name = normalize_zed_enum_name(
+            self.zed_coordinate_units,
+            parameter_name="zed_coordinate_units",
+            allowed={name for name in dir(sl.UNIT) if name.isupper()},
+        )
+        flip_name = normalize_zed_flip_mode(self.zed_flip_mode)
+        image_view_name = normalize_zed_image_view(self.zed_image_view_name)
+
+        init = sl.InitParameters()
+        init.camera_resolution = getattr(sl.RESOLUTION, resolution_name)
+        init.camera_fps = max(int(self.zed_camera_fps), 1)
+        init.depth_mode = getattr(sl.DEPTH_MODE, depth_mode_name)
+        init.coordinate_system = getattr(sl.COORDINATE_SYSTEM, coordinate_system_name)
+        init.coordinate_units = getattr(sl.UNIT, coordinate_units_name)
+        init.camera_image_flip = getattr(sl.FLIP_MODE, flip_name)
+        init.depth_minimum_distance = float(self.zed_depth_minimum_distance_m)
+        init.depth_maximum_distance = float(self.zed_depth_maximum_distance_m)
+
+        self.zed_camera = sl.Camera()
+        status = self.zed_camera.open(init)
+        if status != sl.ERROR_CODE.SUCCESS:
+            self.zed_camera = None
+            raise RuntimeError(f"Could not open ZED SDK camera: {status}")
+
+        camera_configuration = (
+            self.zed_camera.get_camera_information().camera_configuration
+        )
+        calibration = camera_configuration.calibration_parameters
+        left_cam = calibration.left_cam
+        width_px = int(getattr(camera_configuration.resolution, "width", 0) or 0)
+        height_px = int(getattr(camera_configuration.resolution, "height", 0) or 0)
+        fx = float(left_cam.fx)
+        fy = float(left_cam.fy)
+        cx = float(left_cam.cx)
+        cy = float(left_cam.cy)
+        if self.zed_rotate_180 and width_px > 0 and height_px > 0:
+            fx, fy, cx, cy = rotate_camera_intrinsics_180(
+                width_px=width_px,
+                height_px=height_px,
+                fx=fx,
+                fy=fy,
+                cx=cx,
+                cy=cy,
+            )
+        self.projector.set_intrinsics(
+            fx=fx,
+            fy=fy,
+            cx=cx,
+            cy=cy,
+        )
+
+        self.zed_runtime = sl.RuntimeParameters()
+        self.zed_runtime.enable_depth = True
+        self.zed_color_mat = sl.Mat()
+        self.zed_depth_mat = sl.Mat()
+        self.zed_image_view = getattr(sl.VIEW, image_view_name)
+        self.depth_scale_m = 1.0
+
+        self.get_logger().info(
+            "Started direct ZED SDK pipeline: "
+            f"resolution={resolution_name}, fps={init.camera_fps}, "
+            f"depth_mode={depth_mode_name}, image_view={image_view_name}, "
+            f"rotate_180={'on' if self.zed_rotate_180 else 'off'}, "
+            f"depth_range={init.depth_minimum_distance:.2f}-"
+            f"{init.depth_maximum_distance:.2f}m, "
+            f"intrinsics=fx:{fx:.1f} fy:{fy:.1f} "
+            f"cx:{cx:.1f} cy:{cy:.1f}"
+        )
+
+    def _read_zed_sdk_frame(
+        self,
+    ) -> tuple[np.ndarray, np.ndarray | None, tuple[int, int]] | None:
+        if (
+            self.zed_camera is None
+            or self.zed_runtime is None
+            or self.zed_color_mat is None
+            or self.zed_depth_mat is None
+            or self.zed_image_view is None
+        ):
+            return None
+        assert sl is not None
+
+        status = self.zed_camera.grab(self.zed_runtime)
+        if status != sl.ERROR_CODE.SUCCESS:
+            self._warn_throttled(
+                f"Waiting for direct ZED SDK frames failed: {status}",
+                attr_name="last_wait_warn_s",
+            )
+            return None
+
+        self.zed_camera.retrieve_image(self.zed_color_mat, self.zed_image_view)
+        self.zed_camera.retrieve_measure(self.zed_depth_mat, sl.MEASURE.DEPTH)
+        color = self.zed_color_mat.get_data()
+        if color is None or color.ndim < 3 or color.shape[2] < 3:
+            self._warn_throttled(
+                "Waiting for the first color frame from the direct ZED SDK "
+                "pipeline.",
+                attr_name="last_wait_warn_s",
+            )
+            return None
+        color_bgr = np.ascontiguousarray(color[:, :, :3])
+        if self.zed_rotate_180:
+            color_bgr = np.ascontiguousarray(np.rot90(color_bgr, 2))
+
+        depth = self.zed_depth_mat.get_data()
+        depth_m = None
+        if depth is not None:
+            depth_m = np.asarray(depth, dtype=np.float32)
+            if depth_m.ndim == 3:
+                depth_m = depth_m[:, :, 0]
+            depth_m = np.ascontiguousarray(depth_m)
+            if self.zed_rotate_180:
+                depth_m = np.ascontiguousarray(np.rot90(depth_m, 2))
+
+        timestamp_ns = int(
+            self.zed_camera.get_timestamp(sl.TIME_REFERENCE.IMAGE).get_nanoseconds()
+        )
+        return color_bgr, depth_m, zed_timestamp_key(timestamp_ns)
+
     def _build_body_tracks(
         self,
         tracked_objects: list,
@@ -955,6 +2564,8 @@ class RealsenseTrackerNode(Node):
             msg = TargetTrack()
             msg.stamp = stamp_msg
             msg.track_id = track_id
+            msg.detector_track_id = track_id
+            msg.source = TRACK_SOURCE_DETECTED
             msg.x_b_m = float(body_point_m[0])
             msg.y_b_m = float(body_point_m[1])
             msg.z_b_m = float(body_point_m[2])
@@ -965,6 +2576,10 @@ class RealsenseTrackerNode(Node):
             msg.confidence = confidence
             msg.bbox_area_px = bbox_area_px
             msg.inbound = velocity.inbound
+            msg.last_observed_age_s = 0.0
+            msg.prediction_horizon_s = 0.0
+            msg.position_uncertainty_m = 0.0
+            msg.velocity_uncertainty_mps = 0.0
             track_messages.append(msg)
             track_debug[track_id] = {
                 "body_position_m": point3_to_dict(body_point_m),
@@ -997,6 +2612,10 @@ class RealsenseTrackerNode(Node):
     ) -> BodyTrackState:
         return BodyTrackState(
             track_id=int(track.track_id),
+            detector_track_id=int(
+                getattr(track, "detector_track_id", int(track.track_id))
+            ),
+            source=int(getattr(track, "source", TRACK_SOURCE_DETECTED)),
             x_b_m=float(track.x_b_m),
             y_b_m=float(track.y_b_m),
             z_b_m=float(track.z_b_m),
@@ -1007,12 +2626,22 @@ class RealsenseTrackerNode(Node):
             bbox_area_px=float(track.bbox_area_px),
             inbound=bool(track.inbound),
             last_seen_s=float(now_s),
+            last_observed_age_s=float(getattr(track, "last_observed_age_s", 0.0)),
+            prediction_horizon_s=float(getattr(track, "prediction_horizon_s", 0.0)),
+            position_uncertainty_m=float(
+                getattr(track, "position_uncertainty_m", 0.0)
+            ),
+            velocity_uncertainty_mps=float(
+                getattr(track, "velocity_uncertainty_mps", 0.0)
+            ),
         )
 
     def _body_track_state_to_msg(self, state: BodyTrackState, stamp_msg) -> TargetTrack:
         msg = TargetTrack()
         msg.stamp = stamp_msg
         msg.track_id = int(state.track_id)
+        msg.detector_track_id = int(state.detector_track_id)
+        msg.source = int(state.source)
         msg.x_b_m = float(state.x_b_m)
         msg.y_b_m = float(state.y_b_m)
         msg.z_b_m = float(state.z_b_m)
@@ -1025,6 +2654,10 @@ class RealsenseTrackerNode(Node):
         msg.confidence = float(state.confidence)
         msg.bbox_area_px = float(state.bbox_area_px)
         msg.inbound = bool(state.inbound)
+        msg.last_observed_age_s = float(state.last_observed_age_s)
+        msg.prediction_horizon_s = float(state.prediction_horizon_s)
+        msg.position_uncertainty_m = float(state.position_uncertainty_m)
+        msg.velocity_uncertainty_mps = float(state.velocity_uncertainty_mps)
         return msg
 
     def _cache_fresh_body_tracks(
@@ -1084,6 +2717,7 @@ class RealsenseTrackerNode(Node):
             held_debug = dict(self.cached_body_track_debug.get(track_id, {}))
             held_debug["held_track"] = True
             held_debug["held_track_age_s"] = float(held_age_s)
+            held_debug["source"] = TRACK_SOURCE_HELD
             body_track_debug[track_id] = held_debug
         return body_tracks, body_track_debug
 
@@ -1126,6 +2760,10 @@ class RealsenseTrackerNode(Node):
             msg = WorldTargetTrack()
             msg.stamp = stamp_msg
             msg.track_id = int(body_track.track_id)
+            msg.detector_track_id = int(
+                getattr(body_track, "detector_track_id", int(body_track.track_id))
+            )
+            msg.source = int(getattr(body_track, "source", TRACK_SOURCE_DETECTED))
             msg.x_m = float(world_point_m[0])
             msg.y_m = float(world_point_m[1])
             msg.z_m = float(world_point_m[2])
@@ -1136,6 +2774,18 @@ class RealsenseTrackerNode(Node):
             msg.confidence = float(body_track.confidence)
             msg.bbox_area_px = float(body_track.bbox_area_px)
             msg.inbound = bool(body_track.inbound)
+            msg.last_observed_age_s = float(
+                getattr(body_track, "last_observed_age_s", 0.0)
+            )
+            msg.prediction_horizon_s = float(
+                getattr(body_track, "prediction_horizon_s", 0.0)
+            )
+            msg.position_uncertainty_m = float(
+                getattr(body_track, "position_uncertainty_m", 0.0)
+            )
+            msg.velocity_uncertainty_mps = float(
+                getattr(body_track, "velocity_uncertainty_mps", 0.0)
+            )
             world_tracks.append(msg)
             active_track_ids.add(int(body_track.track_id))
 
@@ -1323,6 +2973,19 @@ class RealsenseTrackerNode(Node):
                 "direct_depth_width": int(self.direct_depth_width),
                 "direct_depth_height": int(self.direct_depth_height),
                 "direct_depth_fps": int(self.direct_depth_fps),
+                "zed_camera_resolution": self.zed_camera_resolution,
+                "zed_camera_fps": int(self.zed_camera_fps),
+                "zed_depth_mode": self.zed_depth_mode,
+                "zed_rotate_180": bool(self.zed_rotate_180),
+                "zed_coordinate_system": self.zed_coordinate_system,
+                "zed_coordinate_units": self.zed_coordinate_units,
+                "zed_depth_minimum_distance_m": float(
+                    self.zed_depth_minimum_distance_m
+                ),
+                "zed_depth_maximum_distance_m": float(
+                    self.zed_depth_maximum_distance_m
+                ),
+                "zed_image_view": self.zed_image_view_name,
                 "depth_scale_m": float(self.depth_scale_m),
             },
             "counts": {

@@ -1,0 +1,6 @@
+run_id,experiment_tag,timestamp_s,sample_kind,track_id,source,source_label,x_m,y_m,z_m,cleaned_x_m,cleaned_y_m,cleaned_z_m,confidence,position_uncertainty_m
+tracking_cdrone3_20260820_201347_319_milestone4,milestone4,0.000000000,target_map,1,0,detected,-1.737078,-0.236991,0.224011,-1.689331,-0.243666,0.230179,0.684659,0.174349
+tracking_cdrone3_20260820_201347_319_milestone4,milestone4,0.100033998,target_map,1,0,detected,-1.737078,-0.236991,0.224011,-1.658207,-0.248018,0.234200,0.667232,0.209364
+tracking_cdrone3_20260820_201347_319_milestone4,milestone4,0.202434063,target_map,1,0,detected,-1.593837,-0.257018,0.242515,-1.633570,-0.251462,0.237383,0.733376,0.154688
+tracking_cdrone3_20260820_201347_319_milestone4,milestone4,0.299999952,target_map,1,0,detected,-1.564834,-0.261073,0.246262,-1.607694,-0.255080,0.240725,0.715434,0.188824
+tracking_cdrone3_20260820_201347_319_milestone4,milestone4,0.400223255,target_map,1,0,detected,-1.535025,-0.265240,0.250113,-1.564565,-0.261110,0.246297,0.696994,0.223907

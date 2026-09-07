@@ -11,10 +11,16 @@ try:
 except Exception:  # pragma: no cover - platform specific
     cv2 = None
 
+TRACK_SOURCE_DETECTED = 0
+TRACK_SOURCE_HELD = 1
+TRACK_SOURCE_PREDICTED = 2
+
 
 @dataclass(frozen=True)
 class BodyTrackState:
     track_id: int
+    detector_track_id: int
+    source: int
     x_b_m: float
     y_b_m: float
     z_b_m: float
@@ -25,6 +31,10 @@ class BodyTrackState:
     bbox_area_px: float
     inbound: bool
     last_seen_s: float
+    last_observed_age_s: float
+    prediction_horizon_s: float
+    position_uncertainty_m: float
+    velocity_uncertainty_mps: float
 
 
 def clamp_bbox_to_image(
@@ -144,6 +154,8 @@ def extrapolate_body_track_state(
 
     return BodyTrackState(
         track_id=int(track_state.track_id),
+        detector_track_id=int(track_state.detector_track_id),
+        source=TRACK_SOURCE_HELD,
         x_b_m=float(track_state.x_b_m + delta_m[0]),
         y_b_m=float(track_state.y_b_m + delta_m[1]),
         z_b_m=float(track_state.z_b_m + delta_m[2]),
@@ -154,6 +166,13 @@ def extrapolate_body_track_state(
         bbox_area_px=float(track_state.bbox_area_px),
         inbound=bool(track_state.inbound),
         last_seen_s=float(track_state.last_seen_s),
+        last_observed_age_s=float(dt_s),
+        prediction_horizon_s=float(dt_s),
+        position_uncertainty_m=float(
+            max(track_state.position_uncertainty_m, 0.0)
+            + (max(track_state.velocity_uncertainty_mps, 0.0) * dt_s)
+        ),
+        velocity_uncertainty_mps=float(track_state.velocity_uncertainty_mps),
     )
 
 

@@ -1,0 +1,25 @@
+target_map_node:
+  ros__parameters:
+    publish_rate_hz: 10.0
+    world_frame: map
+    # Identity-sensitive topics are supplied by launch defaults sourced from
+    # droneid_config.yaml. Keeping these blank avoids per-drone drift here.
+    world_tracks_topic: ""
+    ownship_pose_topic: ""
+    target_map_world_topic: ""
+    target_map_tracks_topic: ""
+    target_map_markers_topic: ""
+    association_gate_m: 0.8
+    association_uncertainty_scale: 1.0
+    max_prediction_horizon_s: 3.0
+    prune_after_s: 5.0
+    observation_fresh_s: 0.25
+    confidence_decay_per_s: 0.25
+    observed_position_uncertainty_m: 0.15
+    observed_velocity_uncertainty_mps: 0.35
+    position_process_noise_mps: 0.35
+    velocity_process_noise_mps: 0.25
+    velocity_blend_alpha: 0.55
+    max_velocity_mps: 8.0
+    history_length: 30
+    marker_lifetime_s: 0.5

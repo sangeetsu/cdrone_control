@@ -93,6 +93,7 @@ class RealsenseProjection:
         camera_offset_body_m: list[float],
         camera_rpy_body_rad: list[float],
         world_frame: str,
+        camera_body_axis_signs: list[float] | None = None,
     ) -> None:
         self.world_frame = str(world_frame or "").strip()
         self.pose_frame_id = self.world_frame or "map"
@@ -100,6 +101,19 @@ class RealsenseProjection:
         self.drone_position_m: np.ndarray | None = None
         self.world_from_body_rotation: np.ndarray | None = None
         self.camera_offset_body_m = np.asarray(camera_offset_body_m, dtype=np.float64)
+        if camera_body_axis_signs is None:
+            camera_body_axis_signs = [1.0, 1.0, 1.0]
+        self.camera_body_axis_signs = np.asarray(
+            [float(value) for value in camera_body_axis_signs],
+            dtype=np.float64,
+        )
+        if self.camera_body_axis_signs.shape != (3,):
+            self.camera_body_axis_signs = np.ones(3, dtype=np.float64)
+        self.camera_body_axis_signs = np.where(
+            self.camera_body_axis_signs < 0.0,
+            -1.0,
+            1.0,
+        )
         mount_rotation = _rotation_matrix_from_rpy(*camera_rpy_body_rad)
         self.camera_to_body_rotation = mount_rotation @ OPTICAL_TO_FLU
 
@@ -160,11 +174,16 @@ class RealsenseProjection:
         return np.array([x_cam, y_cam, depth_m], dtype=np.float64)
 
     def camera_to_body_frame(self, camera_point_m: np.ndarray) -> np.ndarray:
-        return self.camera_to_body_rotation @ camera_point_m + self.camera_offset_body_m
+        rotated_body_point = self.camera_to_body_rotation @ camera_point_m
+        return (
+            self.camera_body_axis_signs * rotated_body_point
+            + self.camera_offset_body_m
+        )
 
     def body_to_camera_frame(self, body_point_m: np.ndarray) -> np.ndarray:
         centered_body_point = np.asarray(body_point_m, dtype=np.float64)
         centered_body_point = centered_body_point - self.camera_offset_body_m
+        centered_body_point = self.camera_body_axis_signs * centered_body_point
         return self.camera_to_body_rotation.T @ centered_body_point
 
     def pixel_depth_to_body(

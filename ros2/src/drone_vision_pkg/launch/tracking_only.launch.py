@@ -22,6 +22,7 @@ def generate_launch_description():
             {
                 "drone_id": LaunchConfiguration("drone_id"),
                 "source_mode": LaunchConfiguration("source_mode"),
+                "zed_rotate_180": LaunchConfiguration("zed_rotate_180"),
                 "pose_topic": LaunchConfiguration("pose_topic"),
                 "publish_world_track_compare": LaunchConfiguration(
                     "publish_world_track_compare"
@@ -45,6 +46,15 @@ def generate_launch_description():
                 "publish_track_hold_max_extrapolation_m": LaunchConfiguration(
                     "publish_track_hold_max_extrapolation_m"
                 ),
+                "recording_target_map_world_topic": LaunchConfiguration(
+                    "recording_target_map_world_topic"
+                ),
+                "recording_save_depth_video": LaunchConfiguration(
+                    "recording_save_depth_video"
+                ),
+                "recording_replace_depth_tile_with_yolo": LaunchConfiguration(
+                    "recording_replace_depth_tile_with_yolo"
+                ),
             },
         ],
         arguments=["--ros-args", "--log-level", LaunchConfiguration("log_level")],
@@ -62,6 +72,7 @@ def generate_launch_description():
                 default_value=default_arg(defaults, "drone_namespace", "/cdrone"),
             ),
             DeclareLaunchArgument("source_mode", default_value="direct"),
+            DeclareLaunchArgument("zed_rotate_180", default_value="true"),
             DeclareLaunchArgument(
                 "tracker_config_file",
                 default_value=default_tracker_config,
@@ -95,6 +106,15 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "publish_track_hold_max_extrapolation_m",
                 default_value="0.25",
+            ),
+            DeclareLaunchArgument(
+                "recording_target_map_world_topic",
+                default_value="",
+            ),
+            DeclareLaunchArgument("recording_save_depth_video", default_value="true"),
+            DeclareLaunchArgument(
+                "recording_replace_depth_tile_with_yolo",
+                default_value="false",
             ),
             tracker_node,
         ]

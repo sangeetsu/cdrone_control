@@ -106,6 +106,30 @@ def _parse_vector(
     return items
 
 
+def transform_pose_components(
+    position_xyz: tuple[float, float, float],
+    source_q: tuple[float, float, float, float],
+    *,
+    frame_q: tuple[float, float, float, float],
+    position_offset_m: tuple[float, float, float],
+    orientation_offset_q: tuple[float, float, float, float],
+) -> tuple[tuple[float, float, float], tuple[float, float, float, float]]:
+    source_q = _normalize_quaternion(*source_q)
+    frame_q = _normalize_quaternion(*frame_q)
+    body_offset_xyz = _rotate_vector(source_q, position_offset_m)
+    source_position_xyz = (
+        float(position_xyz[0]) + body_offset_xyz[0],
+        float(position_xyz[1]) + body_offset_xyz[1],
+        float(position_xyz[2]) + body_offset_xyz[2],
+    )
+    output_position_xyz = _rotate_vector(frame_q, source_position_xyz)
+    output_q = _quaternion_multiply(
+        frame_q,
+        _quaternion_multiply(source_q, orientation_offset_q),
+    )
+    return output_position_xyz, output_q
+
+
 class ExternalPoseAdapterNode(Node):
     def __init__(self) -> None:
         super().__init__("external_pose_adapter_node")
@@ -114,6 +138,7 @@ class ExternalPoseAdapterNode(Node):
         self.declare_parameter("source_pose_topic", "/visual_slam/tracking/vo_pose")
         self.declare_parameter("output_pose_topic", "")
         self.declare_parameter("map_frame", "map")
+        self.declare_parameter("frame_rpy_rad", [0.0, 0.0, 0.0])
         self.declare_parameter("position_offset_m", [0.0, 0.0, 0.0])
         self.declare_parameter("rpy_offset_rad", [0.0, 0.0, 0.0])
         self.declare_parameter("timeout_s", 0.25)
@@ -135,11 +160,17 @@ class ExternalPoseAdapterNode(Node):
             expected_len=3,
             name="position_offset_m",
         )
+        self.frame_rpy_rad = _parse_vector(
+            self.get_parameter("frame_rpy_rad").value,
+            expected_len=3,
+            name="frame_rpy_rad",
+        )
         self.rpy_offset_rad = _parse_vector(
             self.get_parameter("rpy_offset_rad").value,
             expected_len=3,
             name="rpy_offset_rad",
         )
+        self.frame_q = _quaternion_from_euler(*self.frame_rpy_rad)
         self.orientation_offset_q = _quaternion_from_euler(*self.rpy_offset_rad)
 
         self.last_source_s = 0.0
@@ -166,7 +197,8 @@ class ExternalPoseAdapterNode(Node):
         self.get_logger().info(
             "External pose adapter started: "
             f"{self.source_pose_topic} -> {self.output_pose_topic} "
-            f"(source_qos={'best_effort' if self.source_best_effort else 'reliable'})"
+            f"(source_qos={'best_effort' if self.source_best_effort else 'reliable'}, "
+            f"frame_rpy_rad={self.frame_rpy_rad})"
         )
 
     def now_s(self) -> float:
@@ -186,12 +218,20 @@ class ExternalPoseAdapterNode(Node):
             pose_msg.pose.orientation.z,
             pose_msg.pose.orientation.w,
         )
-        offset_xyz = _rotate_vector(source_q, self.position_offset_m)
-        pose_msg.pose.position.x += offset_xyz[0]
-        pose_msg.pose.position.y += offset_xyz[1]
-        pose_msg.pose.position.z += offset_xyz[2]
-
-        out_q = _quaternion_multiply(source_q, self.orientation_offset_q)
+        position_xyz, out_q = transform_pose_components(
+            (
+                pose_msg.pose.position.x,
+                pose_msg.pose.position.y,
+                pose_msg.pose.position.z,
+            ),
+            source_q,
+            frame_q=self.frame_q,
+            position_offset_m=self.position_offset_m,
+            orientation_offset_q=self.orientation_offset_q,
+        )
+        pose_msg.pose.position.x = position_xyz[0]
+        pose_msg.pose.position.y = position_xyz[1]
+        pose_msg.pose.position.z = position_xyz[2]
         pose_msg.pose.orientation.x = out_q[0]
         pose_msg.pose.orientation.y = out_q[1]
         pose_msg.pose.orientation.z = out_q[2]

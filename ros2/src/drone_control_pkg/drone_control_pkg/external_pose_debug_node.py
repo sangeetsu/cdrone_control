@@ -304,6 +304,9 @@ class ExternalPoseDebugNode(Node):
             "source_to_local": self._rounded_delta(
                 self._pose_delta(source_stats, local_stats)
             ),
+            "adapter_to_local": self._rounded_delta(
+                self._pose_delta(adapter_stats, local_stats)
+            ),
         }
 
         if self.latest_origin is not None:
@@ -360,7 +363,16 @@ class ExternalPoseDebugNode(Node):
             held_pose.header.stamp = self.get_clock().now().to_msg()
             self.held_pose_pub.publish(held_pose)
 
-        self._maybe_warn(now_s, source_stats, max_gap_s, local_stats, source_stats)
+        reference_stats = adapter_stats if adapter_stats is not None else source_stats
+        reference_label = "adapter" if adapter_stats is not None else "source"
+        self._maybe_warn(
+            now_s,
+            source_stats,
+            max_gap_s,
+            local_stats,
+            reference_stats,
+            reference_label,
+        )
 
     def _maybe_warn(
         self,
@@ -369,6 +381,7 @@ class ExternalPoseDebugNode(Node):
         max_gap_s: float | None,
         local_stats: dict[str, float] | None,
         reference_stats: dict[str, float] | None,
+        reference_label: str,
     ) -> None:
         warn_parts: list[str] = []
         if source_stats is None:
@@ -379,58 +392,65 @@ class ExternalPoseDebugNode(Node):
         if max_gap_s is not None and self.warn_gap_s > 0.0 and max_gap_s > self.warn_gap_s:
             warn_parts.append(f"max source gap {max_gap_s:.2f}s")
 
-        source_to_local = self._pose_delta(reference_stats, local_stats)
-        if source_to_local is not None:
+        reference_to_local = self._pose_delta(reference_stats, local_stats)
+        if reference_to_local is not None:
             pos_error = max(
-                abs(source_to_local["dx_m"]),
-                abs(source_to_local["dy_m"]),
-                abs(source_to_local["dz_m"]),
+                abs(reference_to_local["dx_m"]),
+                abs(reference_to_local["dy_m"]),
+                abs(reference_to_local["dz_m"]),
             )
-            yaw_error = abs(source_to_local["dyaw_deg"])
+            yaw_error = abs(reference_to_local["dyaw_deg"])
             if (
                 self.warn_position_error_m > 0.0
                 and pos_error > self.warn_position_error_m
             ):
                 detail = (
-                    "source->local pos error "
+                    f"{reference_label}->local pos error "
                     f"{pos_error:.3f}m "
-                    f"(dx={source_to_local['dx_m']:+.3f}, "
-                    f"dy={source_to_local['dy_m']:+.3f}, "
-                    f"dz={source_to_local['dz_m']:+.3f})"
+                    f"(dx={reference_to_local['dx_m']:+.3f}, "
+                    f"dy={reference_to_local['dy_m']:+.3f}, "
+                    f"dz={reference_to_local['dz_m']:+.3f})"
                 )
                 if (
                     self.latest_home is not None
-                    and source_stats is not None
+                    and reference_stats is not None
                     and local_stats is not None
                 ):
                     _, home_msg = self.latest_home
                     home_z_m = float(home_msg.position.z)
                     detail += (
-                        f" src_z={source_stats['z']:.3f}"
+                        f" {reference_label}_z={reference_stats['z']:.3f}"
                         f" local_z={local_stats['z']:.3f}"
-                        f" src_minus_home={source_stats['z'] - home_z_m:+.3f}"
+                        f" {reference_label}_minus_home="
+                        f"{reference_stats['z'] - home_z_m:+.3f}"
                         f" local_minus_home={local_stats['z'] - home_z_m:+.3f}"
                     )
                 warn_parts.append(detail)
             if (
                 self.warn_position_error_m > 0.0
-                and abs(source_to_local["dz_m"]) > self.warn_position_error_m
+                and abs(reference_to_local["dz_m"]) > self.warn_position_error_m
             ):
-                detail = f"source->local vertical mismatch dz={source_to_local['dz_m']:+.3f}m"
+                detail = (
+                    f"{reference_label}->local vertical mismatch "
+                    f"dz={reference_to_local['dz_m']:+.3f}m"
+                )
                 if (
                     self.latest_home is not None
-                    and source_stats is not None
+                    and reference_stats is not None
                     and local_stats is not None
                 ):
                     _, home_msg = self.latest_home
                     home_z_m = float(home_msg.position.z)
                     detail += (
-                        f" src_minus_home={source_stats['z'] - home_z_m:+.3f}"
+                        f" {reference_label}_minus_home="
+                        f"{reference_stats['z'] - home_z_m:+.3f}"
                         f" local_minus_home={local_stats['z'] - home_z_m:+.3f}"
                     )
                 warn_parts.append(detail)
             if self.warn_yaw_error_deg > 0.0 and yaw_error > self.warn_yaw_error_deg:
-                warn_parts.append(f"source->local yaw error {yaw_error:.1f}deg")
+                warn_parts.append(
+                    f"{reference_label}->local yaw error {yaw_error:.1f}deg"
+                )
 
         if not warn_parts:
             return

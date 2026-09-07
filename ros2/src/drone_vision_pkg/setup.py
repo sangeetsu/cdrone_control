@@ -31,8 +31,15 @@ setup(
     entry_points={
         "console_scripts": [
             "realsense_tracker_node = drone_vision_pkg.realsense_tracker_node:main",
+            "target_map_node = drone_vision_pkg.target_map_node:main",
+            "tracking_metrics_node = drone_vision_pkg.tracking_metrics:main",
+            "tracking_metrics_postprocess = "
+            "drone_vision_pkg.tracking_metrics:postprocess_main",
+            "milestone_tracking_compare_report = "
+            "drone_vision_pkg.tracking_metrics:compare_main",
             "world_track_compare_report = "
             "drone_vision_pkg.world_track_compare_report:main",
+            "zed_depth_ladder_report = drone_vision_pkg.zed_depth_ladder:main",
         ],
     },
 )

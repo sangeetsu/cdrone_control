@@ -5,7 +5,7 @@ import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from drone_control_pkg.follow_utils import TrackSnapshot
+from drone_control_pkg.follow_utils import TRACK_SOURCE_PREDICTED, TrackSnapshot
 from drone_control_pkg.milestone2_demo_logic import (
     project_body_velocity_to_world_xy,
     select_sequential_target,
@@ -56,6 +56,7 @@ def test_select_sequential_target_keeps_active_lock_when_valid():
         track_timeout_s=0.5,
         min_track_confidence=0.35,
         max_target_distance_m=2.6,
+        min_target_distance_m=0.0,
         require_target_in_front=True,
         max_abs_target_y_m=4.0,
         max_abs_target_z_m=2.5,
@@ -80,6 +81,7 @@ def test_select_sequential_target_skips_excluded_and_stale_tracks():
         track_timeout_s=0.5,
         min_track_confidence=0.35,
         max_target_distance_m=2.6,
+        min_target_distance_m=0.0,
         require_target_in_front=True,
         max_abs_target_y_m=4.0,
         max_abs_target_z_m=2.5,
@@ -87,6 +89,53 @@ def test_select_sequential_target_skips_excluded_and_stale_tracks():
 
     assert chosen is not None
     assert chosen.track_id == 33
+
+
+def test_select_sequential_target_accepts_milestone4_predicted_track_options():
+    predicted = make_track(44, x_b_m=1.9, confidence=0.9)
+    predicted.source = TRACK_SOURCE_PREDICTED
+    predicted.last_observed_age_s = 0.2
+    predicted.position_uncertainty_m = 0.3
+
+    chosen = select_sequential_target(
+        [predicted],
+        active_track_id=None,
+        excluded_track_ids=set(),
+        now_s=10.2,
+        track_timeout_s=0.5,
+        min_track_confidence=0.35,
+        max_target_distance_m=2.6,
+        min_target_distance_m=0.0,
+        require_target_in_front=True,
+        max_abs_target_y_m=4.0,
+        max_abs_target_z_m=2.5,
+        allow_predicted_tracks=True,
+        max_predicted_track_age_s=0.5,
+        max_predicted_position_uncertainty_m=0.5,
+    )
+
+    assert chosen is predicted
+
+
+def test_select_sequential_target_rejects_implausibly_close_tracks():
+    close_track = make_track(55, x_b_m=0.02, confidence=0.9, distance_m=0.02)
+    valid_track = make_track(66, x_b_m=1.2, confidence=0.7, distance_m=1.2)
+
+    chosen = select_sequential_target(
+        [close_track, valid_track],
+        active_track_id=None,
+        excluded_track_ids=set(),
+        now_s=10.2,
+        track_timeout_s=0.5,
+        min_track_confidence=0.35,
+        max_target_distance_m=2.6,
+        min_target_distance_m=0.5,
+        require_target_in_front=True,
+        max_abs_target_y_m=4.0,
+        max_abs_target_z_m=2.5,
+    )
+
+    assert chosen is valid_track
 
 
 def test_update_dwell_progress_completes_after_required_duration():

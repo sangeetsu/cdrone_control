@@ -108,7 +108,8 @@ Terminal 1:
 ros2 launch drone_bringup position_hover_demo.launch.py \
   takeoff_altitude_m:=1.5 \
   hover_duration_s:=30.0 \
-  use_speed_profile:=false
+  use_speed_profile:=false \
+  rpy_offset_rad:='[0.0, 0.0, -3.141592653589793]'
 ```
 
 Terminal 2:

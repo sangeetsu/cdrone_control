@@ -7,6 +7,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 from geometry_msgs.msg import PoseStamped
 
 from drone_vision_pkg.projection import RealsenseProjection
@@ -77,6 +78,29 @@ def test_projection_inverse_helpers_round_trip() -> None:
     assert np.allclose(recovered_camera_from_world, camera_point)
     assert np.isclose(np.linalg.norm(recovered_camera_from_world), 4.5276925691)
     assert np.isclose(recovered_camera_from_world[2], 4.5)
+
+
+def test_projection_axis_signs_can_flip_forward_body_axis() -> None:
+    """A mount-specific sign correction should invert body X only."""
+
+    projection = RealsenseProjection(
+        camera_offset_body_m=[0.0, 0.0, 0.0],
+        camera_rpy_body_rad=[0.0, 0.0, 0.0],
+        world_frame="map",
+        camera_body_axis_signs=[-1.0, 1.0, 1.0],
+    )
+
+    projection.set_intrinsics(fx=100.0, fy=100.0, cx=50.0, cy=50.0)
+    body_point = projection.pixel_depth_to_body(50.0, 50.0, 3.0)
+
+    assert body_point is not None
+    assert body_point[0] == pytest.approx(-3.0)
+    assert body_point[1] == pytest.approx(0.0)
+    assert body_point[2] == pytest.approx(0.0)
+    assert np.allclose(
+        projection.body_to_camera_frame(body_point),
+        np.array([0.0, 0.0, 3.0], dtype=np.float64),
+    )
 
 
 def test_generate_report_for_empty_run(tmp_path: Path) -> None:

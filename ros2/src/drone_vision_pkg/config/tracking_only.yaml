@@ -30,6 +30,21 @@ realsense_tracker_node:
     direct_depth_width: 848
     direct_depth_height: 480
     direct_depth_fps: 15
+    record_mission_video: true
+    recording_output_dir: /home/jetson/cdrone_control/mission_recordings
+    recording_fps: 10.0
+    recording_width: 1280
+    recording_height: 720
+    recording_fourcc: mp4v
+    recording_depth_max_m: 6.0
+    recording_save_depth_video: true
+    recording_replace_depth_tile_with_yolo: false
+    recording_state_topic: ""
+    recording_mavros_state_topic: ""
+    recording_local_pose_topic: ""
+    recording_flow_range_topic: ""
+    recording_target_map_world_topic: ""
+    recording_target_map_history_s: 3.0
     color_topic: /camera/color/image_raw
     depth_topic: /camera/aligned_depth_to_color/image_raw
     camera_info_topic: /camera/color/camera_info

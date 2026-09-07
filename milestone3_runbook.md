@@ -34,7 +34,8 @@ Example:
 ```bash
 ros2 launch drone_bringup milestone3_demo.launch.py \
   required_completion_count:=1 \
-  speed_profile:=fun
+  speed_profile:=fun \
+  rpy_offset_rad:='[0.0, 0.0, -3.141592653589793]'
 ```
 
 If you want to push the same named profile directly to PX4 outside the Milestone
