@@ -8,7 +8,7 @@ from drone_control_pkg.deployment_config import (
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
 from launch.launch_description_sources import PythonLaunchDescriptionSource
-from launch.substitutions import LaunchConfiguration
+from launch.substitutions import LaunchConfiguration, PythonExpression
 from launch_ros.actions import Node
 from launch_ros.parameter_descriptions import ParameterValue
 
@@ -18,12 +18,50 @@ def _load_optitrack_defaults() -> dict[str, object]:
 
 
 def launch_setup(context, *args, **kwargs):
-    del context, args, kwargs
+    del args, kwargs
 
     bringup_share = get_package_share_directory("drone_bringup")
     log_level = LaunchConfiguration("log_level")
     drone_id = LaunchConfiguration("drone_id")
     mavros_namespace = LaunchConfiguration("mavros_namespace")
+
+    localization_source = LaunchConfiguration("localization_source").perform(context)
+    if localization_source == "onboard":
+        # Return before constructing any external-pose/reference nodes.
+        mavros = IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(bringup_share, "launch", "drone.launch.py")),
+            launch_arguments={
+                "log_level": log_level,
+                "mavros_namespace": mavros_namespace,
+                "mavros_config_overlay": LaunchConfiguration("onboard_mavros_config"),
+            }.items(),
+        )
+        params = {"drone_id": drone_id, "mavros_namespace": mavros_namespace}
+        for name in ("flow_topic", "range_topic"):
+            params[name] = ParameterValue(LaunchConfiguration(name), value_type=str)
+        for name in (
+            "publish_rate_hz", "takeoff_altitude_m", "takeoff_rate_m_s",
+            "hover_duration_s", "altitude_tolerance_m", "stage_timeout_s",
+            "max_horizontal_excursion_m", "offboard_warmup_s", "readiness_dwell_s",
+            "initial_climb_hover_thrust", "initial_climb_max_thrust", "initial_climb_thrust_slew",
+            "initial_climb_height_m", "initial_climb_rate_m_s", "initial_climb_min_range_m",
+            "initial_climb_aiding_dwell_s", "initial_climb_timeout_s", "initial_climb_no_lift_timeout_s",
+            "initial_climb_max_tilt_rad", "initial_climb_max_speed_m_s",
+        ):
+            params[name] = ParameterValue(LaunchConfiguration(name), value_type=float)
+        params["enable_flight"] = ParameterValue(LaunchConfiguration("enable_flight"), value_type=bool)
+        params["initial_climb_enabled"] = ParameterValue(
+            LaunchConfiguration("initial_climb_enabled"), value_type=bool)
+        params["request_telemetry_streams"] = ParameterValue(
+            LaunchConfiguration("request_telemetry_streams"), value_type=bool)
+        node = Node(
+            package="drone_control_pkg", executable="onboard_hover_demo_sequence_node",
+            output="screen", parameters=[params],
+            arguments=["--ros-args", "--log-level", log_level],
+        )
+        return [mavros, node]
+    if localization_source != "external_pose":
+        raise ValueError("localization_source must be onboard or external_pose")
 
     pose_bridge_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -55,6 +93,7 @@ def launch_setup(context, *args, **kwargs):
             "adapter_timeout_s": LaunchConfiguration("external_pose_timeout_s"),
             "publish_companion_status": "true",
             "map_frame": LaunchConfiguration("map_frame"),
+            "frame_rpy_rad": LaunchConfiguration("frame_rpy_rad"),
             "position_offset_m": LaunchConfiguration("position_offset_m"),
             "rpy_offset_rad": LaunchConfiguration("rpy_offset_rad"),
             "optitrack_server": LaunchConfiguration("optitrack_server"),
@@ -211,9 +250,42 @@ def generate_launch_description():
         "indoor_speed_profile.yaml",
     )
 
+    def hover_default(onboard, external):
+        return PythonExpression([
+            "'", str(onboard), "' if '", LaunchConfiguration("localization_source"),
+            "' == 'onboard' else '", str(external), "'",
+        ])
+
     return LaunchDescription(
         [
             DeclareLaunchArgument("log_level", default_value="info"),
+            DeclareLaunchArgument("localization_source", default_value="external_pose",
+                                  choices=["onboard", "external_pose"]),
+            DeclareLaunchArgument("enable_flight", default_value="false",
+                                  description="Onboard path only: allow start to issue flight commands"),
+            DeclareLaunchArgument("onboard_mavros_config", default_value=os.path.join(
+                bringup_share, "config", "onboard_mavros.yaml")),
+            DeclareLaunchArgument("request_telemetry_streams", default_value="true"),
+            DeclareLaunchArgument("flow_topic", default_value="",
+                                  description="Onboard flow topic; empty uses MAVROS px4flow raw"),
+            DeclareLaunchArgument("range_topic", default_value="",
+                                  description="Onboard: defaults to MAVROS px4flow/ground_distance"),
+            DeclareLaunchArgument("offboard_warmup_s", default_value="1.5"),
+            DeclareLaunchArgument("readiness_dwell_s", default_value="2.0"),
+            DeclareLaunchArgument("initial_climb_enabled", default_value="false",
+                                  description="Onboard: range-controlled attitude climb before position hold"),
+            DeclareLaunchArgument("initial_climb_hover_thrust", default_value="0.0",
+                                  description="Required for initial climb: verified normalized airframe hover thrust"),
+            DeclareLaunchArgument("initial_climb_max_thrust", default_value="0.75"),
+            DeclareLaunchArgument("initial_climb_thrust_slew", default_value="0.25"),
+            DeclareLaunchArgument("initial_climb_height_m", default_value="0.25"),
+            DeclareLaunchArgument("initial_climb_rate_m_s", default_value="0.2"),
+            DeclareLaunchArgument("initial_climb_min_range_m", default_value="0.15"),
+            DeclareLaunchArgument("initial_climb_aiding_dwell_s", default_value="1.0"),
+            DeclareLaunchArgument("initial_climb_timeout_s", default_value="8.0"),
+            DeclareLaunchArgument("initial_climb_no_lift_timeout_s", default_value="5.0"),
+            DeclareLaunchArgument("initial_climb_max_tilt_rad", default_value="0.2"),
+            DeclareLaunchArgument("initial_climb_max_speed_m_s", default_value="0.6"),
             DeclareLaunchArgument(
                 "drone_id",
                 default_value=_default_arg(defaults, "drone_id", ""),
@@ -272,6 +344,14 @@ def generate_launch_description():
                 default_value=_default_arg(defaults, "map_frame", "map"),
             ),
             DeclareLaunchArgument(
+                "frame_rpy_rad",
+                default_value=_default_arg(
+                    defaults,
+                    "frame_rpy_rad",
+                    "[0.0, 0.0, 0.0]",
+                ),
+            ),
+            DeclareLaunchArgument(
                 "position_offset_m", default_value="[0.0, 0.0, 0.0]"
             ),
             DeclareLaunchArgument(
@@ -323,12 +403,12 @@ def generate_launch_description():
                 "debug_warn_yaw_error_deg", default_value="10.0"
             ),
             DeclareLaunchArgument("publish_rate_hz", default_value="20.0"),
-            DeclareLaunchArgument("takeoff_altitude_m", default_value="0.7"),
-            DeclareLaunchArgument("takeoff_rate_m_s", default_value="0.5"),
+            DeclareLaunchArgument("takeoff_altitude_m", default_value=hover_default(1.0, 0.7)),
+            DeclareLaunchArgument("takeoff_rate_m_s", default_value=hover_default(0.3, 0.5)),
             DeclareLaunchArgument("takeoff_strategy", default_value="AUTO_MODE"),
-            DeclareLaunchArgument("hover_duration_s", default_value="5.0"),
+            DeclareLaunchArgument("hover_duration_s", default_value=hover_default(20.0, 5.0)),
             DeclareLaunchArgument("hover_mode", default_value="HOLD"),
-            DeclareLaunchArgument("altitude_tolerance_m", default_value="0.10"),
+            DeclareLaunchArgument("altitude_tolerance_m", default_value=hover_default(0.15, 0.10)),
             DeclareLaunchArgument("start_altitude_limit_m", default_value="0.20"),
             DeclareLaunchArgument("touchdown_altitude_m", default_value="0.15"),
             DeclareLaunchArgument("touchdown_dwell_s", default_value="1.0"),
@@ -350,7 +430,7 @@ def generate_launch_description():
             ),
             DeclareLaunchArgument("companion_status_timeout_s", default_value="0.5"),
             DeclareLaunchArgument("require_companion_active", default_value="true"),
-            DeclareLaunchArgument("max_horizontal_excursion_m", default_value="0.75"),
+            DeclareLaunchArgument("max_horizontal_excursion_m", default_value=hover_default(0.5, 0.75)),
             DeclareLaunchArgument("restore_takeoff_alt_on_exit", default_value="true"),
             DeclareLaunchArgument("takeoff_param_id", default_value="MIS_TAKEOFF_ALT"),
             DeclareLaunchArgument("param_pull_force", default_value="true"),

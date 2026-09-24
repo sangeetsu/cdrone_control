@@ -40,6 +40,8 @@ setup(
             "drone_control_pkg.altctl_demo_sequence_node:main",
             "position_hover_demo_sequence_node = "
             "drone_control_pkg.position_hover_demo_sequence_node:main",
+            "onboard_hover_demo_sequence_node = "
+            "drone_control_pkg.onboard_hover_demo_sequence_node:main",
             "position_goto_demo_sequence_node = "
             "drone_control_pkg.position_goto_demo_sequence_node:main",
             "milestone2_demo_sequence_node = "

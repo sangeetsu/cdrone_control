@@ -10,7 +10,7 @@ from launch_ros.actions import Node
 
 
 def launch_setup(context, *args, **kwargs):
-    del context, args, kwargs
+    del args, kwargs
 
     bringup_share = get_package_share_directory("drone_bringup")
     mavros_params = os.path.join(bringup_share, "config", "px4_params.yaml")
@@ -23,12 +23,17 @@ def launch_setup(context, *args, **kwargs):
         mavros_param_dict.get("mavros_node", {}).get("ros__parameters", {})
     )
 
+    parameters = [mavros_node_params, mavros_config, mavros_plugins]
+    overlay = LaunchConfiguration("mavros_config_overlay").perform(context).strip()
+    if overlay:
+        parameters.append(overlay)
+
     mavros_node = Node(
         package="mavros",
         executable="mavros_node",
         namespace=LaunchConfiguration("mavros_namespace"),
         output="screen",
-        parameters=[mavros_node_params, mavros_config, mavros_plugins],
+        parameters=parameters,
         arguments=["--ros-args", "--log-level", LaunchConfiguration("log_level")],
     )
 
@@ -40,6 +45,7 @@ def generate_launch_description():
     return LaunchDescription(
         [
             DeclareLaunchArgument("log_level", default_value="info"),
+            DeclareLaunchArgument("mavros_config_overlay", default_value=""),
             DeclareLaunchArgument(
                 "mavros_namespace",
                 default_value=default_arg(defaults, "mavros_namespace", "mavros"),

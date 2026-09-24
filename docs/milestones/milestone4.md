@@ -21,6 +21,24 @@ replace target-state estimation for a moving target drone. In the default studio
 flow, OptiTrack supplies the `map` frame. Isaac VSLAM remains the non-mocap pose
 alternative when the D455 VSLAM path is validated for the airframe.
 
+## Onboard Optical Flow And Control
+
+Milestone 4 already uses body-frame velocity commands while following a target:
+`compute_follow_command` in the milestone 3 sequence controller produces the
+command, and `mavros_velocity_node` streams it to MAVROS. The target map is target
+memory, not a PX4 waypoint mission. A waypoint-to-velocity rewrite is unnecessary.
+
+Velocity control suits target-relative following, but still needs a valid
+velocity estimate. ARK Flow + IMU provides local motion information with drift;
+it does not establish the studio's global frame. The current tracking ownship
+pose, target-map history, perimeter/pillar guard and return-to-start behavior
+depend on consistent coordinates. They must be adapted and validated together
+before flying milestone 4 without mocap, including clearing history after an
+estimator reset and limiting return behavior when local position drifts.
+
+The first onboard update implements only the milestone 1 hover path. Milestone 4
+flight behavior remains unchanged. See [the onboard hover procedure](../../milestone1_runbook.md).
+
 Generated diagrams:
 
 - `docs/generated/milestone4_target_memory_architecture.svg`
@@ -133,6 +151,7 @@ Isaac VSLAM pose path, after the D455 VSLAM container is already publishing:
 
 ros2 launch drone_bringup milestone4_demo.launch.py \
   pose_source:=realsense_pose \
+  frame_rpy_rad:='[0.0, 0.0, 0.0]' \
   source_pose_topic:=/visual_slam/tracking/vo_pose \
   tracking_pose_topic:=/visual_slam/tracking/vo_pose \
   target_map_ownship_pose_topic:=/visual_slam/tracking/vo_pose

@@ -1,6 +1,7 @@
 optitrack_server: 192.168.0.217
 optitrack_port: 3883
 map_frame: map
+frame_rpy_rad: "[0.0, 0.0, 3.141592653589793]"
 vrpn_update_freq: 100.0
 vrpn_refresh_freq: 1.0
 vrpn_sensor_data_qos: true

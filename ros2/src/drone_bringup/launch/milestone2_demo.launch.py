@@ -55,6 +55,7 @@ def launch_setup(context, *args, **kwargs):
             "adapter_timeout_s": LaunchConfiguration("external_pose_timeout_s"),
             "publish_companion_status": "true",
             "map_frame": LaunchConfiguration("map_frame"),
+            "frame_rpy_rad": LaunchConfiguration("frame_rpy_rad"),
             "position_offset_m": LaunchConfiguration("position_offset_m"),
             "rpy_offset_rad": LaunchConfiguration("rpy_offset_rad"),
             "optitrack_server": LaunchConfiguration("optitrack_server"),
@@ -269,6 +270,14 @@ def generate_launch_description():
             DeclareLaunchArgument(
                 "map_frame",
                 default_value=_default_arg(defaults, "map_frame", "map"),
+            ),
+            DeclareLaunchArgument(
+                "frame_rpy_rad",
+                default_value=_default_arg(
+                    defaults,
+                    "frame_rpy_rad",
+                    "[0.0, 0.0, 0.0]",
+                ),
             ),
             DeclareLaunchArgument(
                 "position_offset_m", default_value="[0.0, 0.0, 0.0]"

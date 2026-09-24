@@ -1,0 +1,35 @@
+# Overlay for ARK Flow onboard localization only.
+/**:
+  ros__parameters:
+    plugin_denylist:
+      - guided_target
+      - wheel_odometry
+      - odometry
+      - fake_gps
+      - mocap_pose_estimate
+      - vision_pose
+      - vision_speed
+
+# OPTICAL_FLOW_RAD carries ARK ground distance on this FCU. Override MAVROS's
+# legacy PX4Flow sonar defaults (0.3..5 m). The operator requested a 5 cm
+# acceptance minimum for ground readings; this does not change PX4 fusion limits
+# or establish optical-flow accuracy below ARK's documented 8 cm working height.
+# MAVROS labels this wrapper as ULTRASOUND even though ARK uses a laser rangefinder.
+/**/px4flow:
+  ros__parameters:
+    frame_id: "ark_flow_downward"
+    ranger_min_range: 0.05
+    ranger_max_range: 30.0
+    ranger_fov: 0.2164
+
+# Optional separate DISTANCE_SENSOR source; use only after confirming its ID
+# and downward orientation. The hover default uses px4flow/ground_distance.
+/**/distance_sensor:
+  ros__parameters:
+    config: |
+      ark_flow:
+        id: 0
+        frame_id: "ark_flow_downward"
+        orientation: PITCH_270
+        field_of_view: 0.2164
+        send_tf: false

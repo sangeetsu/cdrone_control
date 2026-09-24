@@ -1,0 +1,458 @@
+"""Local hover state machine; coordinates are MAVROS ENU, never studio coordinates."""
+
+from dataclasses import dataclass, field
+import math
+
+from drone_control_pkg.onboard_initial_climb import RangeClimb, vertical_distance
+
+
+@dataclass(frozen=True)
+class HoverSettings:
+    enable_flight: bool = False
+    publish_rate_hz: float = 20.0
+    takeoff_altitude_m: float = 1.0
+    takeoff_rate_m_s: float = 0.3
+    hover_duration_s: float = 20.0
+    altitude_tolerance_m: float = 0.15
+    altitude_dwell_s: float = 1.0
+    readiness_dwell_s: float = 2.0
+    offboard_warmup_s: float = 1.5
+    sensor_timeout_s: float = 0.5
+    state_timeout_s: float = 2.5
+    max_horizontal_excursion_m: float = 0.5
+    max_pose_jump_m: float = 0.5
+    max_yaw_jump_rad: float = 0.52
+    altitude_overshoot_m: float = 0.3
+    stage_timeout_s: float = 30.0
+    landing_timeout_s: float = 45.0
+    command_timeout_s: float = 2.0
+    command_retry_s: float = 1.0
+    max_command_attempts: int = 3
+    flow_min_quality: int = 1
+    # Operator-requested ground-distance acceptance; PX4 fusion is checked separately.
+    range_min_m: float = 0.05
+    range_max_m: float = 30.0
+    initial_climb_enabled: bool = False
+    # Required explicitly when opting in; never guess an airframe's hover thrust.
+    initial_climb_hover_thrust: float = 0.0
+    initial_climb_max_thrust: float = 0.75
+    initial_climb_thrust_slew: float = 0.25
+    initial_climb_height_m: float = 0.25
+    initial_climb_rate_m_s: float = 0.2
+    initial_climb_min_range_m: float = 0.15
+    initial_climb_aiding_dwell_s: float = 1.0
+    initial_climb_timeout_s: float = 8.0
+    initial_climb_no_lift_timeout_s: float = 5.0
+    initial_climb_max_tilt_rad: float = 0.2
+    initial_climb_max_speed_m_s: float = 0.6
+
+    def __post_init__(self):
+        for name, value in vars(self).items():
+            if name in {"enable_flight", "initial_climb_enabled"}:
+                continue
+            if name == "initial_climb_hover_thrust" and value == 0:
+                continue
+            if not math.isfinite(value) or value <= 0:
+                raise ValueError(f"{name} must be finite and positive")
+        if self.publish_rate_hz < 10 or self.offboard_warmup_s < 1.0:
+            raise ValueError("OFFBOARD requires >=10 Hz output and >=1 s warmup")
+        if self.range_min_m >= self.range_max_m or self.flow_min_quality > 255:
+            raise ValueError("invalid range limits or flow quality threshold")
+        if self.altitude_tolerance_m >= self.takeoff_altitude_m:
+            raise ValueError("altitude tolerance must be smaller than the climb")
+        if not 0 <= self.initial_climb_hover_thrust < self.initial_climb_max_thrust <= 1:
+            raise ValueError("initial climb needs 0 <= hover thrust < maximum thrust <= 1")
+        if self.initial_climb_enabled:
+            if not 0.15 <= self.initial_climb_height_m <= 0.4:
+                raise ValueError("initial climb height must be between 0.15 and 0.4 m")
+            if self.initial_climb_height_m >= self.takeoff_altitude_m:
+                raise ValueError("initial climb height must be below final takeoff altitude")
+            if not 0.1 <= self.initial_climb_min_range_m < self.initial_climb_height_m:
+                raise ValueError("initial climb handover range must be >=0.1 m and below climb height")
+            if not (self.initial_climb_no_lift_timeout_s < self.initial_climb_timeout_s <= 10):
+                raise ValueError("initial climb needs no-lift timeout < total timeout <= 10 s")
+            if self.initial_climb_max_tilt_rad > 0.35 or self.initial_climb_rate_m_s > 0.3:
+                raise ValueError("initial climb tilt/rate exceed supported limits")
+
+
+@dataclass
+class Telemetry:
+    connected: bool = False
+    armed: bool = False
+    mode: str = ""
+    landed: int = 0
+    # x, y, z, yaw; all in the same local frame for a flight session.
+    pose: tuple[float, float, float, float] | None = None
+    frame: str = ""
+    estimator_ok: bool = False
+    estimator_reason: str = "missing"
+    vertical_estimator_ok: bool = False
+    vertical_estimator_reason: str = "missing"
+    # Independent IMU orientation (ENU/FLU) and raw downward range.
+    attitude: tuple[float, float, float] | None = None
+    ground_distance: float | None = None
+    position_target: tuple[float, float, float, float] | None = None
+    flow_ok: bool = False
+    flow_reason: str = "invalid integration or insufficient quality"
+    range_ok: bool = False
+    range_reason: str = "invalid or outside sensor limits"
+    received: dict[str, float] = field(default_factory=dict)
+
+    def fresh(self, name, now, timeout):
+        timestamp = self.received.get(name)
+        return timestamp is not None and 0 <= now - timestamp <= timeout
+
+    def blockers(self, now, settings, *, preflight=False, initial_climb=False):
+        reasons = []
+        for name in ("state", "extended", "estimator", "pose", "flow", "range"):
+            timeout = (settings.state_timeout_s if name in
+                       {"state", "extended", "estimator"} else settings.sensor_timeout_s)
+            if not self.fresh(name, now, timeout):
+                reasons.append(f"{name}: stale or missing")
+        if not self.connected:
+            reasons.append("FCU disconnected")
+        if self.pose is None or not all(math.isfinite(v) for v in self.pose) or not self.frame:
+            reasons.append("local pose: invalid coordinates/orientation/frame")
+        if initial_climb:
+            if not self.vertical_estimator_ok:
+                reasons.append(f"estimator: {self.vertical_estimator_reason}")
+            if not self.fresh("imu", now, settings.sensor_timeout_s):
+                reasons.append("imu: stale or missing")
+            if self.attitude is None or not all(math.isfinite(v) for v in self.attitude):
+                reasons.append("imu: invalid attitude")
+            elif math.acos(max(-1.0, min(1.0, math.cos(self.attitude[0]) *
+                                       math.cos(self.attitude[1])))) > settings.initial_climb_max_tilt_rad:
+                reasons.append("initial climb tilt limit exceeded")
+            if vertical_distance(self) is None:
+                reasons.append("initial climb: missing measured ground distance")
+        elif not self.estimator_ok:
+            reasons.append(f"estimator: {self.estimator_reason}")
+        if not self.flow_ok and self.fresh("flow", now, settings.sensor_timeout_s):
+            reasons.append(f"flow: {self.flow_reason}")
+        if not self.range_ok and self.fresh("range", now, settings.sensor_timeout_s):
+            reasons.append(f"range: {self.range_reason}")
+        if preflight:
+            if self.armed:
+                reasons.append("vehicle already armed")
+            if self.landed != 1:
+                reasons.append("landed state is not ON_GROUND")
+        return reasons
+
+
+@dataclass
+class Output:
+    setpoint: tuple[float, float, float, float] | None = None
+    attitude_setpoint: tuple[float, float] | None = None  # ENU yaw, normalized thrust
+    command: tuple[str, object] | None = None
+
+
+class HoverController:
+    TERMINAL = {"IDLE", "COMPLETE", "ABORT", "OPERATOR_CONTROL", "FAILSAFE"}
+    FLYING = {"WARMUP", "SET_OFFBOARD", "ARMING", "INITIAL_CLIMB",
+              "POSITION_HANDOVER", "TAKEOFF", "HOVER"}
+    INITIAL = {"WARMUP", "SET_OFFBOARD", "ARMING", "INITIAL_CLIMB"}
+
+    def __init__(self, settings=None):
+        self.settings = settings or HoverSettings()
+        self.telemetry = Telemetry()
+        self.state = "IDLE"
+        self.reason = "diagnostics only" if not self.settings.enable_flight else "waiting for start"
+        self.entered = 0.0
+        self.ready_since = None
+        self.altitude_since = None
+        self.ground_since = None
+        self.origin = None
+        self.origin_frame = ""
+        self.target_z = None
+        self.last_tick = None
+        self.last_pose = None
+        self.last_pose_time = None
+        self.pose_fault_until = 0.0
+        self.pending = None
+        self.pending_since = 0.0
+        self.attempts = 0
+        self.last_command = -math.inf
+        self.offboard_confirmed = False
+        self.aborted = False
+        self.arm_requested = False
+        self.climb = None
+
+    def uses_initial_climb(self):
+        return self.settings.initial_climb_enabled and self.state in self.INITIAL
+
+    def transition(self, state, now, reason=""):
+        self.state, self.entered = state, now
+        self.reason = reason
+        self.attempts = 0
+        self.last_command = -math.inf
+        self.ground_since = None
+
+    def update_pose(self, pose, frame, now):
+        t = self.telemetry
+        jump = False
+        if self.last_pose is not None and self.last_pose_time is not None:
+            if 0 <= now - self.last_pose_time <= self.settings.sensor_timeout_s:
+                distance = math.dist(pose[:3], self.last_pose[:3])
+                yaw_delta = abs(math.atan2(
+                    math.sin(pose[3] - self.last_pose[3]), math.cos(pose[3] - self.last_pose[3])))
+                if self.uses_initial_climb() and distance > self.settings.max_pose_jump_m:
+                    # Aiding can initialize/reset XY before it is used for control.
+                    if self.climb is not None:
+                        self.climb.aiding_since = None
+                    distance = 0.0
+                jump = (distance > self.settings.max_pose_jump_m
+                        or yaw_delta > self.settings.max_yaw_jump_rad or frame != t.frame)
+        if self.state in self.FLYING and frame != self.origin_frame:
+            jump = True
+        self.last_pose, self.last_pose_time = pose, now
+        t.pose, t.frame, t.received["pose"] = pose, frame, now
+        if jump:
+            self.pose_fault_until = now + self.settings.readiness_dwell_s
+            self.ready_since = None
+            if self.state in self.FLYING:
+                self.abort(now, "local pose jumped or frame changed")
+
+    def connection_reset(self, now):
+        self.telemetry.received.clear()
+        self.ready_since = None
+        self.last_pose = self.last_pose_time = None
+        if self.state in self.FLYING:
+            self.abort(now, "FCU connection changed; flight reference invalid")
+
+    def readiness(self, now, *, preflight=None):
+        if preflight is None:
+            preflight = self.state in self.TERMINAL
+        initial = self.settings.initial_climb_enabled and (preflight or self.uses_initial_climb())
+        reasons = self.telemetry.blockers(now, self.settings, preflight=preflight,
+                                          initial_climb=initial)
+        if initial and self.settings.initial_climb_hover_thrust <= 0:
+            reasons.append("set initial_climb_hover_thrust to the verified airframe hover thrust")
+        if now < self.pose_fault_until:
+            reasons.append("local pose changed discontinuously; waiting to settle")
+        if reasons:
+            self.ready_since = None
+        elif self.ready_since is None:
+            self.ready_since = now
+        if not reasons and now - self.ready_since < self.settings.readiness_dwell_s:
+            duration = self.settings.readiness_dwell_s
+            reasons.append(f"waiting for {duration:g} s continuous readiness")
+        return reasons
+
+    def start(self, now):
+        reasons = self.readiness(now, preflight=True)
+        if not self.settings.enable_flight:
+            reasons.insert(0, "flight disabled (enable_flight:=false)")
+        if self.state not in self.TERMINAL or self.pending is not None:
+            reasons.insert(0, "sequence or command already active")
+        if self.state == "FAILSAFE":
+            reasons.insert(0, "restart node after resolving the failed handoff")
+        if reasons:
+            return False, "; ".join(reasons)
+        self.origin = self.telemetry.pose
+        self.origin_frame = self.telemetry.frame
+        self.target_z = self.origin[2]
+        self.offboard_confirmed = self.aborted = self.arm_requested = False
+        self.altitude_since = None
+        self.last_tick = now
+        if self.settings.initial_climb_enabled:
+            self.climb = RangeClimb(vertical_distance(self.telemetry), self.telemetry.attitude[2],
+                                    self.telemetry.received["range"])
+        self.transition("WARMUP", now, "streaming measured starting pose")
+        return True, "onboard hover started"
+
+    def abort(self, now, reason):
+        if self.state in self.TERMINAL:
+            return
+        self.aborted = True
+        self.transition("LANDING", now, reason)
+
+    def command_result(self, accepted, now, detail=""):
+        command = self.pending
+        self.pending = None
+        if command is None:
+            return
+        if not accepted:
+            self.reason = f"{command[0]} rejected/failed: {detail}"
+            if command == ("arm", True) and self.state == "ARMING":
+                self.abort(now, self.reason)
+
+    def request(self, kind, value, now):
+        if self.pending is not None or now - self.last_command < self.settings.command_retry_s:
+            return None
+        if self.attempts >= self.settings.max_command_attempts:
+            if self.state == "LANDING":
+                self.transition("FAILSAFE", now, "landing/disarm command attempts exhausted")
+            else:
+                self.abort(now, "command attempts exhausted")
+            return None
+        self.pending = (kind, value)
+        self.pending_since = self.last_command = now
+        self.attempts += 1
+        if self.pending == ("arm", True):
+            self.arm_requested = True
+        return self.pending
+
+    def tick(self, now):
+        t, s = self.telemetry, self.settings
+        dt = 0.0 if self.last_tick is None else max(0.0, min(now - self.last_tick, 0.1))
+        tick_gap = 0.0 if self.last_tick is None else now - self.last_tick
+        self.last_tick = now
+        self.readiness(now)
+        output = Output()
+        if not s.enable_flight or self.state in self.TERMINAL:
+            return output
+        if self.pending is not None and now - self.pending_since > s.command_timeout_s:
+            # An unacknowledged arm may have reached the FCU. Do not retry it or
+            # declare success/disarmed; stop setpoints and leave PX4 failsafes active.
+            self.transition("FAILSAFE", now, "command response timed out; operator must verify FCU")
+            return output
+        if self.state in self.FLYING:
+            initial = self.uses_initial_climb()
+            reasons = t.blockers(now, s, initial_climb=initial)
+            if tick_gap > s.sensor_timeout_s or tick_gap < 0:
+                reasons.append("control loop timing discontinuity")
+            if not initial and t.pose is not None and math.hypot(
+                    t.pose[0] - self.origin[0],
+                    t.pose[1] - self.origin[1]) > s.max_horizontal_excursion_m:
+                reasons.append("horizontal excursion limit exceeded")
+            goal_z = self.origin[2] + s.takeoff_altitude_m
+            if not initial and t.pose is not None and t.pose[2] > goal_z + s.altitude_overshoot_m:
+                reasons.append("altitude overshoot limit exceeded")
+            if (t.pose is not None and self.state == "HOVER"
+                    and abs(t.pose[2] - goal_z) > s.altitude_overshoot_m):
+                reasons.append("altitude left hover band")
+            if reasons:
+                self.abort(now, "; ".join(reasons))
+            elif self.offboard_confirmed and t.mode != "OFFBOARD":
+                self.transition("OPERATOR_CONTROL", now,
+                                f"mode changed to {t.mode}; releasing control")
+                return output
+            elif t.armed and not self.arm_requested:
+                self.transition("OPERATOR_CONTROL", now,
+                                "vehicle armed externally; releasing control")
+                return output
+            elif self.state in {"INITIAL_CLIMB", "POSITION_HANDOVER", "TAKEOFF", "HOVER"} and not t.armed:
+                self.transition("ABORT", now, "vehicle disarmed during flight sequence")
+                return output
+
+        if self.state in self.FLYING:
+            if self.state != "HOVER" and now - self.entered > s.stage_timeout_s:
+                self.abort(now, "stage timed out (no confirmed progress)")
+            else:
+                if self.state == "WARMUP" and now - self.entered >= s.offboard_warmup_s:
+                    self.transition("SET_OFFBOARD", now)
+                if self.state == "SET_OFFBOARD":
+                    if t.mode == "OFFBOARD":
+                        self.offboard_confirmed = True
+                        self.transition("ARMING", now)
+                    else:
+                        output.command = self.request("mode", "OFFBOARD", now)
+                elif self.state == "ARMING":
+                    if t.armed:
+                        self.transition("INITIAL_CLIMB" if s.initial_climb_enabled else "TAKEOFF", now)
+                    else:
+                        output.command = self.request("arm", True, now)
+                elif self.state == "INITIAL_CLIMB":
+                    self.initial_climb_tick(now, dt, output)
+                elif self.state == "POSITION_HANDOVER":
+                    target = t.position_target
+                    if (target is not None and t.fresh("position_target", now, s.sensor_timeout_s)
+                            and t.received["position_target"] > self.entered
+                            and math.dist(target[:3], (*self.origin[:2], self.target_z)) < 0.08
+                            and abs(math.atan2(math.sin(target[3] - self.origin[3]),
+                                              math.cos(target[3] - self.origin[3]))) < 0.1):
+                        self.transition("TAKEOFF", now, "PX4 position target confirmed")
+                    elif now - self.entered > s.command_timeout_s:
+                        self.abort(now, "PX4 position handover not confirmed")
+                elif self.state == "TAKEOFF":
+                    goal_z = self.origin[2] + s.takeoff_altitude_m
+                    # Limit accumulated position error if the airframe fails to climb.
+                    self.target_z = min(goal_z, self.target_z + s.takeoff_rate_m_s * dt,
+                                        t.pose[2] + 0.25)
+                    if abs(t.pose[2] - goal_z) <= s.altitude_tolerance_m:
+                        if self.altitude_since is None:
+                            self.altitude_since = now
+                        if now - self.altitude_since >= s.altitude_dwell_s:
+                            self.target_z = goal_z
+                            self.transition("HOVER", now, "target altitude held for dwell")
+                    else:
+                        self.altitude_since = None
+                elif self.state == "HOVER" and now - self.entered >= s.hover_duration_s:
+                    self.transition("LANDING", now, "hover complete")
+                if self.state in self.FLYING:
+                    if self.uses_initial_climb():
+                        if output.attitude_setpoint is None:
+                            output.attitude_setpoint = (self.climb.yaw, 0.0)
+                    else:
+                        output.setpoint = (*self.origin[:2], self.target_z, self.origin[3])
+
+        if self.state == "LANDING":
+            # No further position setpoints: especially important after an EKF reset.
+            output.setpoint = None
+            output.attitude_setpoint = None
+            if now - self.entered > s.landing_timeout_s:
+                self.transition("FAILSAFE", now, "landing not confirmed; operator must verify FCU")
+                return output
+            if not t.connected or not t.fresh("state", now, s.state_timeout_s):
+                return output
+            if self.offboard_confirmed and t.mode not in {"OFFBOARD", "AUTO.LAND"}:
+                self.transition("OPERATOR_CONTROL", now,
+                                f"mode changed to {t.mode}; releasing control")
+                return output
+            on_ground = (t.landed == 1 and t.fresh("extended", now, s.state_timeout_s)
+                         and t.received["extended"] >= self.entered)
+            if on_ground:
+                if self.ground_since is None:
+                    self.ground_since = now
+            else:
+                self.ground_since = None
+            settled = self.ground_since is not None and now - self.ground_since >= 1.0
+            if not t.armed and self.pending is None and settled:
+                self.transition("ABORT" if self.aborted else "COMPLETE", now, self.reason)
+            elif t.mode != "AUTO.LAND":
+                output.command = self.request("mode", "AUTO.LAND", now)
+            elif t.armed and settled:
+                output.command = self.request("arm", False, now)
+        return output
+
+    def initial_climb_tick(self, now, dt, output):
+        t, s, climb = self.telemetry, self.settings, self.climb
+        climb.update(vertical_distance(t), t.received["range"])
+        elapsed = now - self.entered
+        yaw_error = abs(math.atan2(math.sin(t.attitude[2] - climb.yaw),
+                                   math.cos(t.attitude[2] - climb.yaw)))
+        reason = ""
+        if climb.raw_height > s.initial_climb_height_m + 0.15:
+            reason = "initial climb height limit exceeded"
+        elif abs(climb.speed) > s.initial_climb_max_speed_m_s:
+            reason = "initial climb vertical speed limit exceeded"
+        elif yaw_error > s.max_yaw_jump_rad:
+            reason = "initial climb yaw changed unexpectedly"
+        elif elapsed > s.initial_climb_no_lift_timeout_s and climb.height < 0.03:
+            reason = "initial climb: no measured liftoff"
+        elif elapsed > s.initial_climb_timeout_s:
+            reason = "initial climb timed out before stable position aiding"
+        if reason:
+            self.abort(now, reason)
+            return
+        # Use independent range for actual climb, then require all normal checks.
+        handover_ready = (not t.blockers(now, s)
+                          and t.fresh("estimator", now, s.sensor_timeout_s)
+                          and t.landed == 2
+                          and climb.distance >= s.initial_climb_min_range_m
+                          and abs(climb.height - s.initial_climb_height_m) <= 0.04
+                          and abs(climb.speed) <= 0.12)
+        if handover_ready:
+            if climb.aiding_since is None:
+                climb.aiding_since = now
+        else:
+            climb.aiding_since = None
+        if climb.aiding_since is not None and now - climb.aiding_since >= s.initial_climb_aiding_dwell_s:
+            # Anchor XY only after aiding settles. Preserve total height above
+            # the measured launch surface despite unaided local-Z drift/resets.
+            self.origin = (*t.pose[:2], t.pose[2] - climb.height, climb.yaw)
+            self.origin_frame = t.frame
+            self.target_z = t.pose[2]
+            self.transition("POSITION_HANDOVER", now, "measured climb and stable aiding; confirming PX4 target")
+            return
+        output.attitude_setpoint = climb.command(s, dt)

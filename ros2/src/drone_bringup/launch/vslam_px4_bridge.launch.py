@@ -26,6 +26,7 @@ def generate_launch_description():
             "input_timeout_s": LaunchConfiguration("input_timeout_s"),
             "adapter_timeout_s": LaunchConfiguration("input_timeout_s"),
             "publish_companion_status": LaunchConfiguration("publish_companion_status"),
+            "frame_rpy_rad": LaunchConfiguration("frame_rpy_rad"),
         }.items(),
     )
 
@@ -48,6 +49,7 @@ def generate_launch_description():
             DeclareLaunchArgument("publish_rate_hz", default_value="30.0"),
             DeclareLaunchArgument("input_timeout_s", default_value="0.25"),
             DeclareLaunchArgument("publish_companion_status", default_value="true"),
+            DeclareLaunchArgument("frame_rpy_rad", default_value="[0.0, 0.0, 0.0]"),
             external_pose_launch,
         ]
     )
