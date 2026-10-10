@@ -91,6 +91,38 @@ def test_unaided_warmup_and_arm_only_send_zero_thrust_attitude():
     assert any(o.command == ("arm", True) for o in f.outputs)
 
 
+def test_initial_climb_default_limits_and_abort_boundaries():
+    settings = HoverSettings(initial_climb_enabled=True)
+    assert settings.initial_climb_max_height_m == 1.25
+    assert settings.initial_climb_max_speed_m_s == 1.0
+
+    def at_climb(height, speed):
+        flight = Flight()
+        flight.start()
+        flight.height = height
+        flight.feed()
+        climb = flight.c.climb
+        climb.distance = climb.last_distance = flight.c.telemetry.ground_distance
+        climb.raw_height = climb.height = height
+        climb.speed = speed
+        climb.range_time = flight.now
+        output = flight.c.tick(flight.now)
+        return flight.c, output
+
+    controller, output = at_climb(1.2, 0.9)
+    assert controller.state == "INITIAL_CLIMB"
+    assert output.attitude_setpoint is not None
+
+    for height, speed, reason in (
+            (1.26, 0.9, "height limit exceeded"),
+            (0.2, 1.01, "vertical speed limit exceeded")):
+        controller, output = at_climb(height, speed)
+        assert controller.state == "LANDING"
+        assert reason in controller.reason
+        assert output.attitude_setpoint is None
+        assert output.command == ("mode", "AUTO.LAND")
+
+
 def test_initial_diagnostics_never_publish_or_command():
     f = Flight(flight=False)
     assert not f.c.start(f.now)[0]
@@ -269,6 +301,7 @@ def test_single_healthy_estimator_sample_does_not_satisfy_handover_dwell():
     {"initial_climb_hover_thrust": math.nan}, {"initial_climb_hover_thrust": 0.8},
     {"initial_climb_max_thrust": 1.1}, {"initial_climb_height_m": 0.1},
     {"initial_climb_min_range_m": 0.05}, {"initial_climb_timeout_s": 30.0},
+    {"initial_climb_max_height_m": 0.2},
     {"initial_climb_max_tilt_rad": 0.6}, {"initial_climb_rate_m_s": 1.0},
 ])
 def test_unsafe_initial_climb_settings_rejected(values):

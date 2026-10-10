@@ -26,25 +26,32 @@ def launch_setup(context, *args, **kwargs):
     mavros_namespace = LaunchConfiguration("mavros_namespace")
 
     localization_source = LaunchConfiguration("localization_source").perform(context)
-    if localization_source == "onboard":
+    if localization_source in {"onboard", "zed"}:
         # Return before constructing any external-pose/reference nodes.
+        zed = localization_source == "zed"
         mavros = IncludeLaunchDescription(
             PythonLaunchDescriptionSource(os.path.join(bringup_share, "launch", "drone.launch.py")),
             launch_arguments={
                 "log_level": log_level,
                 "mavros_namespace": mavros_namespace,
-                "mavros_config_overlay": LaunchConfiguration("onboard_mavros_config"),
+                "mavros_config_overlay": (LaunchConfiguration("zed_mavros_config") if zed
+                                           else LaunchConfiguration("onboard_mavros_config")),
             }.items(),
         )
-        params = {"drone_id": drone_id, "mavros_namespace": mavros_namespace}
+        params = {"drone_id": drone_id, "mavros_namespace": mavros_namespace,
+                  "localization_source": "zed" if zed else "ark_flow"}
         for name in ("flow_topic", "range_topic"):
             params[name] = ParameterValue(LaunchConfiguration(name), value_type=str)
         for name in (
             "publish_rate_hz", "takeoff_altitude_m", "takeoff_rate_m_s",
+            "zed_takeoff_setpoint_lead_m", "zed_takeoff_no_lift_timeout_s",
             "hover_duration_s", "altitude_tolerance_m", "stage_timeout_s",
+            "max_altitude_range_error_m", "altitude_range_error_dwell_s",
+            "takeoff_no_lift_timeout_s",
             "max_horizontal_excursion_m", "offboard_warmup_s", "readiness_dwell_s",
             "initial_climb_hover_thrust", "initial_climb_max_thrust", "initial_climb_thrust_slew",
-            "initial_climb_height_m", "initial_climb_rate_m_s", "initial_climb_min_range_m",
+            "initial_climb_height_m", "initial_climb_max_height_m", "initial_climb_rate_m_s",
+            "initial_climb_min_range_m",
             "initial_climb_aiding_dwell_s", "initial_climb_timeout_s", "initial_climb_no_lift_timeout_s",
             "initial_climb_max_tilt_rad", "initial_climb_max_speed_m_s",
         ):
@@ -59,9 +66,20 @@ def launch_setup(context, *args, **kwargs):
             output="screen", parameters=[params],
             arguments=["--ros-args", "--log-level", log_level],
         )
+        if zed:
+            zed_node = Node(
+                package="drone_control_pkg", executable="zed_vio_node", output="screen",
+                parameters=[{
+                    "drone_id": drone_id,
+                    "mavros_namespace": mavros_namespace,
+                    "mount_config": LaunchConfiguration("zed_mount_config"),
+                }],
+                arguments=["--ros-args", "--log-level", log_level],
+            )
+            return [mavros, zed_node, node]
         return [mavros, node]
     if localization_source != "external_pose":
-        raise ValueError("localization_source must be onboard or external_pose")
+        raise ValueError("localization_source must be onboard, zed, or external_pose")
 
     pose_bridge_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -244,6 +262,7 @@ def launch_setup(context, *args, **kwargs):
 def generate_launch_description():
     defaults = _load_optitrack_defaults()
     bringup_share = get_package_share_directory("drone_bringup")
+    control_share = get_package_share_directory("drone_control_pkg")
     default_speed_profile_config = os.path.join(
         bringup_share,
         "config",
@@ -253,18 +272,22 @@ def generate_launch_description():
     def hover_default(onboard, external):
         return PythonExpression([
             "'", str(onboard), "' if '", LaunchConfiguration("localization_source"),
-            "' == 'onboard' else '", str(external), "'",
+            "' in ('onboard', 'zed') else '", str(external), "'",
         ])
 
     return LaunchDescription(
         [
             DeclareLaunchArgument("log_level", default_value="info"),
             DeclareLaunchArgument("localization_source", default_value="external_pose",
-                                  choices=["onboard", "external_pose"]),
+                                  choices=["onboard", "zed", "external_pose"]),
             DeclareLaunchArgument("enable_flight", default_value="false",
-                                  description="Onboard path only: allow start to issue flight commands"),
+                                  description="Onboard or ZED path: allow start to issue flight commands"),
             DeclareLaunchArgument("onboard_mavros_config", default_value=os.path.join(
                 bringup_share, "config", "onboard_mavros.yaml")),
+            DeclareLaunchArgument("zed_mavros_config", default_value=os.path.join(
+                bringup_share, "config", "zed_mavros.yaml")),
+            DeclareLaunchArgument("zed_mount_config", default_value=os.path.join(
+                control_share, "config", "zed_hover_mount.yaml")),
             DeclareLaunchArgument("request_telemetry_streams", default_value="true"),
             DeclareLaunchArgument("flow_topic", default_value="",
                                   description="Onboard flow topic; empty uses MAVROS px4flow raw"),
@@ -272,6 +295,11 @@ def generate_launch_description():
                                   description="Onboard: defaults to MAVROS px4flow/ground_distance"),
             DeclareLaunchArgument("offboard_warmup_s", default_value="1.5"),
             DeclareLaunchArgument("readiness_dwell_s", default_value="2.0"),
+            DeclareLaunchArgument("max_altitude_range_error_m", default_value="0.35"),
+            DeclareLaunchArgument("altitude_range_error_dwell_s", default_value="0.5"),
+            DeclareLaunchArgument("takeoff_no_lift_timeout_s", default_value="5.0"),
+            DeclareLaunchArgument("zed_takeoff_setpoint_lead_m", default_value="0.6"),
+            DeclareLaunchArgument("zed_takeoff_no_lift_timeout_s", default_value="8.0"),
             DeclareLaunchArgument("initial_climb_enabled", default_value="false",
                                   description="Onboard: range-controlled attitude climb before position hold"),
             DeclareLaunchArgument("initial_climb_hover_thrust", default_value="0.0",
@@ -279,13 +307,14 @@ def generate_launch_description():
             DeclareLaunchArgument("initial_climb_max_thrust", default_value="0.75"),
             DeclareLaunchArgument("initial_climb_thrust_slew", default_value="0.25"),
             DeclareLaunchArgument("initial_climb_height_m", default_value="0.25"),
+            DeclareLaunchArgument("initial_climb_max_height_m", default_value="1.25"),
             DeclareLaunchArgument("initial_climb_rate_m_s", default_value="0.2"),
             DeclareLaunchArgument("initial_climb_min_range_m", default_value="0.15"),
             DeclareLaunchArgument("initial_climb_aiding_dwell_s", default_value="1.0"),
             DeclareLaunchArgument("initial_climb_timeout_s", default_value="8.0"),
             DeclareLaunchArgument("initial_climb_no_lift_timeout_s", default_value="5.0"),
             DeclareLaunchArgument("initial_climb_max_tilt_rad", default_value="0.2"),
-            DeclareLaunchArgument("initial_climb_max_speed_m_s", default_value="0.6"),
+            DeclareLaunchArgument("initial_climb_max_speed_m_s", default_value="1.0"),
             DeclareLaunchArgument(
                 "drone_id",
                 default_value=_default_arg(defaults, "drone_id", ""),

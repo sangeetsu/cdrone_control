@@ -32,8 +32,8 @@ from that file.
 - Hover, goto, and circle demos with perimeter checks
 - Target-follow control backend using the active `/cdrone/<drone_id>/...` topic tree
 - Milestone 2 and Milestone 3 demo launch flows
-- RealSense tracking-only bench pipeline for world-track evaluation
-- Retained D455 / VSLAM bridge path for future ownship-pose work
+- Mounted ZED 2i depth/target tracking and a separate ownship-odometry hover path; flight validation is pending
+- Retained D455 / VSLAM bridge code and documentation from earlier work; this airframe has no D455
 - Archived legacy autonomy stack preserved under `archive/legacy_stack/`
 
 ## Current Priorities
@@ -41,7 +41,7 @@ from that file.
 - Keep the external-pose flight path reliable for hover, goto, and circle work
 - Validate the target-follow stack against the current OptiTrack-backed ownship pose
 - Keep the tracking bench workflow reproducible for model evaluation
-- Treat D455 / VIO as secondary work until the current control loop is stable
+- Run the guided ZED 2i mount calibration in `milestone1_runbook.md`, then bench-check PX4 vision fusion before its first hover flight
 
 ## Runbooks
 
@@ -94,4 +94,4 @@ those under `docs/`.
 - Add an explicit host pairing / SSH / hostname runbook for new clones
 - Push more setup into reusable per-drone config instead of host-local memory
 - Flight-tune and validate the target-follow controller
-- Decide whether D455 / VIO should become a primary ownship-pose path later
+- Complete the guided ZED 2i mount calibration, PX4 fusion bench check, and supervised hover validation

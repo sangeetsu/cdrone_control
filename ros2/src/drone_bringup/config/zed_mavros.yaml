@@ -1,0 +1,10 @@
+# Hover using ZED external vision. The vision_pose plugin must remain enabled.
+/**:
+  ros__parameters:
+    plugin_denylist:
+      - guided_target
+      - wheel_odometry
+      - odometry
+      - fake_gps
+      - mocap_pose_estimate
+      - vision_speed

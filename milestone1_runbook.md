@@ -1,24 +1,258 @@
 # Milestone 1 Runbook
 
-## Onboard Localization: Start Here
+## Current hover route: ZED 2i without mocap
 
-The first onboard test is a local hover using **ARK Flow over CAN + PX4's IMU,
+Use `localization_source:=zed` for the 1 m, 20 s hover milestone. PX4 1.16.0
+is configured to fuse airframe-center pose from the ZED 2i; this route does not
+use optical-flow or range handoff. `localization_source:=onboard` selects the older ARK Flow path
+and its MAVROS configuration **disables vision pose**. Do not run both hover
+launches at once. The launch default, `external_pose`, is the legacy mocap path.
+
+**Current bench status:** the FCU parameters matched the ZED profile on October
+8, 2026. A ZED run then aborted in `WARMUP` before arming because PX4's
+predictive relative-position status bit briefly cleared. Bench monitoring
+reproduced 0.6 s dips about every 31 s while current horizontal position,
+velocity and ZED frames stayed valid. The controller now tolerates a dip under
+one second only while those current estimates and camera data remain healthy;
+sustained loss still aborts. The candidate mount file below was generated using
+a ruler-measured translation; its report contains no accepted pivot fit. Manual
+X/Y/Z/yaw and PX4 fusion checks are still required. These observations do
+**not** clear the drone for flight.
+
+**Latest no-arm abort (October 10, 2026 UTC):** the ZED hover launch began at
+22:42:39 UTC. The controller reached `ARMING`, but the MAVROS arm service
+returned `success=False, result=1` (temporarily rejected) at 22:43:44 UTC.
+PX4 emitted "Arming denied: Resolve system health failures first." Its
+arming-check events, decoded with the event metadata embedded in the previous
+FCU log, reported no manual control input and no connection to the ground
+control station for all modes, including OFFBOARD, before the arm request. PX4
+did not report a valid
+GCS heartbeat at that moment; the MAVROS companion connection alone did not
+satisfy this check. Other checks for missing global position, home and mission
+applied to mission/RTL/loiter, not OFFBOARD. The "No offboard signal" check
+was absent from the arm-time reports; it appeared before the sequence and again
+after the controller stopped setpoints. The controller briefly selected
+`AUTO.LAND` as abort cleanup, but the FCU remained disarmed and never entered
+`TAKEOFF`. Verify a stable QGroundControl or RC link and inspect QGC's
+Arming and Preflight Checks before any later supervised attempt; do not disable
+the link/arming failsafe to make the check pass. The launch was stopped after
+confirming the FCU was disarmed. No flight was attempted during this diagnosis.
+
+**Earlier no-liftoff attempt (October 9, 2026 UTC):** the launch at 00:26:58 UTC
+became ready, requested OFFBOARD and armed PX4. The controller entered
+`TAKEOFF` at 00:28:01 UTC, then requested `AUTO.LAND` at 00:28:06 because ZED
+height was still less than 3 cm above its starting height after the five-second
+no-liftoff limit. PX4 reported "Takeoff detected" at 00:28:01, which is its
+land-detector state and does not prove a physical rise. PX4 later reported
+landing and disarm. The ESCs were powered and propellers spun, but actual thrust
+and supply voltage under load were not measured. Keep this abort as a stop
+condition until the takeoff command and hardware are checked on the bench. An
+aborted controller now requires a fresh launch before another sequence.
+
+The recovered PX4 ULog is `/home/jetson/no_liftoff_2026-10-08.ulg`. It confirms
+the motors were commanded and the ZED height observation stayed nearly flat.
+The old takeoff code held its position target about 0.25 m above the measured
+position. With PX4 configured for a one-second spool-up and three-second takeoff
+ramp, the logged collective thrust setpoint peaked at about 0.58 before the
+five-second watchdog fired. The stored `MPC_THR_HOVER` is 0.62, but
+`MPC_USE_HTE=1` lets PX4 use its [hover-thrust estimator](https://docs.px4.io/v1.16/en/advanced_config/parameter_reference#MPC_USE_HTE), whose estimate was not
+recorded in this log. The small position-target lead and short watchdog may
+have contributed to the no-lift attempt; the log cannot establish the sole
+cause. The logged setpoint is not a measurement of propeller thrust. Before a
+later flight attempt, inspect propeller fit and orientation, verify motor
+direction with propellers removed using [PX4's actuator checks](https://docs.px4.io/v1.16/en/config/actuators), and check the supply voltage under load on
+the bench. The ZED path
+now allows at most 0.6 m of position-target lead and eight seconds for ZED to
+confirm 3 cm of rise. The ARK Flow path retains its earlier limits. **The new
+values have only been unit-tested; do not treat this as flight validation.**
+The ZED launch arguments are `zed_takeoff_setpoint_lead_m` (default `0.6`)
+and `zed_takeoff_no_lift_timeout_s` (default `8.0`);
+`takeoff_no_lift_timeout_s` still applies to the ARK Flow path.
+
+**Current Jetson reset blocker (October 9, 2026 UTC):** two ZED hover
+launches coincided with abrupt Jetson resets. The ROS launches began at
+00:10:30 and 00:15:50 UTC; the next boots began at 00:11:18 and 00:16:41 UTC.
+The last boot reports `SYS_RESET_N` in
+`/sys/devices/platform/bus@0/c360000.pmc/reset_reason`. The preceding journals
+show no orderly shutdown, OOM kill or thermal shutdown. This reset indication
+does not identify which supply, cable, carrier-board circuit or reset input
+caused it; see [NVIDIA's reset-reason mapping](https://forums.developer.nvidia.com/t/how-to-get-the-power-up-reason-on-orin/241365).
+A laptop SSH disconnect during these attempts is a consequence of
+the Jetson restarting. QGroundControl/PX4 parameter changes will not fix a
+Jetson reset. **Do not attempt the hover or run another camera launch with
+flight hardware connected until the reset cause is resolved.**
+
+With motors/ESCs disconnected, inspect the Jetson input supply and connector,
+camera USB cable/port, and any shared battery regulator. Verify that the supply
+can support the Jetson's 25 W mode plus connected devices without voltage drop.
+After correcting the suspected power/reset path, build and source the workspace
+as in section 1, then isolate the camera load first:
+
+```bash
+cat /sys/devices/platform/bus@0/c360000.pmc/reset_reason
+journalctl --list-boots --no-pager | tail -5
+ros2 run drone_control_pkg zed_vio_node --ros-args \
+  -p mount_config:=/home/jetson/zed_hover_mount_run2.yaml
+```
+
+Keep the ZED-only node running on the bench for at least five minutes; verify
+that `zed/tracking_status` remains `OK` and the Jetson does not restart. Then
+stop it and run the flight-disabled diagnostics launch in section 2 for another
+five minutes. If either step resets the Jetson, stop and inspect the latest
+`reset_reason`, previous-boot journal, and hardware power path before retrying.
+The flight command in section 3 remains blocked until both steps and all pose
+and PX4 fusion checks pass.
+
+### 1. Build and inspect the FCU
+
+With the motors/ESCs disconnected, stop any running `position_hover_demo`
+launch. Build the current code and source it in each new terminal:
+
+```bash
+cd /home/jetson/cdrone_control/ros2
+source /opt/ros/humble/setup.bash
+colcon build --packages-select drone_control_pkg drone_bringup
+source /home/jetson/cdrone_control/ros2/install/setup.bash
+cd /home/jetson/cdrone_control
+```
+
+Export a full QGroundControl parameter backup. With the FCU disarmed, compare
+its current values to the [ZED PX4 1.16 profile](ros2/src/drone_bringup/config/zed_hover_px4_1_16.yaml):
+
+```bash
+python3 scripts/inspect_onboard_localization.py \
+  --profile ros2/src/drone_bringup/config/zed_hover_px4_1_16.yaml \
+  --port udpin:127.0.0.1:14569
+```
+
+Use the `companion_aux` endpoint above with one inspection client at a time. The
+target settings are `EKF2_EV_CTRL=11` (vision horizontal position, height, yaw),
+`EKF2_HGT_REF=3`, `EKF2_OF_CTRL=0`, and `EKF2_RNG_CTRL=0`; keep the other values
+in the profile. `11` does not request direct vision velocity. A matching
+parameter profile only permits fusion; PX4 still needs fresh ZED poses. Apply
+any differences in QGroundControl while disarmed, reboot, then inspect again.
+
+### 2. Start ZED diagnostics, with flight disabled
+
+Use the existing mount candidate only for the motors-disconnected bench check.
+Its report at `/home/jetson/zed_hover_mount_run2.report.json` records
+`method: ruler_translation` and `pivot_fit: null`. The packaged mount template
+is `calibrated: false`, so omitting `zed_mount_config` will prevent pose output.
+If the camera mount has moved, measure it again before using this command.
+Use the resulting, bench-validated mount file in both launch commands below.
+
+```bash
+ros2 launch drone_bringup position_hover_demo.launch.py \
+  localization_source:=zed enable_flight:=false \
+  zed_mount_config:=/home/jetson/zed_hover_mount_run2.yaml \
+  initial_climb_enabled:=false
+```
+
+In separate sourced terminals, inspect the camera, PX4 estimate and readiness:
+
+```bash
+ros2 topic echo --once /cdrone/cdrone3/zed/tracking_status
+ros2 topic hz /cdrone/cdrone3/zed/pose_cov
+ros2 topic echo --once /cdrone/cdrone3/mavros/estimator_status
+ros2 topic echo --once /cdrone/cdrone3/mavros/local_position/pose
+ros2 service call /cdrone/cdrone3/demo/position_hover_check std_srvs/srv/Trigger "{}"
+ros2 topic echo /cdrone/cdrone3/demo/position_hover_diagnostics
+```
+
+Stop each continuous `ros2 topic` command with Ctrl+C before using that
+terminal for another command. Expect ZED tracking status `OK`, fresh pose
+updates, valid horizontal position and velocity in `estimator_status`, and a
+successful `position_hover_check` after its continuous readiness period. The
+diagnostics should say `source=zed`; `source=ark_flow` means the wrong launch is
+running. The numerical `vx`/`vy` fields in a local-position message are not
+proof of validity when estimator horizontal-velocity status is false.
+
+In QGroundControl's **MAVLink Console** (not a shell), confirm PX4 is actually
+fusing vision:
+
+```text
+listener estimator_status_flags -n 1
+```
+
+Require `cs_ev_pos`, `cs_ev_hgt`, and `cs_ev_yaw` to remain true. The
+`position_hover_check` verifies live pose and PX4 position/velocity validity;
+this PX4 check identifies the aiding source directly. Do not start a flight on a
+parameter match alone.
+
+With motors still disconnected, mark the airframe-center start position. Move
+the whole drone by known positive body X (forward), positive body Y (left), and
+positive Z (up) distances, then rotate through a known yaw and return to the
+start. Watch `/cdrone/cdrone3/zed/pose_cov` and
+`/cdrone/cdrone3/mavros/local_position/pose` during each move. Compare their
+changes after accounting for the starting yaw: directions and distances must
+agree with physical motion, and both heights must return to their starting
+values without jumps or tracking loss. Repeat the PX4 fusion
+check during and after motion. If any direction, scale, yaw, return-to-start,
+tracking, or fusion check fails, fix that issue on the bench and repeat.
+
+### 3. Supervised 1 m hover, only after the bench gate passes
+
+Reconnect the flight hardware and use the physical test area, operator
+takeover procedure and QGroundControl monitoring. Keep the validated ZED mount
+and PX4 profile. Stop the diagnostics launch, then start the flight-enabled
+launch in a sourced terminal:
+
+```bash
+ros2 launch drone_bringup position_hover_demo.launch.py \
+  localization_source:=zed enable_flight:=true \
+  zed_mount_config:=/home/jetson/zed_hover_mount_run2.yaml \
+  initial_climb_enabled:=false \
+  takeoff_altitude_m:=1.0 takeoff_rate_m_s:=0.3 hover_duration_s:=20.0
+```
+
+Wait for ZED tracking `OK`, sustained PX4 vision fusion, valid local position
+and a successful readiness response:
+
+```bash
+ros2 service call /cdrone/cdrone3/demo/position_hover_check std_srvs/srv/Trigger "{}"
+```
+
+Only if that call reports `success: true`, start the hover. Monitor its state
+in another sourced terminal:
+
+```bash
+ros2 service call /cdrone/cdrone3/demo/position_hover_start std_srvs/srv/Trigger "{}"
+ros2 topic echo /cdrone/cdrone3/demo/position_hover_state
+```
+
+The start command can arm and take off. Keep the operator ready to take over.
+To request an abort and `AUTO.LAND`:
+
+```bash
+ros2 service call /cdrone/cdrone3/demo/position_hover_abort std_srvs/srv/Trigger "{}"
+```
+
+Accept this milestone only after takeoff, the full 20 s hover, landing and
+disarm complete without estimator loss, pose jumps or visible unstable motion.
+Do not use the ARK Flow initial-climb commands below with the ZED profile.
+
+---
+
+## Legacy ARK Flow investigation (not the current hover route)
+
+This earlier onboard test uses **ARK Flow over CAN + PX4's IMU,
 barometer and calibrated heading source**. PX4 performs sensor fusion; the
 Jetson sends local position setpoints through MAVROS, with an optional initial
-attitude-and-thrust climb when flow cannot operate at ground clearance. No camera-based odometry
-implementation is needed for this step.
+attitude-and-thrust climb when flow cannot operate at ground clearance. Its
+parameter profile conflicts with the current ZED hover profile.
 
-The hover launch now has two paths:
+The hover launch has these paths:
 
 | Argument | Behavior |
 | --- | --- |
 | `localization_source:=onboard` | MAVROS + local OFFBOARD hover; no mocap, pose injection, fixed global origin or home setup |
+| `localization_source:=zed` | ZED airframe-center vision pose + MAVROS local OFFBOARD hover; current hover route above |
 | `localization_source:=external_pose` | Original mocap/external-pose hover; compatibility default |
-| `enable_flight:=false` | Onboard diagnostics only; no setpoints, arming or mode commands; default |
-| `enable_flight:=true` | Onboard start service may command takeoff/hover/landing after readiness checks |
+| `enable_flight:=false` | Onboard or ZED diagnostics only; no setpoints, arming or mode commands; default |
+| `enable_flight:=true` | Onboard or ZED start service may command takeoff/hover/landing after readiness checks |
 | `initial_climb_enabled:=true` | Onboard: climb using downward range and PX4 attitude control, then acquire position hold; default false |
 
-`enable_flight` applies only to the onboard path. It does **not** make the legacy
+`enable_flight` applies to the onboard and ZED paths. It does **not** make the legacy
 external-pose demo a bench-only program.
 
 The code/instructions update does not apply FCU parameters, reboot the FCU or
@@ -68,11 +302,56 @@ overwritten: choose a new filename for a new session. Also export a full FCU
 parameter backup from QGroundControl before applying changes.
 
 Review [the onboard parameter profile](ros2/src/drone_bringup/config/onboard_optical_flow_profile.yaml).
-It enables CAN flow/range subscriptions, uses barometric height reference with
-conditional range aiding, disables external vision/GNSS fusion, and sets
+It enables CAN flow/range subscriptions, uses the range sensor as the height
+reference with continuous fusion over a level indoor floor, keeps barometer
+fusion enabled, disables external vision/GNSS fusion, and sets
 OFFBOARD-loss action to **Land** after one second. Sensor limits match the
 standard ARK Flow, not ARK Flow MR. Calibration, mounting offsets and controller
 gains are retained.
+
+**Firmware prerequisite for this profile:** the current cdrone3 PX4 build
+reports commit `6ea3539`. Its optical-flow startup condition cannot be met with
+`EKF2_HGT_REF=2` (range height reference) and no other horizontal aid: range
+height does not mark the terrain estimate valid, while horizontal aiding cannot
+become active until optical flow starts. PX4 fixed this in the
+[1.16 backport](https://github.com/PX4/PX4-Autopilot/pull/26961), included in
+[v1.16.2](https://github.com/PX4/PX4-Autopilot/releases/tag/v1.16.2). Use an
+ARKV6X-compatible PX4 build containing that fix (the documented board target is
+[`ark_fmu-v6x_default`](https://docs.px4.io/v1.16/en/flight_controller/ark_v6x))
+before expecting this profile to pass `position_hover_check`. Back up FCU
+parameters before updating firmware;
+recheck calibration and all profile values afterward. Do not bypass the ROS
+horizontal-aiding check or use the initial-climb path to work around this bug.
+
+**If firmware remains unchanged:** use the separate
+[barometer-reference bench profile](ros2/src/drone_bringup/config/onboard_optical_flow_baro_bench_profile.yaml)
+to test optical-flow fusion only. It keeps `EKF2_HGT_REF=0` and
+`EKF2_RNG_CTRL=1`, the combination recorded in LOG0343. That log showed
+`cs_opt_flow=True` and recent optical-flow fusion on the current firmware, so
+this is an observed way around the startup deadlock. The same log showed the
+PX4 vertical estimate drifting several metres while downward range remained
+near launch clearance, even though range-height fusion was reported active.
+Therefore passing optical-flow fusion in this mode does not clear the vertical
+estimator or qualify a hover. With ESCs disconnected, compare local Z, barometer,
+and measured downward range during stationary holds and known manual lifts;
+stop at the bench if they disagree. The separate ZED pose route is documented
+at the top of this runbook and has its own bench gate.
+
+The inspector defaults to the range-reference profile. For the no-firmware
+bench route, select the barometer profile explicitly when reviewing current
+values or printing commands:
+
+```bash
+python3 scripts/inspect_onboard_localization.py \
+  --profile ros2/src/drone_bringup/config/onboard_optical_flow_baro_bench_profile.yaml \
+  --print-commands
+```
+
+Do not apply the range-reference profile until the launch geometry is measured:
+an earlier cdrone3 measurement found about 0.07 m sensor clearance, below ARK
+Flow's 0.08 m working minimum, while the latest log reported roughly 0.17 m
+initial range. Complete the physical clearance and bench checks in section 6
+first. The profile is for a validated, level-floor setup.
 
 Verify the actual downward sensor orientation and measured sensor offsets. The
 inspection found `SENS_FLOW_ROT=0` and `EKF2_OF_POS_X=0.06 m`; retaining those
@@ -87,9 +366,10 @@ Print the exact console commands **without connecting to the FCU**:
 python3 scripts/inspect_onboard_localization.py --print-commands
 ```
 
-With the FCU disarmed, apply the reviewed values in QGroundControl's parameter
-editor, or enter the printed `param set ...` lines and `param save` in its MAVLink
-console. Reboot the FCU using QGroundControl, then inspect again:
+Only after the section 6 clearance and bench checks pass, with the FCU
+disarmed, apply the reviewed values in QGroundControl's parameter editor, or
+enter the printed `param set ...` lines and `param save` in its MAVLink console.
+Reboot the FCU using QGroundControl, then inspect again:
 
 ```bash
 python3 scripts/inspect_onboard_localization.py
@@ -205,7 +485,8 @@ Troubleshooting the range/flow diagnostics:
   PX4's fused estimate rather than doing gyro compensation itself.
 - `estimator: horizontal aiding inactive`: sensor packets are not proof that the
   EKF is using them. Check `cs_opt_flow` in `estimator_status_flags`, usable range,
-  surface texture/lighting and the reviewed FCU profile. In PX4 1.16,
+  surface texture/lighting, the reviewed FCU profile, and the firmware prerequisite
+  above. In PX4 1.16,
   `pred_pos_horiz_rel_status_flag` reports active horizontal aiding. The separate
   `const_pos_mode_status_flag` also becomes true when the vehicle is at rest, so
   it is informational here rather than a standalone failure. Missing aiding or
@@ -219,6 +500,17 @@ listener vehicle_attitude -n 1
 listener estimator_status_flags -n 1
 listener estimator_aid_src_optical_flow -n 1
 ```
+
+**October 4 bench result:** the current FCU receives optical-flow observations
+with `innovation_rejected=False`, but `time_last_fuse=0` and `fused=False`.
+ROS range was about 0.16 m and flow quality 113, while the current FCU reported
+`EKF2_HGT_REF=2`, `EKF2_OF_CTRL=1`, and `EKF2_GPS_CTRL=0` in the reviewed
+configuration. This matches the unpatched firmware startup deadlock above.
+`cs_yaw_align=False` also appeared, but yaw alignment is not a direct condition
+in PX4's optical-flow startup check. Recheck heading health separately after
+the fusion fix. The PX4 console accepts command lines such as the three
+`listener ...` lines above; do not paste the printed `TOPIC:` output back at
+the `nsh>` prompt.
 
 An upright, level airframe must show roll/pitch near zero. During the September 13
 bench investigation, PX4 reported roll approximately **179 degrees** while the
@@ -258,7 +550,14 @@ and positive roll for right-side-down. This is a mounting inference from the
 three holds, not a calibration or a post-change flight validation. It is specific
 to this installation and is deliberately absent from the generic ARK Flow profile.
 
-Operator correction, with ESCs disconnected and the FCU disarmed:
+The latest available flight ULog records `SENS_BOARD_ROT=27`. In PX4 1.16,
+[rotations 10 and 27 apply the same vector mapping](https://github.com/PX4/PX4-Autopilot/blob/v1.16.0/src/lib/conversion/rotation.h#L1313-L1327),
+and the logged level attitude was near zero roll/pitch. Do not change board
+rotation solely because the stored number differs from the earlier inference;
+verify the attitude against physical airframe motion.
+
+Historical operator correction for a physically incorrect attitude, with ESCs
+disconnected and the FCU disarmed (not indicated by the latest ULog):
 
 1. Export a full parameter backup in QGroundControl. The inspected original
    `SENS_BOARD_ROT` value is `0`.
@@ -303,11 +602,76 @@ stop the diagnostics launch and prepare the airframe for a supervised flight.
 Use the physical flight-test setup and operator takeover procedure. This is a
 separate physical test, not part of the ESC-disconnected validation.
 
+**Current cdrone3 clearance gate:** an earlier operator measurement found about
+0.07 m from the ARK Flow sensor face to the floor.
+[ARK specifies](https://docs.arkelectron.com/products/sensor/ark-flow)
+an optical-flow working distance starting at 0.08 m; the latest ULog recorded
+`UAVCAN_RNG_MIN=0.05` and `SENS_FLOW_MINHGT=0.05`. LOG0343 reported roughly
+0.17 m initial downward range, but the physical launch clearance for that run
+was not independently measured here. A reported range alone does not verify
+that the optical standoff meets the sensor specification. Do not use the flight
+example below until the current geometry is measured, and do not treat the
+raised initial-climb abort limits as a fix.
+
+Without changing the airframe, a stable launch fixture may support the landing
+feet while leaving an unobstructed, textured floor beneath the sensor. Measure
+the distance from the sensor to the surface it actually sees; a solid pad under
+the sensor leaves that distance unchanged. For margin, aim for at least 0.12 m
+of measured clearance. With ESCs disconnected, compare raw range with measured
+heights at several positions, confirm PX4 optical-flow fusion and valid local
+position while stationary, and confirm local altitude returns to its starting
+value after a gentle manual lift and return. Investigate the last flight's
+accelerometer clipping and local-altitude/range disagreement before relying on
+autonomous landing. Restore the manufacturer's 0.08 m flow/range minimums only
+after verifying the physical clearance and current FCU parameters. If ground
+position aiding then passes `position_hover_check` with
+`initial_climb_enabled:=false`, that position-control path avoids the unvalidated
+unaided thrust climb. This airframe carries a ZED 2i, not a D455. The ZED
+vision-pose route above is now the selected hover path, subject to its separate
+manual-motion and PX4 fusion checks. The retained D455 VSLAM bridge is not a
+usable alternative on this airframe.
+
+**Latest attempted flight (LOG0343, October 4):** position control was selected
+from the start (`initial_climb_enabled:=false`), but the drone did not physically
+lift. PX4 local altitude rose roughly 1.34 m by the AUTO.LAND request while
+downward range stayed near launch clearance (about 0.17 m initially and 0.10 m
+near abort). The raw barometer was nearly unchanged at abort, so the log does
+not establish barometric pressure as the cause. The ROS node now requires
+range-confirmed climb to enter HOVER, aborts when local altitude and downward
+range disagree by over 0.35 m for 0.5 s, and requests landing if takeoff has
+no 3 cm range-confirmed lift after 5 s. These checks detect the logged failure
+mode; they do not repair the PX4 estimator or prove adequate thrust.
+
+After confirming at least 0.12 m physical clearance, an unobstructed level
+floor, and accurate live range readings at several measured heights with the
+motors disconnected, use QGroundControl **Vehicle Setup → Parameters** while
+disarmed and export a full backup. For this flat-floor test, apply these PX4
+1.16 values and reboot if QGC requests it:
+
+| Parameter | LOG0343 value | Flat-floor value | Purpose |
+| --- | ---: | ---: | --- |
+| `EKF2_HGT_REF` | 0 | 2 | Make range the reference for local height |
+| `EKF2_RNG_CTRL` | 1 | 2 | Fuse range continuously while it remains valid |
+| `EKF2_BARO_CTRL` | 1 | 1 | Retain barometer as another height source |
+| `UAVCAN_RNG_MIN` | 0.05 m | 0.08 m | Restore the ARK Flow minimum |
+| `SENS_FLOW_MINHGT` | 0.05 m | 0.08 m | Restore the ARK Flow working-height minimum |
+
+Keep `EKF2_OF_CTRL=1` and `UAVCAN_SUB_FLOW=1`, `UAVCAN_SUB_RNG=1`; those were
+already enabled. PX4 documents range as the indoor flat-terrain height
+reference and warns that obstacles or uneven ground can make range fusion
+inconsistent ([EKF2 guidance](https://docs.px4.io/v1.16/en/advanced_config/tuning_the_ecl_ekf),
+[ARK Flow setup](https://docs.px4.io/v1.16/en/dronecan/ark_flow)). With motors
+disconnected, check that local Z follows a known manual lift and returns to its
+starting value; check optical-flow fusion and review IMU vibration/clipping
+before another supervised flight. Do not raise the altitude overshoot or
+vertical-speed abort limits to hide estimator disagreement.
+
 ```bash
 ros2 launch drone_bringup position_hover_demo.launch.py \
   localization_source:=onboard enable_flight:=true \
   takeoff_altitude_m:=1.0 takeoff_rate_m_s:=0.3 hover_duration_s:=20.0 \
-  max_horizontal_excursion_m:=0.5
+  max_horizontal_excursion_m:=0.5 \
+  initial_climb_enabled:=false
 ```
 
 Check readiness, then start and monitor:
@@ -324,9 +688,11 @@ Abort service:
 ros2 service call /cdrone/cdrone3/demo/position_hover_abort std_srvs/srv/Trigger "{}"
 ```
 
-Expected progression: WARMUP (20 Hz for 1.5 s), SET_OFFBOARD, ARMING, TAKEOFF,
-HOVER, LANDING, COMPLETE. The hover timer begins after altitude is within 0.15 m
-of the requested height for one second. X/Y and yaw remain anchored to start.
+Expected progression with position control from the start: WARMUP (20 Hz for
+1.5 s), SET_OFFBOARD, ARMING, TAKEOFF, HOVER, LANDING, COMPLETE. The hover
+timer begins after local altitude and downward range are both within 0.15 m
+of the requested height for one second, with PX4 reporting IN_AIR. X/Y and yaw
+remain anchored to start.
 Landing uses PX4 AUTO.LAND; normal disarm is requested only after fresh landed
 confirmation persists for one second. No forced disarm or prearm-check bypass
 is used.
@@ -395,7 +761,8 @@ Use the same `position_hover_check`, `position_hover_start`, and
 | Initial climb setting | Default / behavior |
 | --- | --- |
 | `initial_climb_height_m` | 0.25 m above measured starting range |
-| `initial_climb_rate_m_s` | 0.2 m/s vertical speed limit |
+| `initial_climb_max_height_m` | 1.25 m above the measured launch surface; hard abort limit, not a target |
+| `initial_climb_rate_m_s` | 0.2 m/s commanded climb-speed cap |
 | `initial_climb_max_thrust` | 0.75 normalized collective thrust ceiling |
 | `initial_climb_thrust_slew` | Thrust increases by at most 0.25 per second |
 | `initial_climb_min_range_m` | 0.15 m minimum tilt-corrected range for handover |
@@ -403,7 +770,17 @@ Use the same `position_hover_check`, `position_hover_start`, and
 | `initial_climb_no_lift_timeout_s` | Land if measured climb remains below 3 cm after 5 s |
 | `initial_climb_timeout_s` | Land if handover is not ready within 8 s |
 | `initial_climb_max_tilt_rad` | 0.2 rad (11.5 degrees) measured tilt limit |
-| `initial_climb_max_speed_m_s` | 0.6 m/s measured vertical speed abort limit |
+| `initial_climb_max_speed_m_s` | 1.0 m/s measured vertical speed abort limit; the 0.2 m/s commanded climb rate remains unchanged |
+
+The height and speed abort defaults were raised after the September 27 flight
+logs showed an initial-climb height abort and, on the preceding attempt, a
+vertical-speed abort. These limits allow more deviation during the unaided
+phase; they do not change the controller or establish a successful hover.
+Confirm that this test site has sufficient vertical and lateral clearance for
+the full 1.25 m unaided-climb envelope and for motion while PX4 takes over
+landing. The latest landing log also showed local-altitude drift despite a
+near-ground range reading; inspect that separately before relying on autonomous
+landing behavior.
 
 Handover requires range-confirmed climb within 4 cm of the initial target,
 vertical speed no greater than 0.12 m/s, PX4 reporting IN_AIR, all normal position
@@ -422,7 +799,8 @@ The existing MAVROS `setpoint_raw.thrust_scaling=1.0` must be retained.
 At no time are attitude and position commands streamed together. Once position
 control starts, losing aiding invokes the existing landing path; the controller
 never falls back to the unaided climb in flight. Excessive tilt, climb exceeding
-the initial target by 15 cm, stale/invalid required data, unexpected yaw change,
+`initial_climb_max_height_m`, vertical speed exceeding
+`initial_climb_max_speed_m_s`, stale/invalid required data, unexpected yaw change,
 no lift, or timeout stop initial-climb targets and request AUTO.LAND. An operator
 mode change releases control. No forced disarm or automatic restart is used.
 
@@ -536,7 +914,9 @@ What you want to see:
 - companion status is present
 - local pose rate is healthy
 
-Before any hover or goto test, restore the validated FCU baseline:
+Before a legacy mocap hover or goto test, restore its validated FCU baseline.
+Do not run this restore script for the ZED route above; it changes PX4 fusion
+parameters:
 
 ```bash
 /home/jetson/cdrone_control/scripts/restore_hover_baseline_params.sh

@@ -28,7 +28,8 @@ def test_profile_preserves_calibration_offsets_and_gains():
     profile = inspector.load_parameters(inspector.DEFAULT_PROFILE)
     assert profile["UAVCAN_SUB_FLOW"] == profile["UAVCAN_SUB_RNG"] == 1
     assert profile["EKF2_EV_CTRL"] == profile["EKF2_GPS_CTRL"] == 0
-    assert profile["EKF2_HGT_REF"] == 0
+    assert profile["EKF2_HGT_REF"] == profile["EKF2_RNG_CTRL"] == 2
+    assert profile["EKF2_BARO_CTRL"] == 1
     assert profile["COM_OBL_RC_ACT"] == 4
     assert not any(name.startswith(("CAL_", "MPC_")) or "POS_" in name for name in profile)
     assert "SENS_FLOW_ROT" not in profile
@@ -63,3 +64,16 @@ def test_onboard_overlay_excludes_pose_injection_and_filters_downward_range():
     assert flow["ranger_min_range"] == HoverSettings().range_min_m == 0.05
     assert profile["UAVCAN_RNG_MIN"] == profile["SENS_FLOW_MINHGT"] == 0.08
     assert flow["ranger_max_range"] == profile["UAVCAN_RNG_MAX"] == 30.0
+
+
+def test_zed_profile_enables_only_vision_aiding_and_overlay_allows_it():
+    profile = inspector.load_parameters(
+        REPO / "ros2/src/drone_bringup/config/zed_hover_px4_1_16.yaml")
+    assert profile["EKF2_EV_CTRL"] == 11
+    assert profile["EKF2_HGT_REF"] == 3
+    assert profile["EKF2_OF_CTRL"] == profile["EKF2_RNG_CTRL"] == 0
+    assert profile["EKF2_EV_POS_X"] == profile["EKF2_EV_POS_Y"] == profile["EKF2_EV_POS_Z"] == 0
+    config = yaml.safe_load((REPO / "ros2/src/drone_bringup/config/zed_mavros.yaml").read_text())
+    denied = config["/**"]["ros__parameters"]["plugin_denylist"]
+    assert "vision_pose" not in denied
+    assert "mocap_pose_estimate" in denied

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read PX4 parameters/telemetry and print an operator-reviewed ARK Flow diff.
+"""Read PX4 parameters/telemetry and print an operator-reviewed hover-profile diff.
 
 Never sends PARAM_SET, arming, mode, origin, home, or reboot commands. Optional
 backup and command output are local artifacts, not commands executed on the FCU.
@@ -136,20 +136,28 @@ def inspect(args, parameters):
                 yaml.safe_dump(document, stream, sort_keys=False)
             print(f"Saved rollback profile: {args.backup}")
         messages = {}
-        for message_id in (100, 132, 230):
+        ev_ctrl = int(parameters.get("EKF2_EV_CTRL", 0))
+        vision_checks = [name for bit, name in (
+            (1, "cs_ev_pos"), (2, "cs_ev_hgt"), (4, "cs_ev_vel"), (8, "cs_ev_yaw"))
+            if ev_ctrl & bit]
+        vision_profile = bool(vision_checks)
+        message_ids = (230,) if vision_profile else (100, 132, 230)
+        message_names = (["ESTIMATOR_STATUS"] if vision_profile else
+                         ["OPTICAL_FLOW_RAD", "DISTANCE_SENSOR", "ESTIMATOR_STATUS"])
+        for message_id in message_ids:
             request_message(connection, target, message_id)
         deadline = time.monotonic() + 3.0
         while time.monotonic() < deadline:
-            msg = receive(connection, ["OPTICAL_FLOW_RAD", "DISTANCE_SENSOR", "ESTIMATOR_STATUS"],
-                          target, 0.3)
+            msg = receive(connection, message_names, target, 0.3)
             if msg:
                 messages[msg.get_type()] = msg
-        for name in ("OPTICAL_FLOW_RAD", "DISTANCE_SENSOR", "ESTIMATOR_STATUS"):
+        for name in message_names:
             msg = messages.get(name)
             detail = msg.to_dict() if msg else "not observed (check PX4 listener/telemetry streams)"
             print(f"{name}: {detail}")
+        fusion_checks = ", ".join(vision_checks) if vision_profile else "cs_opt_flow"
         print("A parameter match does not prove sensor fusion or flight readiness. "
-              "Reboot after changes; verify cs_opt_flow and use position_hover_check.")
+              f"Reboot after changes; verify {fusion_checks} and use position_hover_check.")
         if firmware[:2] != (1, 16) or heartbeat.autopilot != mavutil.mavlink.MAV_AUTOPILOT_PX4:
             print("BLOCKED: profile is scoped to PX4 1.16; verify settings for this firmware.")
             return 2

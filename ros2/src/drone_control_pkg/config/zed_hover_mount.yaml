@@ -1,0 +1,6 @@
+# Measure the left camera optical origin relative to the airframe center.
+# Axes are body FLU: X forward, Y left, Z up. RPY rotates camera axes into body axes.
+# Keep calibrated false until both values are measured and verified by manual motion.
+calibrated: false
+body_to_camera_translation_m: null
+body_to_camera_rpy_rad: null

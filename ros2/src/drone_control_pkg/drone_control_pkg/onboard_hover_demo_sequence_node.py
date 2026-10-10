@@ -1,4 +1,4 @@
-"""MAVROS transport for an optical-flow aided, local OFFBOARD hover."""
+"""MAVROS transport for local OFFBOARD hover with ARK Flow or ZED aiding."""
 
 from dataclasses import fields
 import math
@@ -6,10 +6,11 @@ import signal
 import time
 
 import rclpy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from mavros_msgs.msg import AttitudeTarget, EstimatorStatus, ExtendedState, OpticalFlowRad, PositionTarget, State
 from mavros_msgs.srv import CommandBool, MessageInterval, SetMode
-from rcl_interfaces.msg import ParameterDescriptor
+from rcl_interfaces.msg import ParameterDescriptor, ParameterType
+from rcl_interfaces.srv import GetParameters
 from rclpy.node import Node
 from rclpy.executors import ExternalShutdownException
 from rclpy.qos import qos_profile_sensor_data
@@ -23,6 +24,14 @@ from drone_control_pkg.topic_utils import cdrone_topic, join_topic
 
 
 class OnboardHoverDemoSequenceNode(Node):
+    ZED_PROFILE = {
+        "EKF2_EV_CTRL": 11, "EKF2_HGT_REF": 3, "EKF2_OF_CTRL": 0,
+        "EKF2_RNG_CTRL": 0, "EKF2_BARO_CTRL": 1, "EKF2_GPS_CTRL": 0,
+        "EKF2_MAG_TYPE": 5, "EKF2_EV_DELAY": 0.0, "EKF2_EV_NOISE_MD": 0,
+        "EKF2_EV_POS_X": 0.0, "EKF2_EV_POS_Y": 0.0, "EKF2_EV_POS_Z": 0.0,
+        "COM_OBL_RC_ACT": 4, "COM_OF_LOSS_T": 1.0,
+    }
+
     def __init__(self, **kwargs):
         super().__init__("onboard_hover_demo_sequence_node", **kwargs)
         descriptor = ParameterDescriptor(read_only=True)
@@ -42,6 +51,8 @@ class OnboardHoverDemoSequenceNode(Node):
             namespace, "px4flow/raw/optical_flow_rad")
         self.range_topic = parameter("range_topic", "") or join_topic(
             namespace, "px4flow/ground_distance")
+        self.vision_topic = parameter("vision_topic", "") or cdrone_topic(
+            self.drone_id, "zed/pose_cov")
         self.estimator_note = ""
         self.source_stamps = {}
         self.future = None
@@ -50,10 +61,17 @@ class OnboardHoverDemoSequenceNode(Node):
         self.interval_attempts = 0
         self.next_interval_time = 0.0
         # These only adjust outgoing telemetry rates, never sensor/EKF parameters.
-        self.intervals = [(32, 30.0), (100, 20.0), (132, 20.0), (230, 5.0), (245, 5.0)]
+        self.intervals = [(32, 30.0), (230, 5.0), (245, 5.0)]
+        if settings.localization_source != "zed":
+            self.intervals[1:1] = [(100, 20.0), (132, 20.0)]
         if settings.initial_climb_enabled:
             self.intervals.insert(1, (85, 10.0))  # FCU position target echo for handover
         self.next_interval = 0
+        self.profile_client = (self.create_client(GetParameters, join_topic(namespace, "param/get_parameters"))
+                               if settings.localization_source == "zed" else None)
+        self.profile_future = None
+        self.profile_started = 0.0
+        self.profile_retry_after = 0.0
         self.last_status_time = -math.inf
         self.last_diagnostics = ""
 
@@ -62,10 +80,16 @@ class OnboardHoverDemoSequenceNode(Node):
             (ExtendedState, join_topic(namespace, "extended_state"), self.extended_callback),
             (EstimatorStatus, join_topic(namespace, "estimator_status"), self.estimator_callback),
             (PoseStamped, join_topic(namespace, "local_position/pose"), self.pose_callback),
-            (OpticalFlowRad, self.flow_topic, self.flow_callback),
-            (Range, self.range_topic, self.range_callback),
         ):
             self.create_subscription(message_type, topic, callback, qos_profile_sensor_data)
+        if settings.localization_source == "zed":
+            self.create_subscription(PoseWithCovarianceStamped, self.vision_topic,
+                                     self.vision_pose_callback, qos_profile_sensor_data)
+        else:
+            self.create_subscription(OpticalFlowRad, self.flow_topic,
+                                     self.flow_callback, qos_profile_sensor_data)
+            self.create_subscription(Range, self.range_topic,
+                                     self.range_callback, qos_profile_sensor_data)
         if settings.initial_climb_enabled:
             self.create_subscription(Imu, join_topic(namespace, "imu/data"),
                                      self.imu_callback, qos_profile_sensor_data)
@@ -92,6 +116,8 @@ class OnboardHoverDemoSequenceNode(Node):
                 self.drone_id, f"demo/position_hover_{suffix}"), callback)
         self.create_timer(1.0 / settings.publish_rate_hz, self.tick)
         self.get_logger().info(
+            f"Local hover: source={settings.localization_source}; enable_flight={settings.enable_flight}; "
+            f"local ENU pose; vision={self.vision_topic}" if settings.localization_source == "zed" else
             f"Onboard hover: enable_flight={settings.enable_flight}; local ENU pose; "
             f"flow={self.flow_topic}; downward range={self.range_topic}")
 
@@ -121,6 +147,12 @@ class OnboardHoverDemoSequenceNode(Node):
             self.next_interval = 0
             self.interval_attempts = 0
             self.next_interval_time = self.now_s() + 2.0
+            if self.profile_client is not None:
+                if self.profile_future is not None:
+                    self.profile_future.cancel()
+                self.profile_future = None
+                t.vision_profile_ok = False
+                t.vision_profile_reason = "PX4 vision parameters not verified after reconnection"
             if self.interval_future is not None:
                 self.interval_future.cancel()
                 self.interval_future = None
@@ -134,6 +166,11 @@ class OnboardHoverDemoSequenceNode(Node):
     def estimator_callback(self, msg):
         if not self.accept_stamp("estimator", msg):
             return
+        aiding_source = ("vision" if self.controller.settings.localization_source == "zed"
+                         else "optical-flow")
+        t = self.controller.telemetry
+        t.update_relative_position_prediction(
+            msg.pred_pos_horiz_rel_status_flag, self.now_s())
         checks = {
             "attitude invalid": msg.attitude_status_flag,
             "horizontal velocity invalid": msg.velocity_horiz_status_flag,
@@ -141,18 +178,16 @@ class OnboardHoverDemoSequenceNode(Node):
             "horizontal position invalid": (
                 msg.pos_horiz_rel_status_flag or msg.pos_horiz_abs_status_flag),
             "vertical position invalid": msg.pos_vert_abs_status_flag,
-            # PX4 1.16 maps this bit to isHorizontalAidingActive(). Position
-            # validity alone can also include the at-rest/fake-position case.
-            "horizontal aiding inactive (check PX4 optical-flow fusion)": (
-                msg.pred_pos_horiz_rel_status_flag),
             "accelerometer error": not msg.accel_error_status_flag,
         }
+        if self.controller.settings.localization_source != "zed":
+            checks[f"horizontal aiding inactive (check PX4 {aiding_source} fusion)"] = (
+                msg.pred_pos_horiz_rel_status_flag)
         # PX4 1.16 sets CONST_POS_MODE for vehicle_at_rest as well as fake_pos.
         # The bit alone cannot distinguish a healthy resting vehicle from fallback.
         self.estimator_note = (
             "PX4 constant-position/rest flag set; checked aiding separately"
             if msg.const_pos_mode_status_flag else "")
-        t = self.controller.telemetry
         vertical_checks = {name: checks[name] for name in (
             "attitude invalid", "vertical velocity invalid", "vertical position invalid", "accelerometer error")}
         t.vertical_estimator_ok = all(vertical_checks.values())
@@ -202,6 +237,23 @@ class OnboardHoverDemoSequenceNode(Node):
         yaw = math.atan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy * qy + qz * qz))
         self.controller.update_pose((p.x, p.y, p.z, yaw), msg.header.frame_id, self.now_s())
 
+    def vision_pose_callback(self, msg):
+        if not self.accept_stamp("vision", msg):
+            return
+        p, q = msg.pose.pose.position, msg.pose.pose.orientation
+        values = (p.x, p.y, p.z, q.x, q.y, q.z, q.w)
+        norm = math.sqrt(q.x*q.x + q.y*q.y + q.z*q.z + q.w*q.w)
+        covariance = msg.pose.covariance
+        if (not all(math.isfinite(v) for v in (*values, *covariance))
+                or any(covariance[7*i] < 0 for i in range(6))
+                or not 0.9 <= norm <= 1.1):
+            self.controller.telemetry.vision_pose = None
+            return
+        qx, qy, qz, qw = (v / norm for v in (q.x, q.y, q.z, q.w))
+        yaw = math.atan2(2 * (qw * qz + qx * qy), 1 - 2 * (qy * qy + qz * qz))
+        self.controller.update_vision_pose((p.x, p.y, p.z, yaw), msg.header.frame_id,
+                                           self.now_s())
+
     def flow_callback(self, msg):
         if self.accept_stamp("flow", msg):
             reasons = []
@@ -241,10 +293,17 @@ class OnboardHoverDemoSequenceNode(Node):
     def check_callback(self, request, response):
         del request
         reasons = self.controller.readiness(self.now_s())
+        if self.controller.state != "IDLE":
+            if self.controller.state in self.controller.TERMINAL:
+                reasons.insert(0, f"restart node after {self.controller.state.lower()} run")
+            else:
+                reasons.insert(0, "sequence already active")
         response.success = not reasons
         response.message = ("ready" if not reasons else "; ".join(reasons)) + (
             f"; enable_flight={self.controller.settings.enable_flight}"
-            f"; state={self.controller.state}; range_topic={self.range_topic}")
+            f"; state={self.controller.state}; source={self.controller.settings.localization_source}; "
+            + (f"vision_topic={self.vision_topic}" if self.controller.settings.localization_source == "zed"
+               else f"range_topic={self.range_topic}"))
         if self.estimator_note and self.controller.telemetry.fresh(
                 "estimator", self.now_s(), self.controller.settings.state_timeout_s):
             response.message += "; note: " + self.estimator_note
@@ -312,6 +371,47 @@ class OnboardHoverDemoSequenceNode(Node):
         self.interval_started = now
         self.interval_attempts += 1
 
+    def service_vision_profile(self, now):
+        telemetry = self.controller.telemetry
+        if self.profile_client is None or not telemetry.connected or telemetry.vision_profile_ok:
+            return
+        if self.profile_future is not None:
+            if not self.profile_future.done():
+                if now - self.profile_started > 2.0:
+                    self.profile_future.cancel()
+                    self.profile_future = None
+                    self.profile_retry_after = now + 2.0
+                    telemetry.vision_profile_reason = "PX4 parameter read timed out"
+                return
+            try:
+                result = self.profile_future.result()
+                if len(result.values) != len(self.ZED_PROFILE):
+                    raise ValueError("incomplete PX4 parameter response")
+                for (name, expected), value in zip(self.ZED_PROFILE.items(), result.values):
+                    floating = isinstance(expected, float)
+                    required_type = (ParameterType.PARAMETER_DOUBLE if floating
+                                     else ParameterType.PARAMETER_INTEGER)
+                    if value.type != required_type:
+                        raise ValueError(f"PX4 {name}: parameter unavailable or wrong type")
+                    actual = value.double_value if floating else value.integer_value
+                    if not math.isclose(actual, expected, abs_tol=1e-5):
+                        raise ValueError(f"PX4 {name}: current={actual:g}, expected={expected:g}")
+            except Exception as exc:
+                telemetry.vision_profile_ok = False
+                telemetry.vision_profile_reason = str(exc)
+                self.profile_retry_after = now + 2.0
+            else:
+                telemetry.vision_profile_ok = True
+                telemetry.vision_profile_reason = "valid"
+            self.profile_future = None
+            return
+        if now < self.profile_retry_after or not self.profile_client.service_is_ready():
+            return
+        request = GetParameters.Request()
+        request.names = list(self.ZED_PROFILE)
+        self.profile_future = self.profile_client.call_async(request)
+        self.profile_started = now
+
     def send_command(self, command):
         # Keep the transport gate even though the state machine also enforces it.
         if not self.controller.settings.enable_flight:
@@ -335,6 +435,7 @@ class OnboardHoverDemoSequenceNode(Node):
 
     def tick(self):
         now = self.now_s()
+        self.service_vision_profile(now)
         if self.future is not None and self.future.done():
             try:
                 result = self.future.result()

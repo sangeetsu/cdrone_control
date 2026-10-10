@@ -8,7 +8,7 @@ import math
 
 import pytest
 import rclpy
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped
 from launch import LaunchContext
 from launch.actions import DeclareLaunchArgument
 from launch.utilities import normalize_to_list_of_substitutions, perform_substitutions
@@ -118,7 +118,11 @@ def run(node, seconds, follow=False, ground=False):
     for _ in range(round(seconds / 0.05)):
         node.test_time += 0.05
         z = node.controller.target_z if follow else 17.5
-        feed(node, z=z or 17.5, landed=1 if ground or not node.controller.telemetry.armed else 2)
+        launch_range = node.controller.ground_distance_start
+        base_range = 0.3 if launch_range is None else launch_range
+        feed(node, z=z or 17.5, distance=base_range + (z - 17.5 if follow else 0.0),
+             minimum_range=0.05 if node.controller.settings.initial_climb_enabled else 0.08,
+             landed=1 if ground or not node.controller.telemetry.armed else 2)
         node.tick()
         if node.mode_client.requests:
             node.controller.telemetry.mode = node.mode_client.requests[-1].custom_mode
@@ -140,6 +144,17 @@ def test_diagnostic_node_has_no_flight_output(node_factory):
     result = node.set_parameters([Parameter("enable_flight", value=True)])
     assert not result[0].successful
     assert not node.controller.settings.enable_flight
+
+
+def test_check_service_does_not_report_ready_after_abort(node_factory):
+    node = node_factory(True)
+    run(node, 3.0)
+    assert node.check_callback(None, Trigger.Response()).success
+    node.controller.transition("ABORT", node.test_time, "no measured liftoff")
+    response = node.check_callback(None, Trigger.Response())
+    assert not response.success
+    assert "restart node after abort run" in response.message
+    assert not node.start_callback(None, Trigger.Response()).success
 
 
 def test_full_sequence_through_mocked_mavros_services_without_home(node_factory):
@@ -314,6 +329,8 @@ def test_launch_selects_only_one_hover_stack(source, executable, altitude):
         assert context.launch_configurations["range_topic"] == ""
         assert context.launch_configurations["initial_climb_enabled"] == "false"
         assert context.launch_configurations["initial_climb_hover_thrust"] == "0.0"
+        assert context.launch_configurations["initial_climb_max_height_m"] == "1.25"
+        assert context.launch_configurations["initial_climb_max_speed_m_s"] == "1.0"
     else:
         assert "external_pose_px4_bridge.launch.py" in location
 
@@ -433,6 +450,7 @@ def test_launch_forwards_typed_initial_climb_options(monkeypatch):
     context.launch_configurations.update({
         "localization_source": "onboard", "initial_climb_enabled": "true",
         "initial_climb_hover_thrust": "0.62", "initial_climb_height_m": "0.3",
+        "initial_climb_max_height_m": "1.1", "initial_climb_max_speed_m_s": "1.2",
     })
     for entity in module.generate_launch_description().entities:
         if isinstance(entity, DeclareLaunchArgument):
@@ -450,3 +468,119 @@ def test_launch_forwards_typed_initial_climb_options(monkeypatch):
     assert params["enable_flight"] is False
     assert params["initial_climb_hover_thrust"] == 0.62
     assert params["initial_climb_height_m"] == 0.3
+    assert params["initial_climb_max_height_m"] == 1.1
+    assert params["initial_climb_max_speed_m_s"] == 1.2
+
+
+def test_zed_transport_reads_fresh_pose_without_flow_or_range(node_factory):
+    node = node_factory(localization_source="zed")
+    topics = {subscription.topic_name for subscription in node.subscriptions}
+    assert node.vision_topic in topics
+    assert node.flow_topic not in topics and node.range_topic not in topics
+    for _ in range(51):
+        node.test_time += 0.05
+        feed(node)
+        node.controller.telemetry.vision_profile_ok = True
+        vision = PoseWithCovarianceStamped()
+        vision.header.stamp = timestamp(node.test_time)
+        vision.header.frame_id = "zed_odom"
+        vision.pose.pose.orientation.w = 1.0
+        node.vision_pose_callback(vision)
+        node.tick()
+    assert node.check_callback(None, Trigger.Response()).success
+    assert node.controller.telemetry.vision_frame == "zed_odom"
+    previous = node.controller.telemetry.received["vision"]
+    node.test_time += 0.05
+    node.vision_pose_callback(vision)
+    assert node.controller.telemetry.received["vision"] == previous
+    vision.header.stamp = timestamp(node.test_time)
+    vision.pose.covariance[0] = math.nan
+    node.vision_pose_callback(vision)
+    assert node.controller.telemetry.vision_pose is None
+    assert not node.check_callback(None, Trigger.Response()).success
+
+
+def test_zed_estimator_keeps_valid_states_during_predictive_flag_dip(node_factory):
+    node = node_factory(localization_source="zed")
+    estimator = EstimatorStatus(
+        attitude_status_flag=True, velocity_horiz_status_flag=True,
+        velocity_vert_status_flag=True, pos_horiz_rel_status_flag=True,
+        pos_vert_abs_status_flag=True, pred_pos_horiz_rel_status_flag=False)
+    estimator.header.stamp = timestamp(node.test_time)
+    node.estimator_callback(estimator)
+    telemetry = node.controller.telemetry
+    assert telemetry.estimator_ok
+    assert not telemetry.relative_position_predicted
+    assert telemetry.relative_position_prediction_lost_since == node.test_time
+
+
+def test_zed_launch_selects_camera_and_vision_overlay():
+    module = launch_module()
+    context = LaunchContext()
+    context.launch_configurations["localization_source"] = "zed"
+    for entity in module.generate_launch_description().entities:
+        if isinstance(entity, DeclareLaunchArgument):
+            entity.execute(context)
+    nodes = module.launch_setup(context)
+    assert len(nodes) == 3
+    executables = [perform_substitutions(context, normalize_to_list_of_substitutions(
+        node.node_executable)) for node in nodes[1:]]
+    assert executables == ["zed_vio_node", "onboard_hover_demo_sequence_node"]
+    assert context.launch_configurations["takeoff_altitude_m"] == "1.0"
+    assert context.launch_configurations["zed_takeoff_setpoint_lead_m"] == "0.6"
+    assert context.launch_configurations["zed_takeoff_no_lift_timeout_s"] == "8.0"
+    assert "zed_mavros.yaml" in context.launch_configurations["zed_mavros_config"]
+
+
+def test_zed_takeoff_limits_reach_controller_as_floats(monkeypatch):
+    from launch_ros.utilities import evaluate_parameters, normalize_parameters
+    module = launch_module()
+    context = LaunchContext()
+    context.launch_configurations.update({
+        "localization_source": "zed",
+        "zed_takeoff_setpoint_lead_m": "0.55",
+        "zed_takeoff_no_lift_timeout_s": "9.0",
+    })
+    for entity in module.generate_launch_description().entities:
+        if isinstance(entity, DeclareLaunchArgument):
+            entity.execute(context)
+    captured = []
+    monkeypatch.setattr(module, "Node", lambda **kwargs: captured.append(kwargs) or kwargs)
+    module.launch_setup(context)
+    params = evaluate_parameters(context, normalize_parameters(captured[0]["parameters"]))[0]
+    assert params["zed_takeoff_setpoint_lead_m"] == 0.55
+    assert params["zed_takeoff_no_lift_timeout_s"] == 9.0
+
+
+def test_zed_readiness_requires_matching_fcu_vision_parameters(node_factory):
+    node = node_factory(localization_source="zed")
+    node.controller.telemetry.connected = True
+
+    class ProfileService:
+        def __init__(self, values):
+            self.values = values
+
+        def service_is_ready(self):
+            return True
+
+        def call_async(self, request):
+            future = Future()
+            values = []
+            for name in request.names:
+                value = self.values[name]
+                values.append(SimpleNamespace(
+                    type=3 if isinstance(value, float) else 2,
+                    integer_value=int(value), double_value=float(value)))
+            future.set_result(SimpleNamespace(values=values))
+            return future
+
+    node.profile_client = ProfileService(dict(node.ZED_PROFILE))
+    node.service_vision_profile(node.test_time)
+    node.service_vision_profile(node.test_time)
+    assert node.controller.telemetry.vision_profile_ok
+    node.controller.telemetry.vision_profile_ok = False
+    node.profile_client = ProfileService(dict(node.ZED_PROFILE, EKF2_EV_CTRL=0))
+    node.service_vision_profile(node.test_time)
+    node.service_vision_profile(node.test_time)
+    assert not node.controller.telemetry.vision_profile_ok
+    assert "EKF2_EV_CTRL" in node.controller.telemetry.vision_profile_reason

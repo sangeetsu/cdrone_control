@@ -42,6 +42,8 @@ setup(
             "drone_control_pkg.position_hover_demo_sequence_node:main",
             "onboard_hover_demo_sequence_node = "
             "drone_control_pkg.onboard_hover_demo_sequence_node:main",
+            "zed_vio_node = drone_control_pkg.zed_vio_node:main",
+            "zed_hover_mount_calibrate = drone_control_pkg.zed_mount_calibrate:main",
             "position_goto_demo_sequence_node = "
             "drone_control_pkg.position_goto_demo_sequence_node:main",
             "milestone2_demo_sequence_node = "

@@ -1,6 +1,8 @@
 name: ark_flow_px4_1_16_hover
-description: ARK Flow over DroneCAN, GPS-denied hover with barometric height reference and conditional range aiding. Operator applies while disarmed, then reboots.
+description: ARK Flow over DroneCAN, GPS-denied hover over a level indoor floor with validated range as height reference. Apply only after measured sensor clearance and range/flow checks, while disarmed, then reboot.
 # PX4 1.16: https://docs.px4.io/v1.16/en/dronecan/ark_flow
+# Requires a PX4 build with the range-height optical-flow startup fix:
+# https://github.com/PX4/PX4-Autopilot/pull/26961 (included in v1.16.2).
 # No sensor calibration, mounting offsets, or controller gains are included.
 # Preserve and physically verify SENS_FLOW_ROT and EKF2_OF/RNG_POS_* separately.
 parameters:
@@ -11,8 +13,8 @@ parameters:
   EKF2_EV_CTRL: 0
   EKF2_GPS_CTRL: 0
   EKF2_BARO_CTRL: 1
-  EKF2_HGT_REF: 0
-  EKF2_RNG_CTRL: 1
+  EKF2_HGT_REF: 2
+  EKF2_RNG_CTRL: 2
   EKF2_RNG_A_HMAX: 10.0
   EKF2_RNG_QLTY_T: 0.2
   UAVCAN_RNG_MIN: 0.08

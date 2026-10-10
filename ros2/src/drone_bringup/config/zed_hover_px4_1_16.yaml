@@ -1,0 +1,17 @@
+name: zed_2i_px4_1_16_hover
+description: ZED 2i airframe-center vision pose for local indoor hover on PX4 1.16. Apply in QGC while disarmed only after mount measurement and bench validation; reboot afterward.
+parameters:
+  EKF2_EV_CTRL: 11
+  EKF2_HGT_REF: 3
+  EKF2_OF_CTRL: 0
+  EKF2_RNG_CTRL: 0
+  EKF2_BARO_CTRL: 1
+  EKF2_GPS_CTRL: 0
+  EKF2_MAG_TYPE: 5
+  EKF2_EV_DELAY: 0.0
+  EKF2_EV_NOISE_MD: 0
+  EKF2_EV_POS_X: 0.0
+  EKF2_EV_POS_Y: 0.0
+  EKF2_EV_POS_Z: 0.0
+  COM_OBL_RC_ACT: 4
+  COM_OF_LOSS_T: 1.0

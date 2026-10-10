@@ -1,0 +1,24 @@
+name: ark_flow_px4_1_16_baro_bench
+description: Bench-only optical-flow fusion check on unpatched PX4 1.16 with barometric height reference and conditional range aiding. Last cdrone3 flight fused flow in this mode but its vertical estimate diverged; this profile does not establish hover readiness.
+# Apply only while disarmed after measuring at least 0.08 m physical ARK Flow clearance.
+# Do not start a hover from a passing optical-flow fusion check alone.
+# No sensor calibration, mounting offsets, or controller gains are included.
+parameters:
+  UAVCAN_ENABLE: 2
+  UAVCAN_SUB_FLOW: 1
+  UAVCAN_SUB_RNG: 1
+  EKF2_OF_CTRL: 1
+  EKF2_EV_CTRL: 0
+  EKF2_GPS_CTRL: 0
+  EKF2_BARO_CTRL: 1
+  EKF2_HGT_REF: 0
+  EKF2_RNG_CTRL: 1
+  EKF2_RNG_A_HMAX: 10.0
+  EKF2_RNG_QLTY_T: 0.2
+  UAVCAN_RNG_MIN: 0.08
+  UAVCAN_RNG_MAX: 30.0
+  SENS_FLOW_MINHGT: 0.08
+  SENS_FLOW_MAXHGT: 25.0
+  SENS_FLOW_MAXR: 7.4
+  COM_OBL_RC_ACT: 4
+  COM_OF_LOSS_T: 1.0

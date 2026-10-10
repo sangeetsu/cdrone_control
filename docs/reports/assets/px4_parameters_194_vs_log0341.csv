@@ -1,0 +1,85 @@
+Category,Parameter,Snapshot,Flight ULog,Comparison
+Battery,BAT_CRIT_THR,0.070000000298023224,0.15000000596046448,value changed
+Battery,BAT_EMERGEN_THR,0.05000000074505806,0.10000000149011612,value changed
+Battery,BAT_LOW_THR,0.15000000596046448,0.34999999403953552,value changed
+Calibration,CAL_ACC0_XOFF,-0.084256619215011597,0.044708166271448135,value changed
+Calibration,CAL_ACC0_YOFF,-0.051904574036598206,-0.14834395051002502,value changed
+Calibration,CAL_ACC0_ZOFF,0.077345125377178192,-0.020712140947580338,value changed
+Calibration,CAL_ACC1_XOFF,-0.005107879638671875,0.050469398498535156,value changed
+Calibration,CAL_ACC1_YOFF,0.034785270690917969,-0.027259349822998047,value changed
+Calibration,CAL_ACC1_ZOFF,0.057242393493652344,-0.037638664245605469,value changed
+Calibration,CAL_ACC2_XOFF,-0.0038485527038574219,0.085151195526123047,value changed
+Calibration,CAL_ACC2_YOFF,0.0048885345458984384,0.03462982177734375,value changed
+Calibration,CAL_ACC2_ZOFF,-0.019994735717773438,-0.037174224853515625,value changed
+Calibration,CAL_GYRO0_XOFF,-0.001676541985943913,-0.0037307932507246733,value changed
+Calibration,CAL_GYRO0_YOFF,-0.0097221601754426956,-0.016886847093701363,value changed
+Calibration,CAL_GYRO0_ZOFF,-0.001822665682993829,0.0036362574901431799,value changed
+Calibration,CAL_GYRO1_XOFF,-0.0096352631226181984,-0.0026045364793390036,value changed
+Calibration,CAL_GYRO1_YOFF,-0.027328193187713623,-0.0031899749301373959,value changed
+Calibration,CAL_GYRO1_ZOFF,-0.0027248586993664499,0.016611760482192039,value changed
+Calibration,CAL_GYRO2_XOFF,0.015897838398814201,0.01752166636288166,value changed
+Calibration,CAL_GYRO2_YOFF,-0.00035121003747917701,-0.041033916175365448,value changed
+Calibration,CAL_GYRO2_ZOFF,-0.0055185006931424141,0.0028337752446532249,value changed
+Calibration,CAL_GYRO3_XOFF,-0.000143815123010427,-5.2716244681505486e-05,value changed
+Calibration,CAL_GYRO3_YOFF,0.00060994894010946198,0.00060994894010946155,precision-only
+Calibration,CAL_GYRO3_ZOFF,6.3137282268144001e-05,5.8061748859472573e-05,value changed
+Calibration,CAL_MAG0_XODIAG,0.019453814253211021,-0.006670147180557251,value changed
+Calibration,CAL_MAG0_XOFF,-0.070755369961261749,-0.054023902863264084,value changed
+Calibration,CAL_MAG0_XSCALE,1.0304118394851685,1.0361629724502563,value changed
+Calibration,CAL_MAG0_YODIAG,0.0071002361364662647,0.010575170628726482,value changed
+Calibration,CAL_MAG0_YOFF,0.079260677099227905,0.083815775811672211,value changed
+Calibration,CAL_MAG0_YSCALE,0.98751586675643921,0.97933554649353027,value changed
+Calibration,CAL_MAG0_ZODIAG,0.0025373643729835749,-0.012530225329101086,value changed
+Calibration,CAL_MAG0_ZOFF,0.044931042939424515,0.30713900923728943,value changed
+Calibration,CAL_MAG0_ZSCALE,0.97294670343399048,1.0046329498291016,value changed
+Calibration,SENS_BOARD_X_OFF,0.18256436288356781,0.0098571153357625008,value changed
+Calibration,SENS_BOARD_Y_OFF,-1.7682348489761353,-0.55944502353668213,value changed
+Commander / navigation,COM_ARM_WO_GPS,1,2,value changed
+Commander / navigation,COM_FLIGHT_UUID,61,249,value changed
+Commander / navigation,COM_FLTMODE2,-1,11,value changed
+Commander / navigation,COM_LOW_BAT_ACT,0,3,value changed
+Commander / navigation,COM_OBL_RC_ACT,0,4,value changed
+Commander / navigation,COM_RC_IN_MODE,4,3,value changed
+Commander / navigation,COM_RC_LOSS_T,0.5,5,value changed
+Commander / navigation,CP_DIST,-1,5,value changed
+Commander / navigation,GF_ACTION,2,5,value changed
+Commander / navigation,GPS_1_CONFIG,201,0,value changed
+Commander / navigation,GPS_1_GNSS,0,,snapshot only
+Commander / navigation,GPS_1_PROTOCOL,1,,snapshot only
+Commander / navigation,GPS_DUMP_COMM,0,,snapshot only
+Commander / navigation,GPS_SAT_INFO,0,,snapshot only
+Commander / navigation,GPS_UBX_BAUD2,230400,,snapshot only
+Commander / navigation,GPS_UBX_CFG_INTF,0,,snapshot only
+Commander / navigation,GPS_UBX_MODE,0,,snapshot only
+Commander / navigation,GPS_YAW_OFFSET,0,,snapshot only
+Commander / navigation,NAV_DLL_ACT,0,3,value changed
+Commander / navigation,NAV_RCL_ACT,2,3,value changed
+Commander / navigation,SER_GPS1_BAUD,0,,snapshot only
+Estimator / sensors,EKF2_BARO_CTRL,0,1,value changed
+Estimator / sensors,EKF2_EV_CTRL,11,0,value changed
+Estimator / sensors,EKF2_GYR_B_NOISE,0.0010000000474974511,0.0010000000474974513,precision-only
+Estimator / sensors,EKF2_HGT_REF,3,0,value changed
+Estimator / sensors,EKF2_MAG_B_NOISE,9.9999997473788004e-05,9.9999997473787516e-05,precision-only
+Estimator / sensors,EKF2_MAG_E_NOISE,0.0010000000474974511,0.0010000000474974513,precision-only
+Estimator / sensors,EKF2_RNG_A_HMAX,5,10,value changed
+Estimator / sensors,EKF2_RNG_CTRL,0,1,value changed
+Estimator / sensors,EKF2_RNG_QLTY_T,1,0.20000000298023224,value changed
+Estimator / sensors,SENS_FLOW_MAXHGT,,25,flight only
+Estimator / sensors,SENS_FLOW_MAXR,,7.4000000953674316,flight only
+Estimator / sensors,SENS_FLOW_MINHGT,,0.05000000074505806,flight only
+Estimator / sensors,SENS_FLOW_RATE,,70,flight only
+Estimator / sensors,SENS_FLOW_ROT,,0,flight only
+Estimator / sensors,SENS_FLOW_SCALE,,1,flight only
+Estimator / sensors,UAVCAN_RNG_MAX,,30,flight only
+Estimator / sensors,UAVCAN_RNG_MIN,,0.05000000074505806,flight only
+Estimator / sensors,UAVCAN_SUB_FLOW,0,1,value changed
+Estimator / sensors,UAVCAN_SUB_RNG,0,1,value changed
+Motion,MPC_THR_HOVER,0.56000000238418579,0.62000000476837158,value changed
+Motion,MPC_VEL_MANUAL,10,0.5,value changed
+Motion,MPC_XY_CRUISE,5,0.5,value changed
+Motion,MPC_XY_VEL_ALL,-10,-0.5,value changed
+Motion,MPC_XY_VEL_MAX,12,7,value changed
+Other,INA226_SHUNT,0.00050000002374872598,0.00050000002374872565,precision-only
+Other,LND_FLIGHT_T_HI,0,2,value changed
+Other,LND_FLIGHT_T_LO,-1934093420,487830077,value changed
+Other,MC_PITCHRATE_D,0.0035670381039381032,0.0035670381039381027,precision-only

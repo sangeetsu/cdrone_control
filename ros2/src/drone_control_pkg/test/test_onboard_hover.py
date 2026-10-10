@@ -15,7 +15,9 @@ def healthy(controller, now, pose=None):
     t.estimator_reason = "valid"
     t.landed = 1 if not t.armed else 2
     t.mode = t.mode or "POSCTL"
-    controller.update_pose(pose or t.pose or (123.0, -456.0, 17.5, 1.2), "map", now)
+    position = pose or t.pose or (123.0, -456.0, 17.5, 1.2)
+    controller.update_pose(position, "map", now)
+    t.ground_distance = 0.2 + position[2] - 17.5
     for name in ("state", "extended", "estimator", "pose", "flow", "range"):
         t.received[name] = now
 
@@ -116,6 +118,26 @@ def test_stale_pose_aborts_without_setpoint():
     assert output.command == ("mode", "AUTO.LAND")
 
 
+def test_prearm_fault_stops_without_changing_disarmed_fcu_to_auto_land():
+    c, now = ready()
+    assert c.start(now)[0]
+    c.telemetry.estimator_ok = False
+    c.telemetry.estimator_reason = "horizontal velocity invalid"
+    output = c.tick(now)
+    assert c.state == "ABORT"
+    assert output.command is None and output.setpoint is None
+    assert c.telemetry.mode == "POSCTL"
+
+
+def test_abort_and_operator_takeover_require_fresh_node_before_restart():
+    for state in ("ABORT", "OPERATOR_CONTROL", "COMPLETE", "FAILSAFE"):
+        c, now = ready()
+        c.transition(state, now, "previous run ended")
+        accepted, reason = c.start(now)
+        assert not accepted
+        assert f"restart node after {state.lower()} run" in reason
+
+
 @pytest.mark.parametrize("pose", [None, (math.nan, 0.0, 0.0, 0.0)])
 def test_invalid_pose_in_flight_is_handled(pose):
     c, now = taking_off()
@@ -152,10 +174,44 @@ def test_reconnect_clears_freshness_and_does_not_resume_flight():
 
 def test_no_climb_times_out_instead_of_accepting_hover():
     c, now = taking_off()
-    now, _ = advance(c, now, 31.0)
+    now, _ = advance(c, now, 6.0)
     assert c.state == "LANDING"
     assert c.target_z <= c.origin[2] + 0.25
-    assert "timed out" in c.reason
+    assert "no range-confirmed liftoff" in c.reason
+
+
+def test_false_local_climb_with_flat_range_aborts_before_reported_overshoot():
+    c, now = taking_off()
+    for i in range(90):
+        now += 0.05
+        height = min(0.6, 0.6 * (i + 1) / 90)
+        healthy(c, now, (123.0, -456.0, 17.5 + height, 1.2))
+        c.telemetry.ground_distance = c.ground_distance_start
+        output = c.tick(now)
+        if c.state == "LANDING":
+            break
+    assert c.state == "LANDING"
+    assert "local altitude disagrees with downward range" in c.reason
+    assert height < c.settings.takeoff_altitude_m + c.settings.altitude_overshoot_m
+    assert output.setpoint is None
+    assert output.command == ("mode", "AUTO.LAND")
+
+
+def test_false_local_altitude_cannot_confirm_hover_without_range_climb():
+    c, now = taking_off()
+    for i in range(50):
+        now += 0.05
+        height = (i + 1) * 0.02
+        healthy(c, now, (123.0, -456.0, 17.5 + height, 1.2))
+        c.telemetry.ground_distance = c.ground_distance_start + max(0.0, height - 0.2)
+        c.tick(now)
+    for _ in range(30):
+        now += 0.05
+        healthy(c, now, (123.0, -456.0, 18.5, 1.2))
+        c.telemetry.ground_distance = c.ground_distance_start + 0.8
+        c.tick(now)
+    assert c.state == "TAKEOFF"
+    assert not c.aborted
 
 
 def test_horizontal_excursion_and_altitude_overshoot_abort():
@@ -176,6 +232,16 @@ def test_operator_mode_change_stops_output_and_does_not_reengage():
     assert output.setpoint is None and output.command is None
     now, outputs = advance(c, now, 10.0)
     assert not any(o.command or o.setpoint for o in outputs)
+
+
+def test_operator_takeover_wins_if_estimator_fails_in_same_cycle():
+    c, now = taking_off()
+    c.telemetry.mode = "POSCTL"
+    c.telemetry.estimator_ok = False
+    c.telemetry.estimator_reason = "horizontal velocity invalid"
+    output = c.tick(now)
+    assert c.state == "OPERATOR_CONTROL"
+    assert output.setpoint is None and output.command is None
 
 
 def test_rejected_arming_aborts():
@@ -229,6 +295,23 @@ def test_stale_landed_state_never_disarms():
         c.telemetry.received["state"] = now
         assert c.tick(now).command is None
     assert c.state == "LANDING"
+
+
+def test_repeated_abort_preserves_original_reason_and_landing_deadline():
+    c, now = taking_off()
+    c.abort(now, "initial climb height limit exceeded")
+    entered = c.entered
+    c.abort(now + 5, "operator abort")
+    assert c.state == "LANDING"
+    assert c.reason == "initial climb height limit exceeded"
+    assert c.entered == entered
+
+    c.transition("LANDING", now, "hover complete")
+    c.aborted = False
+    c.abort(now + 5, "operator abort")
+    assert c.aborted
+    assert c.reason == "operator abort"
+    assert c.entered == entered
 
 
 def test_invalid_settings_fail_before_start():

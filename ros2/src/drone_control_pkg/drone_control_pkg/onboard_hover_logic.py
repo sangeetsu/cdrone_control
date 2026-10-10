@@ -8,14 +8,22 @@ from drone_control_pkg.onboard_initial_climb import RangeClimb, vertical_distanc
 
 @dataclass(frozen=True)
 class HoverSettings:
+    localization_source: str = "ark_flow"
     enable_flight: bool = False
     publish_rate_hz: float = 20.0
     takeoff_altitude_m: float = 1.0
     takeoff_rate_m_s: float = 0.3
+    # The ZED path needs enough position error to overcome PX4's takeoff ramp.
+    # Keep the requested height ahead of the measured height by at most 0.6 m.
+    zed_takeoff_setpoint_lead_m: float = 0.6
+    zed_takeoff_no_lift_timeout_s: float = 8.0
     hover_duration_s: float = 20.0
     altitude_tolerance_m: float = 0.15
     altitude_dwell_s: float = 1.0
     readiness_dwell_s: float = 2.0
+    # PX4's predicted relative-position bit can briefly clear while its current
+    # position and velocity remain valid. Only this predictive bit gets a grace.
+    vision_prediction_loss_dwell_s: float = 1.0
     offboard_warmup_s: float = 1.5
     sensor_timeout_s: float = 0.5
     state_timeout_s: float = 2.5
@@ -23,6 +31,10 @@ class HoverSettings:
     max_pose_jump_m: float = 0.5
     max_yaw_jump_rad: float = 0.52
     altitude_overshoot_m: float = 0.3
+    # Independent range checks for position-controlled takeoff over a level floor.
+    max_altitude_range_error_m: float = 0.35
+    altitude_range_error_dwell_s: float = 0.5
+    takeoff_no_lift_timeout_s: float = 5.0
     stage_timeout_s: float = 30.0
     landing_timeout_s: float = 45.0
     command_timeout_s: float = 2.0
@@ -38,17 +50,22 @@ class HoverSettings:
     initial_climb_max_thrust: float = 0.75
     initial_climb_thrust_slew: float = 0.25
     initial_climb_height_m: float = 0.25
+    initial_climb_max_height_m: float = 1.25
     initial_climb_rate_m_s: float = 0.2
     initial_climb_min_range_m: float = 0.15
     initial_climb_aiding_dwell_s: float = 1.0
     initial_climb_timeout_s: float = 8.0
     initial_climb_no_lift_timeout_s: float = 5.0
     initial_climb_max_tilt_rad: float = 0.2
-    initial_climb_max_speed_m_s: float = 0.6
+    initial_climb_max_speed_m_s: float = 1.0
 
     def __post_init__(self):
+        if self.localization_source not in {"ark_flow", "zed"}:
+            raise ValueError("localization_source must be ark_flow or zed")
+        if self.localization_source == "zed" and self.initial_climb_enabled:
+            raise ValueError("ZED hover starts with position control; initial climb is unavailable")
         for name, value in vars(self).items():
-            if name in {"enable_flight", "initial_climb_enabled"}:
+            if name in {"enable_flight", "initial_climb_enabled", "localization_source"}:
                 continue
             if name == "initial_climb_hover_thrust" and value == 0:
                 continue
@@ -60,11 +77,17 @@ class HoverSettings:
             raise ValueError("invalid range limits or flow quality threshold")
         if self.altitude_tolerance_m >= self.takeoff_altitude_m:
             raise ValueError("altitude tolerance must be smaller than the climb")
+        if not 0.3 <= self.zed_takeoff_setpoint_lead_m <= 0.6:
+            raise ValueError("ZED takeoff setpoint lead must be between 0.3 and 0.6 m")
+        if not 6.0 <= self.zed_takeoff_no_lift_timeout_s <= 10.0:
+            raise ValueError("ZED no-liftoff timeout must be between 6 and 10 s")
         if not 0 <= self.initial_climb_hover_thrust < self.initial_climb_max_thrust <= 1:
             raise ValueError("initial climb needs 0 <= hover thrust < maximum thrust <= 1")
         if self.initial_climb_enabled:
             if not 0.15 <= self.initial_climb_height_m <= 0.4:
                 raise ValueError("initial climb height must be between 0.15 and 0.4 m")
+            if self.initial_climb_max_height_m <= self.initial_climb_height_m:
+                raise ValueError("initial climb maximum height must exceed the target height")
             if self.initial_climb_height_m >= self.takeoff_altitude_m:
                 raise ValueError("initial climb height must be below final takeoff altitude")
             if not 0.1 <= self.initial_climb_min_range_m < self.initial_climb_height_m:
@@ -86,12 +109,18 @@ class Telemetry:
     frame: str = ""
     estimator_ok: bool = False
     estimator_reason: str = "missing"
+    relative_position_predicted: bool = False
+    relative_position_prediction_lost_since: float | None = None
     vertical_estimator_ok: bool = False
     vertical_estimator_reason: str = "missing"
     # Independent IMU orientation (ENU/FLU) and raw downward range.
     attitude: tuple[float, float, float] | None = None
     ground_distance: float | None = None
     position_target: tuple[float, float, float, float] | None = None
+    vision_pose: tuple[float, float, float, float] | None = None
+    vision_frame: str = ""
+    vision_profile_ok: bool = False
+    vision_profile_reason: str = "PX4 vision parameters not verified"
     flow_ok: bool = False
     flow_reason: str = "invalid integration or insufficient quality"
     range_ok: bool = False
@@ -102,9 +131,18 @@ class Telemetry:
         timestamp = self.received.get(name)
         return timestamp is not None and 0 <= now - timestamp <= timeout
 
+    def update_relative_position_prediction(self, available, now):
+        if available:
+            self.relative_position_prediction_lost_since = None
+        elif self.relative_position_prediction_lost_since is None:
+            self.relative_position_prediction_lost_since = now
+        self.relative_position_predicted = available
+
     def blockers(self, now, settings, *, preflight=False, initial_climb=False):
         reasons = []
-        for name in ("state", "extended", "estimator", "pose", "flow", "range"):
+        inputs = ["state", "extended", "estimator", "pose"]
+        inputs += ["vision"] if settings.localization_source == "zed" else ["flow", "range"]
+        for name in inputs:
             timeout = (settings.state_timeout_s if name in
                        {"state", "extended", "estimator"} else settings.sensor_timeout_s)
             if not self.fresh(name, now, timeout):
@@ -113,6 +151,12 @@ class Telemetry:
             reasons.append("FCU disconnected")
         if self.pose is None or not all(math.isfinite(v) for v in self.pose) or not self.frame:
             reasons.append("local pose: invalid coordinates/orientation/frame")
+        if settings.localization_source == "zed":
+            if not self.vision_profile_ok:
+                reasons.append(self.vision_profile_reason)
+            if (self.vision_pose is None or not all(math.isfinite(v) for v in self.vision_pose)
+                    or not self.vision_frame):
+                reasons.append("ZED pose: invalid coordinates/orientation/frame")
         if initial_climb:
             if not self.vertical_estimator_ok:
                 reasons.append(f"estimator: {self.vertical_estimator_reason}")
@@ -127,10 +171,18 @@ class Telemetry:
                 reasons.append("initial climb: missing measured ground distance")
         elif not self.estimator_ok:
             reasons.append(f"estimator: {self.estimator_reason}")
-        if not self.flow_ok and self.fresh("flow", now, settings.sensor_timeout_s):
+        if settings.localization_source == "zed" and not self.relative_position_predicted:
+            lost_since = self.relative_position_prediction_lost_since
+            if (preflight or lost_since is None
+                    or now - lost_since >= settings.vision_prediction_loss_dwell_s):
+                reasons.append("estimator: relative-position prediction unavailable")
+        if settings.localization_source != "zed" and not self.flow_ok and self.fresh("flow", now, settings.sensor_timeout_s):
             reasons.append(f"flow: {self.flow_reason}")
-        if not self.range_ok and self.fresh("range", now, settings.sensor_timeout_s):
+        if settings.localization_source != "zed" and not self.range_ok and self.fresh("range", now, settings.sensor_timeout_s):
             reasons.append(f"range: {self.range_reason}")
+        if settings.localization_source != "zed" and self.range_ok and (self.ground_distance is None
+                              or not math.isfinite(self.ground_distance)):
+            reasons.append("range: missing measured ground distance")
         if preflight:
             if self.armed:
                 reasons.append("vehicle already armed")
@@ -161,6 +213,10 @@ class HoverController:
         self.ready_since = None
         self.altitude_since = None
         self.ground_since = None
+        self.ground_distance_start = None
+        self.vision_start = None
+        self.takeoff_start_range = None
+        self.range_error_since = None
         self.origin = None
         self.origin_frame = ""
         self.target_z = None
@@ -186,6 +242,9 @@ class HoverController:
         self.attempts = 0
         self.last_command = -math.inf
         self.ground_since = None
+        if state == "TAKEOFF":
+            self.takeoff_start_range = self.telemetry.ground_distance
+            self.range_error_since = None
 
     def update_pose(self, pose, frame, now):
         t = self.telemetry
@@ -211,6 +270,22 @@ class HoverController:
             self.ready_since = None
             if self.state in self.FLYING:
                 self.abort(now, "local pose jumped or frame changed")
+
+    def update_vision_pose(self, pose, frame, now):
+        t = self.telemetry
+        previous = t.vision_pose
+        jump = False
+        if previous is not None and t.fresh("vision", now, self.settings.sensor_timeout_s):
+            yaw_delta = abs(math.atan2(math.sin(pose[3] - previous[3]),
+                                       math.cos(pose[3] - previous[3])))
+            jump = (math.dist(pose[:3], previous[:3]) > self.settings.max_pose_jump_m
+                    or yaw_delta > self.settings.max_yaw_jump_rad or frame != t.vision_frame)
+        t.vision_pose, t.vision_frame, t.received["vision"] = pose, frame, now
+        if jump:
+            self.pose_fault_until = now + self.settings.readiness_dwell_s
+            self.ready_since = None
+            if self.state in self.FLYING:
+                self.abort(now, "ZED pose jumped or frame changed")
 
     def connection_reset(self, now):
         self.telemetry.received.clear()
@@ -242,14 +317,21 @@ class HoverController:
         reasons = self.readiness(now, preflight=True)
         if not self.settings.enable_flight:
             reasons.insert(0, "flight disabled (enable_flight:=false)")
-        if self.state not in self.TERMINAL or self.pending is not None:
+        if self.state != "IDLE":
+            if self.state in self.TERMINAL:
+                reasons.insert(0, f"restart node after {self.state.lower()} run")
+            else:
+                reasons.insert(0, "sequence or command already active")
+        elif self.pending is not None:
             reasons.insert(0, "sequence or command already active")
-        if self.state == "FAILSAFE":
-            reasons.insert(0, "restart node after resolving the failed handoff")
         if reasons:
             return False, "; ".join(reasons)
         self.origin = self.telemetry.pose
         self.origin_frame = self.telemetry.frame
+        self.ground_distance_start = self.telemetry.ground_distance
+        self.vision_start = self.telemetry.vision_pose
+        self.takeoff_start_range = None
+        self.range_error_since = None
         self.target_z = self.origin[2]
         self.offboard_confirmed = self.aborted = self.arm_requested = False
         self.altitude_since = None
@@ -263,7 +345,30 @@ class HoverController:
     def abort(self, now, reason):
         if self.state in self.TERMINAL:
             return
+        if self.state == "LANDING":
+            # A second abort must not hide the original fault or restart the
+            # landing timeout. An operator abort during normal landing still
+            # marks the run as aborted.
+            if not self.aborted:
+                self.aborted = True
+                self.reason = reason
+            return
+        t = self.telemetry
+        if (self.offboard_confirmed and t.mode != "OFFBOARD"
+                and t.fresh("state", now, self.settings.state_timeout_s)):
+            # A fresh mode change belongs to PX4/operator. Never send a new
+            # AUTO.LAND request over an observed takeover, even if a sensor
+            # fault arrives in the same control cycle.
+            self.transition("OPERATOR_CONTROL", now,
+                            f"mode changed to {t.mode}; releasing control")
+            return
         self.aborted = True
+        if (self.state in {"WARMUP", "SET_OFFBOARD", "ARMING"}
+                and not self.telemetry.armed and not self.arm_requested):
+            # Nothing has been armed. Stop the sequence without changing the
+            # disarmed FCU to AUTO.LAND.
+            self.transition("ABORT", now, reason)
+            return
         self.transition("LANDING", now, reason)
 
     def command_result(self, accepted, now, detail=""):
@@ -315,6 +420,45 @@ class HoverController:
                     t.pose[0] - self.origin[0],
                     t.pose[1] - self.origin[1]) > s.max_horizontal_excursion_m:
                 reasons.append("horizontal excursion limit exceeded")
+            range_climb = None
+            if (s.localization_source == "zed" and self.state in {"TAKEOFF", "HOVER"}
+                    and t.pose is not None and t.vision_pose is not None
+                    and self.vision_start is not None):
+                vision_climb = t.vision_pose[2] - self.vision_start[2]
+                local_climb = t.pose[2] - self.origin[2]
+                if abs(local_climb - vision_climb) > s.max_altitude_range_error_m:
+                    if self.range_error_since is None:
+                        self.range_error_since = now
+                    elif now - self.range_error_since >= s.altitude_range_error_dwell_s:
+                        reasons.append("local altitude disagrees with ZED height")
+                else:
+                    self.range_error_since = None
+                if (self.state == "TAKEOFF"
+                        and now - self.entered > s.zed_takeoff_no_lift_timeout_s
+                        and vision_climb < 0.03):
+                    reasons.append(
+                        "takeoff: no ZED-confirmed liftoff "
+                        f"(ZED rise={vision_climb:.3f} m, local rise={local_climb:.3f} m, "
+                        f"requested rise={self.target_z - self.origin[2]:.3f} m, "
+                        f"PX4 landed state={t.landed})")
+            if (s.localization_source != "zed" and self.state in {"TAKEOFF", "HOVER"} and t.pose is not None
+                    and t.range_ok and t.fresh("range", now, s.sensor_timeout_s)
+                    and t.ground_distance is not None and self.ground_distance_start is not None):
+                # Raw downward range is independent of PX4 local Z. During this
+                # short hover demo the surface beneath the drone must be level.
+                range_climb = t.ground_distance - self.ground_distance_start
+                local_climb = t.pose[2] - self.origin[2]
+                if abs(local_climb - range_climb) > s.max_altitude_range_error_m:
+                    if self.range_error_since is None:
+                        self.range_error_since = now
+                    elif now - self.range_error_since >= s.altitude_range_error_dwell_s:
+                        reasons.append("local altitude disagrees with downward range")
+                else:
+                    self.range_error_since = None
+                if (self.state == "TAKEOFF" and self.takeoff_start_range is not None
+                        and now - self.entered > s.takeoff_no_lift_timeout_s
+                        and t.ground_distance - self.takeoff_start_range < 0.03):
+                    reasons.append("takeoff: no range-confirmed liftoff")
             goal_z = self.origin[2] + s.takeoff_altitude_m
             if not initial and t.pose is not None and t.pose[2] > goal_z + s.altitude_overshoot_m:
                 reasons.append("altitude overshoot limit exceeded")
@@ -367,9 +511,17 @@ class HoverController:
                 elif self.state == "TAKEOFF":
                     goal_z = self.origin[2] + s.takeoff_altitude_m
                     # Limit accumulated position error if the airframe fails to climb.
+                    lead = (s.zed_takeoff_setpoint_lead_m if s.localization_source == "zed"
+                            else 0.25)
                     self.target_z = min(goal_z, self.target_z + s.takeoff_rate_m_s * dt,
-                                        t.pose[2] + 0.25)
-                    if abs(t.pose[2] - goal_z) <= s.altitude_tolerance_m:
+                                        t.pose[2] + lead)
+                    observed_climb = (t.vision_pose[2] - self.vision_start[2]
+                                      if s.localization_source == "zed" and t.vision_pose is not None
+                                      else range_climb)
+                    if (observed_climb is not None and t.landed == 2
+                            and abs(t.pose[2] - goal_z) <= s.altitude_tolerance_m
+                            and abs(observed_climb - s.takeoff_altitude_m)
+                            <= s.altitude_tolerance_m):
                         if self.altitude_since is None:
                             self.altitude_since = now
                         if now - self.altitude_since >= s.altitude_dwell_s:
@@ -422,7 +574,7 @@ class HoverController:
         yaw_error = abs(math.atan2(math.sin(t.attitude[2] - climb.yaw),
                                    math.cos(t.attitude[2] - climb.yaw)))
         reason = ""
-        if climb.raw_height > s.initial_climb_height_m + 0.15:
+        if climb.raw_height > s.initial_climb_max_height_m:
             reason = "initial climb height limit exceeded"
         elif abs(climb.speed) > s.initial_climb_max_speed_m_s:
             reason = "initial climb vertical speed limit exceeded"
