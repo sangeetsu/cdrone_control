@@ -532,6 +532,68 @@ def test_zed_launch_selects_camera_and_vision_overlay():
     assert "zed_mavros.yaml" in context.launch_configurations["zed_mavros_config"]
 
 
+def test_square_launch_defaults_and_forwards_to_hover_stack():
+    path = (Path(__file__).resolve().parents[2]
+            / "drone_bringup/launch/position_square_demo.launch.py")
+    spec = importlib.util.spec_from_file_location("square_launch_test", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    context = LaunchContext()
+    description = module.generate_launch_description()
+    for entity in description.entities:
+        if isinstance(entity, DeclareLaunchArgument):
+            entity.execute(context)
+    assert context.launch_configurations["localization_source"] == "zed"
+    assert context.launch_configurations["enable_flight"] == "false"
+    assert context.launch_configurations["square_edge_m"] == "1.0"
+    assert context.launch_configurations["square_max_excursion_m"] == "1.8"
+    included = next(entity for entity in description.entities
+                    if entity.__class__.__name__ == "IncludeLaunchDescription")
+    forwarded = dict(included.launch_arguments)
+    assert forwarded["mission_mode"] == "square"
+    assert "zed_mount_config" in forwarded
+    assert "max_horizontal_excursion_m" in forwarded
+
+
+def test_square_mode_launch_parameters_are_typed_and_reject_non_zed(monkeypatch):
+    from launch_ros.utilities import evaluate_parameters, normalize_parameters
+    module = launch_module()
+    context = LaunchContext()
+    context.launch_configurations.update({
+        "localization_source": "zed", "mission_mode": "square",
+        "square_edge_m": "1.0", "square_speed_m_s": "0.2",
+    })
+    for entity in module.generate_launch_description().entities:
+        if isinstance(entity, DeclareLaunchArgument):
+            entity.execute(context)
+    captured = []
+    monkeypatch.setattr(module, "Node", lambda **kwargs: captured.append(kwargs) or kwargs)
+    module.launch_setup(context)
+    params = evaluate_parameters(context, normalize_parameters(captured[0]["parameters"]))[0]
+    assert params["mission_mode"] == "square"
+    assert params["localization_source"] == "zed"
+    assert params["square_edge_m"] == 1.0
+    assert params["square_speed_m_s"] == 0.2
+    assert params["square_max_excursion_m"] == 1.8
+    context.launch_configurations["localization_source"] = "onboard"
+    with pytest.raises(ValueError, match="requires localization_source:=zed"):
+        module.launch_setup(context)
+
+
+def test_square_node_uses_separate_services_and_topics(node_factory):
+    node = node_factory(localization_source="zed", mission_mode="square")
+    services = {service.srv_name for service in node.services}
+    topics = {publisher.topic_name for publisher in node.publishers}
+    assert {
+        "/cdrone/onboard_test/demo/position_square_start",
+        "/cdrone/onboard_test/demo/position_square_abort",
+        "/cdrone/onboard_test/demo/position_square_check",
+    } <= services
+    assert "/cdrone/onboard_test/demo/position_hover_start" not in services
+    assert "/cdrone/onboard_test/demo/position_square_state" in topics
+    assert "/cdrone/onboard_test/demo/position_square_diagnostics" in topics
+
+
 def test_zed_takeoff_limits_reach_controller_as_floats(monkeypatch):
     from launch_ros.utilities import evaluate_parameters, normalize_parameters
     module = launch_module()
@@ -579,8 +641,12 @@ def test_zed_readiness_requires_matching_fcu_vision_parameters(node_factory):
     node.service_vision_profile(node.test_time)
     assert node.controller.telemetry.vision_profile_ok
     node.controller.telemetry.vision_profile_ok = False
-    node.profile_client = ProfileService(dict(node.ZED_PROFILE, EKF2_EV_CTRL=0))
+    node.profile_client = ProfileService(dict(
+        node.ZED_PROFILE, EKF2_HGT_REF=2, EKF2_OF_CTRL=1, EKF2_RNG_CTRL=1))
     node.service_vision_profile(node.test_time)
     node.service_vision_profile(node.test_time)
     assert not node.controller.telemetry.vision_profile_ok
-    assert "EKF2_EV_CTRL" in node.controller.telemetry.vision_profile_reason
+    reason = node.controller.telemetry.vision_profile_reason
+    assert "EKF2_HGT_REF: current=2, expected=3" in reason
+    assert "EKF2_OF_CTRL: current=1, expected=0" in reason
+    assert "EKF2_RNG_CTRL: current=1, expected=0" in reason

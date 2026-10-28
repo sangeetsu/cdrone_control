@@ -1,25 +1,27 @@
 # Milestone 4 Runbook
 
 Commands below assume your shell already loaded ROS 2 and the local workspace.
-Detailed notes live in `docs/milestones/milestone4.md`.
+Detailed notes live in `docs/milestones/milestone4.md`. For SDK, topic,
+camera, detector, and reboot diagnosis, use
+[Milestone 4 troubleshooting](milestone4_troubleshooting.md).
 
-Milestone 4 uses OptiTrack as the default ownship pose source and adds a target
-map that predicts short target-drone dropouts. The current camera path is the
-ZED 2i through the Stereolabs ZED SDK; moving target prediction is handled by
-`target_map_node`.
+Milestone 4 defaults to ZED 2i vision pose fused by PX4, with no mocap or GPS.
+One ZED process sends pose to MAVROS and hands color/depth arrays directly to
+the detector in memory; the detector and target map
+follow moving drones through short detection gaps. PX4's local `map` frame is
+launch-relative odometry, not a surveyed room map.
 
-For the current `cdrone3` OptiTrack setup, raw `RigidBody3` X/Y is rotated 180
-degrees by the external pose adapter before any flight, perimeter, tracker,
-target-map, or metrics consumer uses it. This is configured with
-Milestone 4's default `frame_rpy_rad: [0.0, 0.0, 3.141592653589793]`.
-Do not use `rpy_offset_rad` for this correction; that knob is only for body
-orientation offset after the source frame has been transformed.
+The old OptiTrack launch remains available with `pose_source:=optitrack` for
+legacy comparisons. Its studio perimeter and 180-degree adapter transform do
+not apply to the ZED local route.
 
-The ESCs are currently detached from the drone. With ESCs detached, use this
-runbook for camera/perception/target-map bench validation only. Do not call the
-start service unless the vehicle has been intentionally reconfigured for a
-supervised flight test; the start service can arm and command takeoff/flight
-behavior.
+The launch defaults to `enable_flight:=false`. The start service refuses to arm
+in that mode. Reconnect flight hardware and use the supervised flight command
+only after the bench checks and a clear area are confirmed.
+The ZED-local mission uses `models/best.engine` on CUDA for drone OBB detection.
+It will not fall back to `.pt` or `.onnx`. A TensorRT engine is not necessarily
+INT8 quantized; this engine has no embedded precision or task metadata, so its
+output and real-world speed must be verified on this Jetson.
 
 ## Build
 
@@ -50,42 +52,6 @@ Expected on the current Jetson:
 - Ubuntu is `22.04`
 - L4T/JetPack matches the Stereolabs Jetson installer you are using
 
-If `import pyzed.sl` fails, install the ZED SDK before launching Milestone 4:
-
-```bash
-sudo apt install zstd
-```
-
-Download the Jetson/Linux ZED SDK installer that matches this Jetson's
-Ubuntu/L4T/JetPack from:
-
-- https://www.stereolabs.com/developers/release
-- https://docs.stereolabs.com/docs/development/zed-sdk/linux
-
-Run the downloaded installer, then rerun:
-
-```bash
-python3 -c "import pyzed.sl as sl; print(sl.Camera.get_sdk_version())"
-```
-
-Keep the Python runtime compatible with ROS, PyTorch, TensorRT, Norfair, and
-ZED. The ZED 5.x wheel declares `numpy>=2`, but this Jetson's ROS/PyTorch stack
-needs NumPy 1.x. Use the no-dependency ZED install path that has been bench
-tested with the ZED 2i:
-
-```bash
-python3 -m pip install --user --force-reinstall numpy==1.26.4 sympy==1.13.1
-python3 -m pip install --user --force-reinstall --no-deps \
-  /home/jetson/Downloads/zed_sdk/wheels/pyzed-5.4-cp310-cp310-linux_aarch64.whl
-```
-
-If you need Python virtual environments for future isolated probes:
-
-```bash
-sudo apt update
-sudo apt install -y python3.10-venv
-```
-
 ## ZED 2i Image Smoke Test
 
 Do this before launching the tracker or any flight behavior:
@@ -103,10 +69,6 @@ Expected outputs:
 - `/home/jetson/output_dump/zed2i_smoke/depth.png`
 - `/home/jetson/output_dump/zed2i_smoke/metadata.json`
 
-If this fails with `ZED SDK Python import failed`, fix the SDK install before
-continuing. Milestone 4 should not be flight-tested until the smoke test saves
-a valid RGB image, depth visualization, and metadata file.
-
 The ZED 2i is currently mounted upside down on cdrone3. Milestone 4 uses
 `zed_rotate_180: true` in `zed2i_tracking.yaml`, which rotates both RGB and
 depth frames before detection/depth lookup and rotates the camera intrinsics
@@ -115,10 +77,9 @@ principal point before body/world projection. Keep the smoke test's
 
 ## ZED 2i Floor-Mark Depth Ladder
 
-Use this non-flight check when ZED depth looks wrong in Milestone 4. It uses
+Use this non-flight check to measure ZED depth for Milestone 4. It uses
 floor marks as truth, not OptiTrack, and records both raw center depth and
 detector-bbox depth with `models/best.engine`.
-
 Keep the target drone stationary at the requested mark. Capture the first range
 at `1.2 m`:
 
@@ -131,25 +92,10 @@ python3 scripts/capture_zed2i_depth_ladder.py \
   --model-path /home/jetson/cdrone_control/models/best.engine
 ```
 
-If the overlay shows the yellow ROI marker is not on the drone body, add
-`--roi-center-x-px <x> --roi-center-y-px <y>` and retake the range. If
-`models/best.engine` reports no accepted detector boxes, use the older detector
-for bbox-depth diagnosis:
-
-```bash
-python3 scripts/capture_zed2i_depth_ladder.py \
-  --range-m 4.8 \
-  --output-dir /home/jetson/output_dump/zed2i_depth_ladder \
-  --rotate-180 \
-  --model-path /home/jetson/cdrone_control/models/16_k_and_drone_studio_realsense_images_model.engine \
-  --roi-center-x-px 570 \
-  --roi-center-y-px 345
-```
-
 Repeat for `2.4`, `3.6`, `4.8`, `6.0`, and `7.2` after moving the target drone
-to each marked range. Continue by `1.2 m` increments only while the previous
-range still has useful detections and depth samples; stop after two consecutive
-unusable ranges or at `9.6 m`.
+to each marked range. Continue at marked ranges through `20 m`, using the same
+target and floor-mark truth. Stop after two consecutive unusable ranges and
+treat the 20 m gate as failed. The tool accepts OBB outputs from `best.engine`.
 
 After one or more captures, generate the floor-mark summary:
 
@@ -166,35 +112,6 @@ Outputs:
 - `/home/jetson/output_dump/zed2i_depth_ladder/zed_depth_ladder_summary.csv`
 - `/home/jetson/output_dump/zed2i_depth_ladder/zed_depth_ladder_summary.md`
 
-Interpretation:
-
-- If center and bbox median depth are both biased at all ranges, compare ZED
-  depth modes before changing tracker math:
-  `--depth-mode NEURAL`, `--depth-mode NEURAL_PLUS`, and `--depth-mode QUALITY`.
-- If center depth is good but bbox/tracker depth is wrong, tune the detector ROI
-  sampling before changing ZED SDK settings.
-- If depth is good but body/world range is wrong in tracker-only validation,
-  inspect projection, `zed_rotate_180`, and camera-to-body extrinsics.
-
-Before calling the start service, run a tracker-only ZED validation. This opens
-the ZED 2i and loads the TensorRT detector, but it does not arm or command the
-vehicle:
-
-```bash
-source /opt/ros/humble/setup.bash
-source /home/jetson/cdrone_control/ros2/install/setup.bash
-timeout 30s ros2 launch drone_bringup tracking_only.launch.py \
-  source_mode:=zed_sdk \
-  zed_rotate_180:=true \
-  tracker_config_file:=/home/jetson/cdrone_control/ros2/install/drone_vision_pkg/share/drone_vision_pkg/config/zed2i_tracking.yaml \
-  publish_world_track_compare:=false \
-  experiment_tag:=milestone4_tracker_only_preflight
-```
-
-Do not run the start service unless this tracker-only launch stays alive until
-the timeout and logs `rotate_180=on` without NumPy, Torch, TensorRT, or ZED
-exceptions.
-
 ## Generate Visualizations
 
 ```bash
@@ -207,15 +124,19 @@ Outputs:
 - `docs/generated/milestone4_target_memory_architecture.svg`
 - `docs/generated/milestone4_prediction_path.svg`
 
-Mission recording also saves MP4 visualizations automatically while the demo is
-active:
+The performance profile leaves video writing off. The supervised flight
+command below saves tracking CSVs, not MP4s. To record MP4 visualizations
+for a separate supervised run, append
+`tracker_record_mission_video:=true tracking_metrics_write_video:=true` to the
+full launch. These options add camera, GPU, and disk load. With video enabled,
+the outputs include:
 
 - `mission_recordings/mission_<drone>_<timestamp>_<state>_combined.mp4`
 - `mission_recordings/mission_<drone>_<timestamp>_<state>_yolo.mp4`
 - `mission_recordings/mission_<drone>_<timestamp>_<state>_target_map.mp4`
 
-Tracking metrics also save CSVs and a cleaned-path MP4 automatically when the
-flight/demo exits the active state:
+Tracking metrics continue to save CSVs when the flight/demo exits the active
+state. A cleaned-path MP4 is produced only when video is enabled:
 
 - `mission_recordings/tracking_metrics/tracking_<drone>_<timestamp>_milestone4/tracking_samples.csv`
 - `mission_recordings/tracking_metrics/tracking_<drone>_<timestamp>_milestone4/tracking_frames.csv`
@@ -223,10 +144,10 @@ flight/demo exits the active state:
 - `mission_recordings/tracking_metrics/tracking_<drone>_<timestamp>_milestone4/tracking_summary.csv`
 - `mission_recordings/tracking_metrics/tracking_<drone>_<timestamp>_milestone4/cleaned_target_path.mp4`
 
-The cleaned-track postprocess runs by default. It waits up to `5 s` for the
-nearest matching `mission_<drone>_*_combined.mp4`, then renders
-`cleaned_target_path.mp4` with the same FPS, frame count, and duration as that
-combined recording. `cleaned_target_path.csv` stays point-based, but its
+The cleaned-track postprocess runs by default. With optional video enabled, it
+waits up to `5 s` for the nearest matching `mission_<drone>_*_combined.mp4`,
+then renders `cleaned_target_path.mp4` with the same FPS, frame count, and
+duration as that combined recording. `cleaned_target_path.csv` stays point-based, but its
 `timestamp_s` column is relative and starts from `0.0` instead of using absolute
 ROS time.
 
@@ -237,126 +158,184 @@ second annotated tile with target-map burn-in overlays when
 top-down recording of the defense drone path and target-map tracks. The separate
 depth MP4 is disabled by default for Milestone 4.
 
-## Launch
+## No-mocap full mission launch, flight disabled
+
+Stop any Milestone 1 hover or square launch first. Both missions need exclusive
+control of MAVROS and the ZED camera. Use the measured mount from the reported
+hover; if the mount has moved, recalibrate before following targets.
+
+The full mission remains one launch. Its ZED-local default uses
+`models/best.engine` on CUDA with OBB postprocessing and the one-class drone
+label map. It starts MAVROS, a combined ZED VIO/detector process, target map,
+controller, and CSV metrics. With `enable_flight:=false`, it does not arm or
+command flight:
 
 ```bash
 ros2 launch drone_bringup milestone4_demo.launch.py \
-  required_completion_count:=1 \
-  zed_rotate_180:=true \
-  predicted_track_hold_s:=1.0 \
-  max_predicted_position_uncertainty_m:=1.0 \
-  target_map_prediction_horizon_s:=5 \
-  rpy_offset_rad:='[0.0, 0.0, -3.141592653589793]'
+  pose_source:=zed_local enable_flight:=false \
+  zed_mount_config:=/home/jetson/zed_hover_mount_run2.yaml \
+  max_target_distance_m:=20.0 max_local_excursion_m:=20.0
 ```
 
-Milestone 4 defaults to `tracking_source_mode:=zed_sdk`,
-`tracker_config_file:=.../zed2i_tracking.yaml`, and
-`demo_config:=.../milestone4_demo.yaml`. It opens the ZED 2i directly through
-`pyzed.sl`, retrieves left color plus depth frames, and keeps OptiTrack as the
-ownship pose source through the corrected external-pose adapter topic
-`/cdrone/cdrone3/external_pose/input_pose`. The default ZED config uses `NEURAL` depth, `0.4 m`
-minimum depth, and explicit 180 degree frame rotation for the current
-upside-down camera mount. The launch default and YAML default both use a
-`2.0 m` takeoff altitude unless explicitly overridden.
+The tracker startup log should show `best.engine`, `model_task=obb`, and CUDA
+device `0`. The readiness check needs a running detector and fresh perception
+status, but no target in view. Use a visible target during the separate 3D
+tracking and range tests below.
 
-Before calling the start service, verify the corrected pose is inside the
-studio boundary. Raw VRPN may show the unrotated OptiTrack frame; the adapter
-output is the pose used downstream:
+For this launch, MAVROS starts first and the combined ZED/detector process
+starts 15 s later. The ZED camera remains configured for HD720 at 30 FPS, but
+SDK depth and pose computation is capped at 20 FPS by
+`zed_grab_compute_capping_fps:=20.0`; detector frames are sampled at up to
+`zed_image_rate_hz:=15.0`.
+The SDK's [frame-rate guide](https://docs.stereolabs.com/docs/development/zed-sdk/modules/camera/frame-rate-and-latency)
+explains that this cap limits depth and tracking computation while the sensor
+continues capturing at 30 FPS.
+
+The launch uses MAVROS with `zed_mavros.yaml` and one SDK camera owner inside
+`zed_local_combined_node`. It sends ZED pose to MAVROS and passes 180-degree
+rotated color, metric depth, capture stamp, and intrinsics directly to the
+detector.
+
+For a standalone ZED plus `best.engine` ROS bench check without MAVROS or
+the mission controller, first stop the full Milestone 4 launch. Follow the
+[GPU readiness procedure](milestone4_troubleshooting.md#gpu-inference-and-power)
+before running:
 
 ```bash
-ros2 topic echo --once /cdrone/cdrone3/vrpn_mocap/RigidBody3/pose
-ros2 topic echo --once /cdrone/cdrone3/external_pose/input_pose
+ros2 launch drone_bringup tracking_only.launch.py \
+  embedded_zed:=true source_mode:=embedded_zed \
+  tracker_config_file:=/home/jetson/cdrone_control/ros2/src/drone_vision_pkg/config/zed2i_tracking.yaml \
+  zed_mount_config:=/home/jetson/zed_hover_mount_run2.yaml \
+  zed_depth_mode:=PERFORMANCE zed_image_rate_hz:=15.0 \
+  zed_grab_compute_capping_fps:=20.0 zed_ready_before_inference_s:=5.0 \
+  model_path:=/home/jetson/cdrone_control/models/best.engine \
+  model_task:=obb \
+  model_data_config:=/home/jetson/cdrone_control/ros2/src/drone_vision_pkg/config/drone_detector.yaml \
+  inference_device:=0 record_mission_video:=false \
+  publish_world_track_compare:=false
+```
+
+This uses one ZED SDK camera and the same input-power guard as the full
+mission. It still runs ZED VIO inside the combined process so the detector
+gets synchronized color, depth, and camera pose. It does not command flight.
+Check `/cdrone/cdrone3/zed/tracking_status`,
+`/cdrone/cdrone3/perception/status`, and
+`/cdrone/cdrone3/perception/tracks`. Without MAVROS local pose, this bench
+check does not validate PX4 fusion or world-frame target tracks.
+
+Require sustained `tracking_status: OK`, fresh ZED pose and perception
+updates, and a visible detected 3D target. The detailed timing checks and
+failure interpretations are in [Milestone 4 troubleshooting](milestone4_troubleshooting.md).
+
+With motors disconnected, verify the PX4 1.16 parameters match the same
+[ZED profile](ros2/src/drone_bringup/config/zed_hover_px4_1_16.yaml) used
+for Milestone 1:
+
+```bash
+python3 scripts/inspect_onboard_localization.py \
+  --profile ros2/src/drone_bringup/config/zed_hover_px4_1_16.yaml \
+  --port udpin:127.0.0.1:14569
+ros2 topic echo --once /cdrone/cdrone3/zed/tracking_status
+ros2 topic hz /cdrone/cdrone3/zed/pose_cov
+ros2 topic hz /cdrone/cdrone3/perception/status
+ros2 topic echo --once /cdrone/cdrone3/mavros/estimator_status
 ros2 topic echo --once /cdrone/cdrone3/mavros/local_position/pose
-ros2 param get /cdrone/cdrone3/external_pose_adapter_node frame_rpy_rad
+ros2 service call /cdrone/cdrone3/demo/milestone4_check std_srvs/srv/Trigger "{}"
 ```
 
-For the current studio calibration, a raw pose near `x=11.06, y=-0.53` should
-become approximately `x=-11.06, y=0.53` on
-`/cdrone/cdrone3/external_pose/input_pose`. If the adapter output or MAVROS
-local pose still reports the unrotated XY, stop and fix the pose transform
-before starting the demo.
+Require `tracking_status: OK`, fresh pose and detector status, valid PX4 horizontal
+position and velocity, a recent `/cdrone/cdrone3/perception/status` message,
+and `milestone4_check` success even with no target visible. The check reports
+`enable_flight=false` separately. To require a visible detected 3D target
+before starting, opt in with `require_detector_target_on_start:=true`.
+In QGroundControl's MAVLink Console,
+`listener estimator_status_flags -n 1` must show sustained `cs_ev_pos`,
+`cs_ev_hgt`, and `cs_ev_yaw`; ROS estimator validity alone does not identify
+which sensor PX4 is fusing. Move the disconnected airframe by known X/Y/Z
+distances and yaw as in the Milestone 1 runbook. Confirm local pose direction,
+depth, target body coordinates, and camera extrinsics before flight.
 
-Check heading separately. If the drone is physically facing `+Y`, the corrected
-pose yaw should match that direction in the active map frame before flight. Use
-`rpy_offset_rad` only to correct body heading after the XY frame transform has
-been verified. The launch command above carries forward the same yaw offset
-used by the validated Milestone 1 hover run.
+Move a target drone by hand while the pursuing drone remains stationary, then
+move the pursuing drone while the target remains stationary. Check that
+`perception/world_tracks` and `target_map/world_tracks` remain in the same
+local frame, that target velocity reflects target motion, and that map IDs
+survive brief detector dropouts. A missing camera frame produces no new
+projection; short predictions may remain. Stale ownship pose or ZED tracking
+loss clears the target map and blocks pursuit.
 
-The Milestone 4 demo config sets `max_target_distance_m: 15.0`, so a detected
-target drone can become a follow candidate at 15 m if it also passes the
-confidence, front-facing, lateral, vertical, perimeter, and minimum-distance
-safety gates. Milestone 3 keeps its existing `6.0 m` config unless you override
-`demo_config`.
+With motors disconnected and stable power, record repeated bench observations
+at floor marks through 20 m. For the planned moving-target flight, require at
+least **10 Hz sustained detected 3D target updates**; the camera's 20 Hz
+capture rate and the tracker's nominal 15 Hz timer do not establish this.
+Require no detected 3D update gap above 0.5 s, valid target range on at least 90% of
+frames at 20 m, and measured range error no greater than 2 m there. Test a
+stationary target while moving the ownship by hand, then a target moving up to
+1 m/s while the ownship moves. Check that projected world positions and
+velocities remain consistent. Do not fly if any gate fails. Neither the
+engine's `.engine` extension nor a successful readiness call proves those
+range and motion gates.
 
-`follow_distance_m` is not the chase-start threshold. It is the desired standoff
-distance after the drone has already started chasing. With the default
-`follow_distance_m: 1.5`, cdrone3 will chase an eligible detected target from
-up to 15 m away, then slow/hold around 1.5 m from the target.
+## Supervised flight
 
-Milestone 4 enables tracking metrics by default. To disable only the CSV/MP4
-metrics logger:
+Use a physically clear area that accommodates a 20 m radius, the airframe,
+and stopping margin. The local limit measures odometric excursion from
+takeoff; it does not detect obstacles or establish a surveyed boundary.
+Recheck the mount, PX4 profile, vision fusion, QGroundControl/RC link, and
+operator takeover. Stop the bench launch before reconnecting flight hardware.
 
 ```bash
 ros2 launch drone_bringup milestone4_demo.launch.py \
-  required_completion_count:=2 \
-  zed_rotate_180:=true \
-  predicted_track_hold_s:=1.0 \
-  max_predicted_position_uncertainty_m:=1.0 \
-  target_map_prediction_horizon_s:=5 \
-  enable_tracking_metrics:=false
+  pose_source:=zed_local enable_flight:=true \
+  zed_mount_config:=/home/jetson/zed_hover_mount_run2.yaml \
+  takeoff_altitude_m:=2.0 max_target_distance_m:=20.0 \
+  max_local_excursion_m:=20.0 max_vel_xy_mps:=0.6
 ```
 
-To override postprocessing for a run:
+Use this command only after the full flight-disabled launch stays stable,
+`best.engine` passes the bench rate and 20 m range gates, PX4 fuses ZED vision,
+and the shared power rails remain stable under load.
+
+Run the check service again. Once it succeeds, call the existing start service,
+even if no target is visible. The local position stream warms OFFBOARD, arms,
+climbs to 2.0 m above takeoff, then hands control to the velocity stream. The
+controller waits for **2 continuous seconds** within 0.10 m of the requested
+height, with measured horizontal speed at most 0.25 m/s and vertical speed at
+most 0.15 m/s. The existing 30 s stage timeout requests landing if hover never
+stabilizes. Targets are ignored until the state changes to `SEARCH`.
 
 ```bash
-ros2 launch drone_bringup milestone4_demo.launch.py \
-  required_completion_count:=2 \
-  zed_rotate_180:=true \
-  predicted_track_hold_s:=1.0 \
-  max_predicted_position_uncertainty_m:=1.0 \
-  target_map_prediction_horizon_s:=5 \
-  tracking_metrics_reference_video:=/home/jetson/cdrone_control/mission_recordings/<combined_video>.mp4
-```
-
-Set `tracking_metrics_postprocess_cleaned_tracks:=false` only if you want to
-skip cleaned-track generation during the flight and rerun it later.
-
-The ZED 2i tracker config leaves camera-to-body extrinsics at zero. If the ZED
-2i is mounted differently than the old D455, calibrate and update
-`camera_offset_body_m` and `camera_rpy_body_rad` before trusting metric body or
-world target positions. If the camera is physically remounted upright later,
-set `zed_rotate_180: false`, recapture the smoke images without `--rotate-180`,
-and recheck the projection/extrinsics.
-
-Useful tuning knobs, already included in the launch command above:
-
-```bash
-ros2 launch drone_bringup milestone4_demo.launch.py \
-  required_completion_count:=2 \
-  predicted_track_hold_s:=1.0 \
-  max_predicted_position_uncertainty_m:=1.0 \
-  target_map_prediction_horizon_s:=5 \
-  rpy_offset_rad:='[0.0, 0.0, -3.141592653589793]'
-```
-
-## Start
-
-Do not run this while the ESCs are detached unless you are deliberately testing
-the mission state machine with safe vehicle-side protections in place. For a
-normal flight configuration, this starts the Milestone 4 mission through the
-Milestone 3 sequence node and can arm/command the vehicle:
-
-```bash
+ros2 service call /cdrone/cdrone3/demo/milestone4_check std_srvs/srv/Trigger "{}"
 ros2 service call /cdrone/cdrone3/demo/milestone3_start std_srvs/srv/Trigger "{}"
+ros2 topic echo /cdrone/cdrone3/engagement/state
 ```
 
-## Abort
+In `SEARCH`, the mission sends zero velocity and waits indefinitely for a
+confirmed target. If none appears, use the abort service below to land; PX4
+failsafes and RC takeover remain available. A new target needs three coherent
+3D observations spanning at least 0.2 s before pursuit starts. First follow a
+stationary target at the reduced 0.6 m/s cap. After takeoff,
+handoff, follow, return, landing, and disarm all complete cleanly, repeat
+with a slowly moving target. Then increase `max_vel_xy_mps` to `1.2` and
+test targets up to 1 m/s in stages. The 1.5 m standoff and three-second
+completion dwell remain. A target flying directly away at 1 m/s may not be
+caught quickly from a long starting range.
+
+At the 20 m limit, the controller holds horizontal velocity and searches;
+it may follow again if the target moves into an allowed path. One rejected ZED
+pose jump commands zero velocity, clears target history, and allows at most
+0.5 s for two fresh accepted vision poses with valid PX4 odometry. Recovery
+returns to `SEARCH`, or restarts the stable-hover dwell if the jump occurred
+there. A persistent jump requests landing in place. A PX4 local
+pose jump, estimator failure, or sustained ZED pose loss requests landing
+immediately. Diagnose jumps with
+[Milestone 4 troubleshooting](milestone4_troubleshooting.md).
+An abort requested by the operator uses the same landing path:
 
 ```bash
 ros2 service call /cdrone/cdrone3/demo/milestone3_abort std_srvs/srv/Trigger "{}"
 ```
 
-## Live Checks
+## Live checks
 
 ```bash
 ros2 topic echo /cdrone/cdrone3/perception/status
@@ -366,20 +345,11 @@ ros2 topic echo /cdrone/cdrone3/target_map/tracks
 ros2 topic echo /cdrone/cdrone3/engagement/state
 ```
 
-Healthy signs:
-
-- raw perception tracks appear while the target drone is visible
-- perception status shows tracker FPS and detector counts once ZED frames arrive
-- target-map tracks keep a stable `track_id` across brief detector dropouts
-- predicted tracks show `source: 2`, rising `last_observed_age_s`, and rising
-  `position_uncertainty_m`
-- the engagement state reports `target_visible: false` during predicted holds
-- saved mission MP4s include `*_target_map.mp4`, and the `*_yolo.mp4` overlay
-  shows map IDs, source labels, age, uncertainty, path tails, and velocity arrows
-- Milestone 4 combined MP4 uses YOLO/RGB/YOLO+target-map/stats tiles, without a
-  depth tile
-- `cleaned_target_path.mp4` has the same frame count/FPS as the combined MP4,
-  and its overlay time starts at `t=0.00s`
+Detected and predicted targets retain stable map IDs during brief gaps.
+Predictions show increasing age and uncertainty and remain speed-limited.
+After the hold or uncertainty limit, pursuit stops. Saved recordings and
+metrics use PX4 local pose; they cannot be overlaid on the old surveyed
+OptiTrack studio map without alignment.
 
 ## Rerun Cleaned-Track Postprocess
 
@@ -433,7 +403,7 @@ Color meaning:
 
 ## ZED 2i Pose Note
 
-This Milestone 4 run still uses OptiTrack for ownship pose. The ZED 2i SDK path
-added here is for target perception depth and RGB only. If ZED VIO is evaluated
-later as an ownship pose source, keep it log-only first and switch mission pose
-topics only after pose quality and frame alignment are verified.
+The default run fuses ZED VIO in PX4 and uses MAVROS local position for target
+projection and return. The frame can drift or reset. Treat recordings as local
+mission measurements, and stop the flight if ZED tracking or PX4 vision fusion
+fails. `pose_source:=optitrack` selects the old studio setup explicitly.

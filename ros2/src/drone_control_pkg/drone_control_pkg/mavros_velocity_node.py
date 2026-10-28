@@ -45,6 +45,8 @@ class MavrosVelocityNode(Node):
         self.declare_parameter("state_topic", "")
         self.declare_parameter("local_pose_topic", "")
         self.declare_parameter("output_topic", "")
+        self.declare_parameter("require_enable_signal", False)
+        self.declare_parameter("enable_topic", "")
 
         self.publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
         self.watchdog_timeout_s = float(self.get_parameter("watchdog_timeout_s").value)
@@ -52,6 +54,7 @@ class MavrosVelocityNode(Node):
         self.max_vel_z_mps = float(self.get_parameter("max_vel_z_mps").value)
         self.max_yaw_rate_rps = float(self.get_parameter("max_yaw_rate_rps").value)
         self.require_guided_mode = bool(self.get_parameter("require_guided_mode").value)
+        self.require_enable_signal = bool(self.get_parameter("require_enable_signal").value)
         self.drone_id = str(self.get_parameter("drone_id").value)
         self.mavros_namespace = str(self.get_parameter("mavros_namespace").value)
         self.cmd_vel_topic = (
@@ -74,6 +77,10 @@ class MavrosVelocityNode(Node):
             str(self.get_parameter("output_topic").value).strip()
             or join_topic(self.mavros_namespace, "setpoint_velocity/cmd_vel")
         )
+        self.enable_topic = (str(self.get_parameter("enable_topic").value).strip()
+                             or cdrone_topic(self.drone_id, "control/velocity_stream_enabled"))
+        self.enabled = not self.require_enable_signal
+        self.last_enable_s = 0.0
 
         self.latest_cmd = TwistStamped()
         self.latest_cmd_time_s = 0.0
@@ -87,6 +94,8 @@ class MavrosVelocityNode(Node):
             self.cmd_callback,
             10,
         )
+        if self.require_enable_signal:
+            self.create_subscription(Bool, self.enable_topic, self.enable_callback, 10)
         self.estop_sub = self.create_subscription(
             Bool, self.estop_topic, self.estop_callback, 10
         )
@@ -157,6 +166,10 @@ class MavrosVelocityNode(Node):
     def local_pose_callback(self, msg: PoseStamped) -> None:
         self.local_pose = msg
 
+    def enable_callback(self, msg: Bool) -> None:
+        self.enabled = bool(msg.data)
+        self.last_enable_s = self.now_s()
+
     def _guided_gate_open(self) -> bool:
         return offboard_velocity_gate_open(
             require_guided_mode=self.require_guided_mode,
@@ -171,6 +184,10 @@ class MavrosVelocityNode(Node):
 
     def publish_loop(self) -> None:
         now_s = self.now_s()
+        if self.require_enable_signal and (
+            not self.enabled or now_s - self.last_enable_s > self.watchdog_timeout_s
+        ):
+            return
         stale = now_s - self.latest_cmd_time_s > self.watchdog_timeout_s
 
         if self.estop:

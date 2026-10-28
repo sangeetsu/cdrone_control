@@ -199,6 +199,31 @@ def clamp_follow_command_velocity(
     )
 
 
+def add_target_velocity_feedforward(
+    command: FollowCommand,
+    track: TrackSnapshot,
+    *,
+    gain: float,
+    max_target_velocity_mps: float,
+    max_vel_xy_mps: float,
+) -> FollowCommand:
+    """Assist pursuit of a detected moving target; keep the normal speed cap."""
+    if track.source != TRACK_SOURCE_DETECTED:
+        return command
+    target_speed = math.hypot(track.vx_b_mps, track.vy_b_mps)
+    if not math.isfinite(target_speed) or target_speed > max_target_velocity_mps:
+        return command
+    vx = command.vx + gain * track.vx_b_mps
+    vy = command.vy + gain * track.vy_b_mps
+    speed = math.hypot(vx, vy)
+    if speed > max_vel_xy_mps:
+        scale = max_vel_xy_mps / speed
+        vx, vy = vx * scale, vy * scale
+    if command.min_distance_gate_active:
+        vx = min(vx, 0.0)
+    return replace(command, vx=vx, vy=vy)
+
+
 def distance_in_standoff_window(
     distance_m: float,
     desired_distance_m: float,

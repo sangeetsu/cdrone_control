@@ -1,0 +1,7 @@
+{"utc": "2026-10-23T23:06:25.471+00:00", "stage": "started", "oc1_events": 12426, "vdd_in_mv": 4928, "mode": "engine", "pid": 10287}
+{"utc": "2026-10-23T23:06:25.669+00:00", "stage": "saved_frame_loaded", "oc1_events": 12426, "vdd_in_mv": 4896, "sample": "output_dump/zed_engine_probe/sample_frame.npz"}
+{"utc": "2026-10-23T23:06:25.753+00:00", "stage": "engine_hash", "oc1_events": 12426, "vdd_in_mv": 4880, "path": "/home/jetson/cdrone_control/models/best.engine", "bytes": 66357740, "sha256": "5d65cd125eef83ed7e1f6ec89ccd45a1777e86460abf7e66aa435407be7b2d72"}
+{"utc": "2026-10-23T23:06:25.758+00:00", "stage": "loading_engine", "oc1_events": 12426, "vdd_in_mv": 4880}
+{"utc": "2026-10-23T23:06:30.193+00:00", "stage": "engine_loaded", "oc1_events": 12426, "vdd_in_mv": 4872}
+{"utc": "2026-10-23T23:06:30.197+00:00", "stage": "first_inference_started", "oc1_events": 12426, "vdd_in_mv": 4880}
+{"utc": "2026-10-23T23:06:31.280+00:00", "stage": "first_inference_completed", "oc1_events": 12525, "vdd_in_mv": 4824, "obb_count": 0}

@@ -1,0 +1,32 @@
+{
+  "mode": "camera",
+  "duration_s": 15.196,
+  "camera_or_pipeline": {
+    "count": 303,
+    "hz": 19.939,
+    "max_gap_s": 0.061
+  },
+  "detected_frames": {
+    "count": 0,
+    "hz": 0.0,
+    "max_gap_s": null
+  },
+  "valid_3d_frames": {
+    "count": 0,
+    "hz": 0.0,
+    "max_gap_s": null
+  },
+  "detections": 0,
+  "detections_with_valid_depth": 0,
+  "valid_depth_fraction": null,
+  "duplicate_or_stale_timestamps": 0,
+  "grab_latency": {
+    "median_ms": 49.7,
+    "p95_ms": 53.25
+  },
+  "inference_latency": {
+    "median_ms": null,
+    "p95_ms": null
+  },
+  "latest_3d": null
+}

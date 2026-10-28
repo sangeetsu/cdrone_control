@@ -1,0 +1,6 @@
+{"utc": "2026-10-23T23:10:39.660+00:00", "stage": "started", "oc1_events": 15673, "vdd_in_mv": 4848, "mode": "engine", "pid": 7255}
+{"utc": "2026-10-23T23:10:39.863+00:00", "stage": "saved_frame_loaded", "oc1_events": 15673, "vdd_in_mv": 4832, "sample": "output_dump/zed_engine_probe/sample_frame.npz"}
+{"utc": "2026-10-23T23:10:39.929+00:00", "stage": "model_hash", "oc1_events": 15673, "vdd_in_mv": 4832, "path": "models/best.pt", "bytes": 52966893, "sha256": "442ab410a574ea30c6fb35807abfe6a1875504883bb2ee722175450a1347023c"}
+{"utc": "2026-10-23T23:10:39.933+00:00", "stage": "loading_model", "oc1_events": 15673, "vdd_in_mv": 4832, "model": "best.pt", "device": "0"}
+{"utc": "2026-10-23T23:10:43.933+00:00", "stage": "model_loaded", "oc1_events": 15673, "vdd_in_mv": 4832}
+{"utc": "2026-10-23T23:10:43.938+00:00", "stage": "first_inference_started", "oc1_events": 15673, "vdd_in_mv": 4832}

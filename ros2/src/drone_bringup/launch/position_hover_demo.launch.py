@@ -26,6 +26,9 @@ def launch_setup(context, *args, **kwargs):
     mavros_namespace = LaunchConfiguration("mavros_namespace")
 
     localization_source = LaunchConfiguration("localization_source").perform(context)
+    mission_mode = LaunchConfiguration("mission_mode").perform(context)
+    if mission_mode == "square" and localization_source != "zed":
+        raise ValueError("square mode requires localization_source:=zed")
     if localization_source in {"onboard", "zed"}:
         # Return before constructing any external-pose/reference nodes.
         zed = localization_source == "zed"
@@ -39,7 +42,8 @@ def launch_setup(context, *args, **kwargs):
             }.items(),
         )
         params = {"drone_id": drone_id, "mavros_namespace": mavros_namespace,
-                  "localization_source": "zed" if zed else "ark_flow"}
+                  "localization_source": "zed" if zed else "ark_flow",
+                  "mission_mode": mission_mode}
         for name in ("flow_topic", "range_topic"):
             params[name] = ParameterValue(LaunchConfiguration(name), value_type=str)
         for name in (
@@ -49,6 +53,10 @@ def launch_setup(context, *args, **kwargs):
             "max_altitude_range_error_m", "altitude_range_error_dwell_s",
             "takeoff_no_lift_timeout_s",
             "max_horizontal_excursion_m", "offboard_warmup_s", "readiness_dwell_s",
+            "square_edge_m", "square_speed_m_s", "square_setpoint_lead_m",
+            "square_waypoint_tolerance_m", "square_waypoint_dwell_s",
+            "square_waypoint_timeout_s", "square_max_excursion_m",
+            "square_max_path_error_m",
             "initial_climb_hover_thrust", "initial_climb_max_thrust", "initial_climb_thrust_slew",
             "initial_climb_height_m", "initial_climb_max_height_m", "initial_climb_rate_m_s",
             "initial_climb_min_range_m",
@@ -280,6 +288,8 @@ def generate_launch_description():
             DeclareLaunchArgument("log_level", default_value="info"),
             DeclareLaunchArgument("localization_source", default_value="external_pose",
                                   choices=["onboard", "zed", "external_pose"]),
+            DeclareLaunchArgument("mission_mode", default_value="hover",
+                                  choices=["hover", "square"]),
             DeclareLaunchArgument("enable_flight", default_value="false",
                                   description="Onboard or ZED path: allow start to issue flight commands"),
             DeclareLaunchArgument("onboard_mavros_config", default_value=os.path.join(
@@ -460,6 +470,14 @@ def generate_launch_description():
             DeclareLaunchArgument("companion_status_timeout_s", default_value="0.5"),
             DeclareLaunchArgument("require_companion_active", default_value="true"),
             DeclareLaunchArgument("max_horizontal_excursion_m", default_value=hover_default(0.5, 0.75)),
+            DeclareLaunchArgument("square_edge_m", default_value="1.0"),
+            DeclareLaunchArgument("square_speed_m_s", default_value="0.2"),
+            DeclareLaunchArgument("square_setpoint_lead_m", default_value="0.3"),
+            DeclareLaunchArgument("square_waypoint_tolerance_m", default_value="0.15"),
+            DeclareLaunchArgument("square_waypoint_dwell_s", default_value="1.0"),
+            DeclareLaunchArgument("square_waypoint_timeout_s", default_value="20.0"),
+            DeclareLaunchArgument("square_max_excursion_m", default_value="1.8"),
+            DeclareLaunchArgument("square_max_path_error_m", default_value="0.35"),
             DeclareLaunchArgument("restore_takeoff_alt_on_exit", default_value="true"),
             DeclareLaunchArgument("takeoff_param_id", default_value="MIS_TAKEOFF_ALT"),
             DeclareLaunchArgument("param_pull_force", default_value="true"),

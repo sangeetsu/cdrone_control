@@ -1,16 +1,20 @@
 from __future__ import annotations
 
 import numpy as np
+import math
 import rclpy
+from drone_control_pkg.local_flight import pose_discontinuity
 from drone_control_pkg.deployment_config import (
     configured_drone_id,
     configured_mavros_namespace,
 )
-from drone_control_pkg.topic_utils import cdrone_topic, external_pose_input_topic
+from drone_control_pkg.topic_utils import cdrone_topic, external_pose_input_topic, join_topic
 from drone_msgs.msg import TargetTrack, TargetTrackArray, WorldTargetTrack, WorldTargetTrackArray
 from geometry_msgs.msg import Point, PoseStamped
+from mavros_msgs.msg import EstimatorStatus
 from rclpy.node import Node
 from rclpy.qos import HistoryPolicy, QoSProfile, ReliabilityPolicy
+from std_msgs.msg import String
 from visualization_msgs.msg import Marker, MarkerArray
 
 from drone_vision_pkg.target_memory import (
@@ -72,8 +76,15 @@ class TargetMapNode(Node):
         self.declare_parameter("velocity_process_noise_mps", 0.25)
         self.declare_parameter("velocity_blend_alpha", 0.55)
         self.declare_parameter("max_velocity_mps", 8.0)
+        self.declare_parameter("max_observation_speed_mps", 0.0)
+        self.declare_parameter("position_noise_allowance_m", 0.0)
+        self.declare_parameter("confirmation_count", 1)
+        self.declare_parameter("confirmation_span_s", 0.0)
+        self.declare_parameter("estimator_timeout_s", 0.5)
         self.declare_parameter("history_length", 30)
         self.declare_parameter("marker_lifetime_s", 0.5)
+        self.declare_parameter("ownship_pose_timeout_s", 0.5)
+        self.declare_parameter("require_estimator_valid", False)
 
         self.drone_id = str(self.get_parameter("drone_id").value)
         self.mavros_namespace = str(self.get_parameter("mavros_namespace").value)
@@ -83,6 +94,8 @@ class TargetMapNode(Node):
             self.get_parameter("observation_fresh_s").value
         )
         self.marker_lifetime_s = float(self.get_parameter("marker_lifetime_s").value)
+        self.ownship_pose_timeout_s = float(self.get_parameter("ownship_pose_timeout_s").value)
+        self.require_estimator_valid = bool(self.get_parameter("require_estimator_valid").value)
 
         self.world_tracks_topic = (
             str(self.get_parameter("world_tracks_topic").value).strip()
@@ -134,9 +147,19 @@ class TargetMapNode(Node):
             ),
             max_velocity_mps=float(self.get_parameter("max_velocity_mps").value),
             history_length=int(self.get_parameter("history_length").value),
+            max_observation_speed_mps=float(self.get_parameter("max_observation_speed_mps").value),
+            position_noise_allowance_m=float(self.get_parameter("position_noise_allowance_m").value),
+            confirmation_count=int(self.get_parameter("confirmation_count").value),
+            confirmation_span_s=float(self.get_parameter("confirmation_span_s").value),
         )
+        self.estimator_timeout_s = float(self.get_parameter("estimator_timeout_s").value)
 
         self.latest_pose: PoseStamped | None = None
+        self.last_pose_s = 0.0
+        self.last_estimator_s = 0.0
+        self.estimator_valid = False
+        self.last_zed_status_s = 0.0
+        self.zed_tracking_ok = False
         self.last_pose_warn_s = 0.0
         self.last_tracks_stamp_s = 0.0
 
@@ -157,6 +180,13 @@ class TargetMapNode(Node):
             self.ownship_pose_callback,
             best_effort_qos,
         )
+        if self.require_estimator_valid:
+            self.create_subscription(
+                EstimatorStatus, join_topic(self.mavros_namespace, "estimator_status"),
+                self.estimator_callback, best_effort_qos)
+            self.create_subscription(
+                String, cdrone_topic(self.drone_id, "zed/tracking_status"),
+                self.zed_status_callback, 10)
 
         self.world_pub = self.create_publisher(
             WorldTargetTrackArray,
@@ -190,9 +220,49 @@ class TargetMapNode(Node):
         return self.get_clock().now().nanoseconds / 1e9
 
     def ownship_pose_callback(self, msg: PoseStamped) -> None:
+        if self.latest_pose is not None and self.now_s() - self.last_pose_s <= self.ownship_pose_timeout_s:
+            old = self.latest_pose.pose
+            new = msg.pose
+            old_yaw = math.atan2(2 * (old.orientation.w * old.orientation.z +
+                                      old.orientation.x * old.orientation.y),
+                                 1 - 2 * (old.orientation.y ** 2 + old.orientation.z ** 2))
+            new_yaw = math.atan2(2 * (new.orientation.w * new.orientation.z +
+                                      new.orientation.x * new.orientation.y),
+                                 1 - 2 * (new.orientation.y ** 2 + new.orientation.z ** 2))
+            if pose_discontinuity((old.position.x, old.position.y, old.position.z),
+                                  (new.position.x, new.position.y, new.position.z),
+                                  old_yaw, new_yaw):
+                self.memory.tracks.clear()
         self.latest_pose = msg
+        self.last_pose_s = self.now_s()
+
+    def estimator_callback(self, msg: EstimatorStatus) -> None:
+        self.last_estimator_s = self.now_s()
+        self.estimator_valid = bool(
+            msg.attitude_status_flag and msg.velocity_horiz_status_flag and
+            (msg.pos_horiz_rel_status_flag or msg.pos_horiz_abs_status_flag) and
+            msg.pos_vert_abs_status_flag and not msg.accel_error_status_flag)
+        if not self.estimator_valid:
+            self.memory.tracks.clear()
+
+    def zed_status_callback(self, msg: String) -> None:
+        self.last_zed_status_s = self.now_s()
+        self.zed_tracking_ok = str(msg.data) == "OK"
+        if not self.zed_tracking_ok:
+            self.memory.tracks.clear()
+
+    def local_source_valid(self) -> bool:
+        if not self.require_estimator_valid:
+            return True
+        now_s = self.now_s()
+        return (self.estimator_valid and now_s - self.last_estimator_s <= self.estimator_timeout_s and
+                self.zed_tracking_ok and now_s - self.last_zed_status_s <= 1.0)
 
     def world_tracks_callback(self, msg: WorldTargetTrackArray) -> None:
+        if str(msg.frame_id).strip() != self.world_frame:
+            return
+        if not self.local_source_valid():
+            return
         now_s = self.now_s()
         observations: list[WorldTrackObservation] = []
         for track in msg.tracks:
@@ -242,6 +312,10 @@ class TargetMapNode(Node):
 
     def publish_target_map(self) -> None:
         now_s = self.now_s()
+        if (now_s - self.last_pose_s > self.ownship_pose_timeout_s or
+            not self.local_source_valid()):
+            self.latest_pose = None
+            self.memory.tracks.clear()
         stamp_msg = self.get_clock().now().to_msg()
         tracks = self.memory.snapshot(
             now_s=now_s,

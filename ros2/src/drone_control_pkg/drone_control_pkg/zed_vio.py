@@ -68,18 +68,37 @@ class PoseGate:
         self.last_stamp_ns = 0
         self.last_position = None
         self.last_quaternion = None
+        self.last_jump = None
 
     def accept(self, tracking_state, stamp_ns, now_ns, position, quaternion):
+        self.last_jump = None
         if tracking_state != "OK":
             return False, f"tracking state {tracking_state}"
-        if (stamp_ns <= self.last_stamp_ns or stamp_ns <= 0
-                or not -100_000_000 <= now_ns - stamp_ns <= self.max_age_ns):
-            return False, "stale, repeated, or future camera frame"
+        if stamp_ns <= 0:
+            return False, "invalid camera frame timestamp"
+        if stamp_ns <= self.last_stamp_ns:
+            return False, "repeated camera frame"
+        age_ns = now_ns - stamp_ns
+        if age_ns < -100_000_000:
+            return False, "future camera frame"
+        if age_ns > self.max_age_ns:
+            return False, "stale camera frame"
         if self.last_position is not None:
             distance = float(np.linalg.norm(position - self.last_position))
             rotation = (Rotation.from_quat(self.last_quaternion).inv()
                         * Rotation.from_quat(quaternion))
-            if distance > self.max_jump_m or rotation.magnitude() > self.max_yaw_jump_rad:
+            yaw_change_rad = float(rotation.magnitude())
+            if distance > self.max_jump_m or yaw_change_rad > self.max_yaw_jump_rad:
+                previous_yaw = Rotation.from_quat(self.last_quaternion).as_euler("xyz")[2]
+                current_yaw = Rotation.from_quat(quaternion).as_euler("xyz")[2]
+                heading_step = math.atan2(math.sin(current_yaw - previous_yaw),
+                                          math.cos(current_yaw - previous_yaw))
+                self.last_jump = {
+                    "translation_m": distance,
+                    "rotation_rad": yaw_change_rad,
+                    "yaw_change_rad": abs(heading_step),
+                    "frame_interval_s": (stamp_ns - self.last_stamp_ns) / 1e9,
+                }
                 return False, "ZED pose jump"
         self.last_stamp_ns = stamp_ns
         self.last_position = np.array(position, copy=True)

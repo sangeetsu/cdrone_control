@@ -1,0 +1,4 @@
+{"utc": "2026-10-23T23:15:54.198+00:00", "stage": "started", "oc1_events": 25154, "vdd_in_mv": 4872}
+{"utc": "2026-10-23T23:15:56.364+00:00", "stage": "torch_imported", "oc1_events": 25154, "vdd_in_mv": 4840, "version": "2.5.0a0+872d972e41.nv24.08", "built_cuda": "12.6"}
+{"utc": "2026-10-23T23:15:56.393+00:00", "stage": "cuda_initialized", "oc1_events": 25154, "vdd_in_mv": 4832, "device": "Orin"}
+{"utc": "2026-10-23T23:15:56.551+00:00", "stage": "cuda_arithmetic_completed", "oc1_events": 25154, "vdd_in_mv": 4816, "value": 1024.0}

@@ -1,0 +1,20 @@
+{"utc": "2026-10-23T23:05:55.830+00:00", "stage": "started", "oc1_events": 11755, "vdd_in_mv": 4856, "mode": "camera", "pid": 9998}
+{"utc": "2026-10-23T23:05:55.836+00:00", "stage": "opening_zed", "oc1_events": 11755, "vdd_in_mv": 4856, "depth_mode": "PERFORMANCE", "fps": 30}
+{"utc": "2026-10-23T23:05:58.691+00:00", "stage": "zed_opened", "oc1_events": 11755, "vdd_in_mv": 4816}
+{"utc": "2026-10-23T23:05:58.864+00:00", "stage": "first_frame_saved", "oc1_events": 11755, "vdd_in_mv": 4808, "timestamp_ns": 1792796758683959278, "sample": "output_dump/zed_engine_probe/sample_frame.npz", "shape": [720, 1280, 3]}
+{"utc": "2026-10-23T23:05:59.880+00:00", "stage": "progress", "oc1_events": 11758, "vdd_in_mv": 4784, "elapsed_s": 1.01, "frames": 20, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:06:00.896+00:00", "stage": "progress", "oc1_events": 11762, "vdd_in_mv": 4792, "elapsed_s": 2.03, "frames": 40, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:06:01.945+00:00", "stage": "progress", "oc1_events": 11768, "vdd_in_mv": 4792, "elapsed_s": 3.08, "frames": 61, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:06:02.963+00:00", "stage": "progress", "oc1_events": 11933, "vdd_in_mv": 4728, "elapsed_s": 4.09, "frames": 83, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:06:03.982+00:00", "stage": "progress", "oc1_events": 12004, "vdd_in_mv": 4728, "elapsed_s": 5.11, "frames": 104, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:06:04.990+00:00", "stage": "progress", "oc1_events": 12045, "vdd_in_mv": 4744, "elapsed_s": 6.12, "frames": 124, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:06:05.996+00:00", "stage": "progress", "oc1_events": 12061, "vdd_in_mv": 4776, "elapsed_s": 7.13, "frames": 144, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:06:07.023+00:00", "stage": "progress", "oc1_events": 12076, "vdd_in_mv": 4752, "elapsed_s": 8.15, "frames": 165, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:06:08.037+00:00", "stage": "progress", "oc1_events": 12124, "vdd_in_mv": 4768, "elapsed_s": 9.17, "frames": 186, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:06:09.069+00:00", "stage": "progress", "oc1_events": 12127, "vdd_in_mv": 4776, "elapsed_s": 10.2, "frames": 206, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:06:10.094+00:00", "stage": "progress", "oc1_events": 12306, "vdd_in_mv": 4736, "elapsed_s": 11.22, "frames": 228, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:06:11.109+00:00", "stage": "progress", "oc1_events": 12376, "vdd_in_mv": 4752, "elapsed_s": 12.24, "frames": 248, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:06:12.138+00:00", "stage": "progress", "oc1_events": 12388, "vdd_in_mv": 4760, "elapsed_s": 13.27, "frames": 268, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:06:13.174+00:00", "stage": "progress", "oc1_events": 12411, "vdd_in_mv": 4744, "elapsed_s": 14.3, "frames": 289, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:06:14.059+00:00", "stage": "zed_closed", "oc1_events": 12426, "vdd_in_mv": 4792}
+{"utc": "2026-10-23T23:06:14.068+00:00", "stage": "completed", "oc1_events": 12426, "vdd_in_mv": 4792, "summary": {"mode": "camera", "duration_s": 15.196, "camera_or_pipeline": {"count": 303, "hz": 19.939, "max_gap_s": 0.061}, "detected_frames": {"count": 0, "hz": 0.0, "max_gap_s": null}, "valid_3d_frames": {"count": 0, "hz": 0.0, "max_gap_s": null}, "detections": 0, "detections_with_valid_depth": 0, "valid_depth_fraction": null, "duplicate_or_stale_timestamps": 0, "grab_latency": {"median_ms": 49.7, "p95_ms": 53.25}, "inference_latency": {"median_ms": null, "p95_ms": null}, "latest_3d": null}}

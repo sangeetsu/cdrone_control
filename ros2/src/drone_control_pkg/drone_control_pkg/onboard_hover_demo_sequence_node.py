@@ -100,10 +100,11 @@ class OnboardHoverDemoSequenceNode(Node):
             PoseStamped, join_topic(namespace, "setpoint_position/local"), 10)
         self.attitude_pub = self.create_publisher(
             AttitudeTarget, join_topic(namespace, "setpoint_raw/attitude"), 10)
+        demo_name = "position_square" if settings.mission_mode == "square" else "position_hover"
         self.status_pub = self.create_publisher(
-            String, cdrone_topic(self.drone_id, "demo/position_hover_state"), 10)
+            String, cdrone_topic(self.drone_id, f"demo/{demo_name}_state"), 10)
         self.diagnostics_pub = self.create_publisher(
-            String, cdrone_topic(self.drone_id, "demo/position_hover_diagnostics"), 10)
+            String, cdrone_topic(self.drone_id, f"demo/{demo_name}_diagnostics"), 10)
         self.mode_client = self.create_client(SetMode, join_topic(namespace, "set_mode"))
         self.arm_client = self.create_client(CommandBool, join_topic(namespace, "cmd/arming"))
         self.interval_client = self.create_client(
@@ -113,10 +114,11 @@ class OnboardHoverDemoSequenceNode(Node):
             ("check", self.check_callback),
         ):
             self.create_service(Trigger, cdrone_topic(
-                self.drone_id, f"demo/position_hover_{suffix}"), callback)
+                self.drone_id, f"demo/{demo_name}_{suffix}"), callback)
         self.create_timer(1.0 / settings.publish_rate_hz, self.tick)
         self.get_logger().info(
-            f"Local hover: source={settings.localization_source}; enable_flight={settings.enable_flight}; "
+            f"Local {settings.mission_mode}: source={settings.localization_source}; "
+            f"enable_flight={settings.enable_flight}; "
             f"local ENU pose; vision={self.vision_topic}" if settings.localization_source == "zed" else
             f"Onboard hover: enable_flight={settings.enable_flight}; local ENU pose; "
             f"flow={self.flow_topic}; downward range={self.range_topic}")
@@ -387,15 +389,19 @@ class OnboardHoverDemoSequenceNode(Node):
                 result = self.profile_future.result()
                 if len(result.values) != len(self.ZED_PROFILE):
                     raise ValueError("incomplete PX4 parameter response")
+                mismatches = []
                 for (name, expected), value in zip(self.ZED_PROFILE.items(), result.values):
                     floating = isinstance(expected, float)
                     required_type = (ParameterType.PARAMETER_DOUBLE if floating
                                      else ParameterType.PARAMETER_INTEGER)
                     if value.type != required_type:
-                        raise ValueError(f"PX4 {name}: parameter unavailable or wrong type")
+                        mismatches.append(f"PX4 {name}: parameter unavailable or wrong type")
+                        continue
                     actual = value.double_value if floating else value.integer_value
                     if not math.isclose(actual, expected, abs_tol=1e-5):
-                        raise ValueError(f"PX4 {name}: current={actual:g}, expected={expected:g}")
+                        mismatches.append(f"PX4 {name}: current={actual:g}, expected={expected:g}")
+                if mismatches:
+                    raise ValueError("; ".join(mismatches))
             except Exception as exc:
                 telemetry.vision_profile_ok = False
                 telemetry.vision_profile_reason = str(exc)
@@ -474,6 +480,9 @@ class OnboardHoverDemoSequenceNode(Node):
             status.data = self.check_callback(None, Trigger.Response()).message
             if self.controller.reason:
                 status.data += "; " + self.controller.reason
+            if self.controller.state == "SQUARE":
+                status.data += (f"; waypoint={self.controller.square_leg + 1}/4"
+                                f"; setpoint_along_edge={self.controller.square_progress_m:.2f} m")
             self.diagnostics_pub.publish(status)
             if status.data != self.last_diagnostics:
                 self.get_logger().info(status.data)

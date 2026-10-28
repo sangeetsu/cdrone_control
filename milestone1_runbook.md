@@ -1,6 +1,6 @@
 # Milestone 1 Runbook
 
-## Current hover route: ZED 2i without mocap
+## Current ZED 2i route without mocap
 
 Use `localization_source:=zed` for the 1 m, 20 s hover milestone. PX4 1.16.0
 is configured to fuse airframe-center pose from the ZED 2i; this route does not
@@ -8,7 +8,13 @@ use optical-flow or range handoff. `localization_source:=onboard` selects the ol
 and its MAVROS configuration **disables vision pose**. Do not run both hover
 launches at once. The launch default, `external_pose`, is the legacy mocap path.
 
-**Current bench status:** the FCU parameters matched the ZED profile on October
+**Reported result (October 16, 2026):** the operator completed the mocap-free
+hover using ZED 2i and `/home/jetson/zed_hover_mount_run2.yaml`. The dated
+investigations below describe earlier attempts; they do not describe the
+result of that later hover. The square flight in the current phase 2 below has
+not yet been flown.
+
+**Earlier bench status:** the FCU parameters matched the ZED profile on October
 8, 2026. A ZED run then aborted in `WARMUP` before arming because PX4's
 predictive relative-position status bit briefly cleared. Bench monitoring
 reproduced 0.6 s dips about every 31 s while current horizontal position,
@@ -16,10 +22,10 @@ velocity and ZED frames stayed valid. The controller now tolerates a dip under
 one second only while those current estimates and camera data remain healthy;
 sustained loss still aborts. The candidate mount file below was generated using
 a ruler-measured translation; its report contains no accepted pivot fit. Manual
-X/Y/Z/yaw and PX4 fusion checks are still required. These observations do
-**not** clear the drone for flight.
+X/Y/Z/yaw and PX4 fusion checks were still required at that point. Those
+bench observations alone did not clear the drone for flight.
 
-**Latest no-arm abort (October 10, 2026 UTC):** the ZED hover launch began at
+**Earlier no-arm abort (October 10, 2026 UTC):** the ZED hover launch began at
 22:42:39 UTC. The controller reached `ARMING`, but the MAVROS arm service
 returned `success=False, result=1` (temporarily rejected) at 22:43:44 UTC.
 PX4 emitted "Arming denied: Resolve system health failures first." Its
@@ -69,7 +75,7 @@ The ZED launch arguments are `zed_takeoff_setpoint_lead_m` (default `0.6`)
 and `zed_takeoff_no_lift_timeout_s` (default `8.0`);
 `takeoff_no_lift_timeout_s` still applies to the ARK Flow path.
 
-**Current Jetson reset blocker (October 9, 2026 UTC):** two ZED hover
+**Earlier Jetson reset investigation (October 9, 2026 UTC):** two ZED hover
 launches coincided with abrupt Jetson resets. The ROS launches began at
 00:10:30 and 00:15:50 UTC; the next boots began at 00:11:18 and 00:16:41 UTC.
 The last boot reports `SYS_RESET_N` in
@@ -79,8 +85,8 @@ does not identify which supply, cable, carrier-board circuit or reset input
 caused it; see [NVIDIA's reset-reason mapping](https://forums.developer.nvidia.com/t/how-to-get-the-power-up-reason-on-orin/241365).
 A laptop SSH disconnect during these attempts is a consequence of
 the Jetson restarting. QGroundControl/PX4 parameter changes will not fix a
-Jetson reset. **Do not attempt the hover or run another camera launch with
-flight hardware connected until the reset cause is resolved.**
+Jetson reset. At that time, another flight attempt was blocked pending a power
+and reset-path check; verify the Jetson remains stable before the square test.
 
 With motors/ESCs disconnected, inspect the Jetson input supply and connector,
 camera USB cable/port, and any shared battery regulator. Verify that the supply
@@ -100,8 +106,8 @@ that `zed/tracking_status` remains `OK` and the Jetson does not restart. Then
 stop it and run the flight-disabled diagnostics launch in section 2 for another
 five minutes. If either step resets the Jetson, stop and inspect the latest
 `reset_reason`, previous-boot journal, and hardware power path before retrying.
-The flight command in section 3 remains blocked until both steps and all pose
-and PX4 fusion checks pass.
+For the square test, repeat these checks if the Jetson power path, camera mount
+or PX4 setup has changed since the completed hover.
 
 ### 1. Build and inspect the FCU
 
@@ -132,14 +138,23 @@ in the profile. `11` does not request direct vision velocity. A matching
 parameter profile only permits fusion; PX4 still needs fresh ZED poses. Apply
 any differences in QGroundControl while disarmed, reboot, then inspect again.
 
+**October 16 read-only check:** the FCU was disarmed and had three ZED-profile
+differences: `EKF2_HGT_REF=2` (target `3`), `EKF2_OF_CTRL=1` (target `0`),
+and `EKF2_RNG_CTRL=1` (target `0`). The other 11 profile parameters matched.
+The square readiness check correctly refused to start. Back up parameters in
+QGroundControl, set these three values while disarmed, reboot PX4, then repeat
+the profile and square readiness checks with `enable_flight:=false`. No flight
+command is part of this parameter check.
+
 ### 2. Start ZED diagnostics, with flight disabled
 
-Use the existing mount candidate only for the motors-disconnected bench check.
-Its report at `/home/jetson/zed_hover_mount_run2.report.json` records
-`method: ruler_translation` and `pivot_fit: null`. The packaged mount template
-is `calibrated: false`, so omitting `zed_mount_config` will prevent pose output.
-If the camera mount has moved, measure it again before using this command.
-Use the resulting, bench-validated mount file in both launch commands below.
+The operator reports using `/home/jetson/zed_hover_mount_run2.yaml` for the
+successful hover. Its report at `/home/jetson/zed_hover_mount_run2.report.json`
+still records `method: ruler_translation` and `pivot_fit: null`. The packaged
+mount template is `calibrated: false`, so omitting `zed_mount_config` will
+prevent pose output. If the camera mount has moved, measure it again and repeat
+the direction, scale, yaw and PX4 fusion checks before using either flight
+command below.
 
 ```bash
 ros2 launch drone_bringup position_hover_demo.launch.py \
@@ -230,6 +245,74 @@ ros2 service call /cdrone/cdrone3/demo/position_hover_abort std_srvs/srv/Trigger
 Accept this milestone only after takeoff, the full 20 s hover, landing and
 disarm complete without estimator loss, pose jumps or visible unstable motion.
 Do not use the ARK Flow initial-climb commands below with the ZED profile.
+
+## Current phase 2: ZED local square after hover
+
+Use the same ZED/PX4 profile, mount file and operator takeover procedure as the
+completed hover. Build and source the workspace as in section 1. Stop any
+running hover launch before starting this demo. Choose a clear flight area:
+the planned 1 m square reaches 1.41 m from its starting hover point, and the
+local excursion abort limit is 1.8 m plus the airframe's physical size. This
+demo has no room perimeter, obstacle avoidance, global origin, or GPS goals.
+The four corners are calculated from the commanded hover point and the heading
+captured at start: forward, left, backward, right. Yaw stays fixed.
+
+With flight hardware disconnected, run the flight-disabled launch first:
+
+```bash
+ros2 launch drone_bringup position_square_demo.launch.py \
+  localization_source:=zed enable_flight:=false \
+  zed_mount_config:=/home/jetson/zed_hover_mount_run2.yaml \
+  initial_climb_enabled:=false \
+  takeoff_altitude_m:=1.0 takeoff_rate_m_s:=0.3 hover_duration_s:=20.0 \
+  max_horizontal_excursion_m:=0.5 square_edge_m:=1.0
+```
+
+Confirm ZED tracking `OK`, PX4 vision fusion and a successful square readiness
+check. The disabled launch must publish no flight setpoints or commands:
+
+```bash
+ros2 topic echo --once /cdrone/cdrone3/zed/tracking_status
+ros2 service call /cdrone/cdrone3/demo/position_square_check std_srvs/srv/Trigger "{}"
+ros2 topic echo /cdrone/cdrone3/demo/position_square_diagnostics
+```
+
+Stop the diagnostics launch. After reconnecting flight hardware and checking
+the area and QGroundControl, run the supervised flight launch:
+
+```bash
+ros2 launch drone_bringup position_square_demo.launch.py \
+  localization_source:=zed enable_flight:=true \
+  zed_mount_config:=/home/jetson/zed_hover_mount_run2.yaml \
+  initial_climb_enabled:=false \
+  takeoff_altitude_m:=1.0 takeoff_rate_m_s:=0.3 hover_duration_s:=20.0 \
+  max_horizontal_excursion_m:=0.5 square_edge_m:=1.0
+```
+
+Wait for `position_square_check` to return `success: true`; then start and
+monitor the sequence in separate sourced terminals:
+
+```bash
+ros2 service call /cdrone/cdrone3/demo/position_square_check std_srvs/srv/Trigger "{}"
+ros2 service call /cdrone/cdrone3/demo/position_square_start std_srvs/srv/Trigger "{}"
+ros2 topic echo /cdrone/cdrone3/demo/position_square_state
+```
+
+The expected states are takeoff, `HOVER` for 20 s, `SQUARE` through four
+measured corners, `LANDING`, then `COMPLETE` after landing and disarm. The
+diagnostics topic reports the active waypoint and setpoint progress. The
+horizontal setpoint advances at 0.2 m/s and at most 0.3 m ahead of measured
+progress. Each corner needs position within 0.15 m for 1 s; a leg times out
+after 20 s. The 0.5 m excursion limit remains active through takeoff and hover;
+the square uses a 1.8 m limit from the hover point and a 0.35 m edge-error
+limit. To abort and request `AUTO.LAND`:
+
+```bash
+ros2 service call /cdrone/cdrone3/demo/position_square_abort std_srvs/srv/Trigger "{}"
+```
+
+Accept phase 2 only when all four corners are reached in order, the drone
+returns to the hover point, lands and disarms without a controller abort.
 
 ---
 
@@ -967,7 +1050,7 @@ Expected result:
 
 If hover is not clean, stop here and do not continue to goto.
 
-## Phase 2: Short Goto South Of The Pillar
+## Phase 2: Short Goto South Of The Pillar (legacy mocap only)
 
 Use this only if the drone is starting near the southwest side of the room. This goal is a short confidence hop at `(-11.5, -2.5)` and stays well south of the pillar.
 

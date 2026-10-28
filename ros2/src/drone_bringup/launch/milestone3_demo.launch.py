@@ -13,6 +13,7 @@ from launch.actions import (
     IncludeLaunchDescription,
     LogInfo,
     OpaqueFunction,
+    TimerAction,
 )
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
@@ -47,6 +48,11 @@ def launch_setup(context, *args, **kwargs):
     drone_id = LaunchConfiguration("drone_id")
     drone_namespace = LaunchConfiguration("drone_namespace")
     mavros_namespace = LaunchConfiguration("mavros_namespace")
+    local_odom_mode = LaunchConfiguration("pose_source").perform(context).strip() == "zed_local"
+    local_namespace = LaunchConfiguration("drone_namespace").perform(context).strip().rstrip("/")
+    local_id = LaunchConfiguration("drone_id").perform(context).strip().strip("/")
+    if local_id and not local_namespace.endswith("/" + local_id):
+        local_namespace += "/" + local_id
     explicit_speed_profile_config = (
         LaunchConfiguration("speed_profile_config").perform(context).strip()
     )
@@ -122,6 +128,15 @@ def launch_setup(context, *args, **kwargs):
             "debug_warn_yaw_error_deg": LaunchConfiguration("debug_warn_yaw_error_deg"),
         }.items(),
     )
+    if local_odom_mode:
+        pose_bridge_launch = IncludeLaunchDescription(
+            PythonLaunchDescriptionSource(os.path.join(bringup_share, "launch", "drone.launch.py")),
+            launch_arguments={
+                "log_level": log_level,
+                "mavros_namespace": mavros_namespace,
+                "mavros_config_overlay": os.path.join(bringup_share, "config", "zed_mavros.yaml"),
+            }.items(),
+        )
 
     tracking_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
@@ -131,8 +146,22 @@ def launch_setup(context, *args, **kwargs):
             "log_level": log_level,
             "drone_id": drone_id,
             "drone_namespace": drone_namespace,
-            "source_mode": LaunchConfiguration("tracking_source_mode"),
+            "source_mode": "embedded_zed" if local_odom_mode else LaunchConfiguration("tracking_source_mode"),
+            "embedded_zed": "true" if local_odom_mode else "false",
             "zed_rotate_180": LaunchConfiguration("zed_rotate_180"),
+            "zed_mount_config": LaunchConfiguration("zed_mount_config") if local_odom_mode else "",
+            "zed_depth_mode": LaunchConfiguration("zed_depth_mode"),
+            "zed_image_rate_hz": LaunchConfiguration("zed_image_rate_hz"),
+            "zed_grab_compute_capping_fps": LaunchConfiguration(
+                "zed_grab_compute_capping_fps"),
+            "zed_depth_maximum_distance_m": LaunchConfiguration(
+                "zed_depth_maximum_distance_m"),
+            "mavros_namespace": mavros_namespace,
+            "zed_ready_before_inference_s": "5.0" if local_odom_mode else "0.0",
+            "inference_device": LaunchConfiguration("tracker_inference_device"),
+            "color_topic": f"{local_namespace}/zed/color/image_rect" if local_odom_mode else "/camera/color/image_raw",
+            "depth_topic": f"{local_namespace}/zed/depth/image_rect" if local_odom_mode else "/camera/aligned_depth_to_color/image_raw",
+            "camera_info_topic": f"{local_namespace}/zed/color/camera_info" if local_odom_mode else "/camera/color/camera_info",
             "pose_topic": LaunchConfiguration("tracking_pose_topic"),
             "publish_world_track_compare": LaunchConfiguration(
                 "publish_world_track_compare"
@@ -143,7 +172,10 @@ def launch_setup(context, *args, **kwargs):
             ),
             "experiment_tag": LaunchConfiguration("experiment_tag"),
             "model_path": LaunchConfiguration("model_path"),
+            "model_task": LaunchConfiguration("model_task"),
+            "model_data_config": LaunchConfiguration("model_data_config"),
             "tracker_config_file": LaunchConfiguration("tracker_config_file"),
+            "record_mission_video": LaunchConfiguration("tracker_record_mission_video"),
             "enable_reid": LaunchConfiguration("tracker_enable_reid"),
             "reid_histogram_bins": LaunchConfiguration(
                 "tracker_reid_histogram_bins"
@@ -191,8 +223,10 @@ def launch_setup(context, *args, **kwargs):
                 "require_guided_mode": ParameterValue(
                     LaunchConfiguration("require_guided_mode"), value_type=bool
                 ),
+                "require_enable_signal": local_odom_mode,
                 "drone_id": drone_id,
                 "mavros_namespace": mavros_namespace,
+                "max_vel_xy_mps": ParameterValue(LaunchConfiguration("max_vel_xy_mps"), value_type=float),
             }
         ],
         arguments=["--ros-args", "--log-level", log_level],
@@ -211,6 +245,12 @@ def launch_setup(context, *args, **kwargs):
                 ),
                 "drone_id": drone_id,
                 "mavros_namespace": mavros_namespace,
+                "local_odom_mode": local_odom_mode,
+                "enable_flight": ParameterValue(LaunchConfiguration("enable_flight"), value_type=bool),
+                "require_detector_target_on_start": ParameterValue(
+                    LaunchConfiguration("require_detector_target_on_start"), value_type=bool),
+                "max_local_excursion_m": ParameterValue(LaunchConfiguration("max_local_excursion_m"), value_type=float),
+                "max_vel_xy_mps": ParameterValue(LaunchConfiguration("max_vel_xy_mps"), value_type=float),
                 "tracks_topic": LaunchConfiguration("tracks_topic"),
                 "engagement_state_topic": LaunchConfiguration("engagement_state_topic"),
                 "enable_predicted_track_control": ParameterValue(
@@ -238,6 +278,10 @@ def launch_setup(context, *args, **kwargs):
                     value_type=float,
                 ),
                 "perimeter_config": LaunchConfiguration("perimeter_config"),
+                "enable_perimeter_guard": not local_odom_mode,
+                "require_companion_active": not local_odom_mode,
+                "target_velocity_feedforward_gain": 0.8 if local_odom_mode else 0.0,
+                "takeoff_rate_m_s": 0.3 if local_odom_mode else 0.5,
                 "required_completion_count": ParameterValue(
                     LaunchConfiguration("required_completion_count"), value_type=int
                 ),
@@ -250,11 +294,12 @@ def launch_setup(context, *args, **kwargs):
                 "max_target_distance_m": ParameterValue(
                     LaunchConfiguration("max_target_distance_m"), value_type=float
                 ),
-                "pre_takeoff_profile_config": LaunchConfiguration(
-                    "pre_takeoff_profile_config"
+                "max_abs_target_y_m": 20.0 if local_odom_mode else 4.0,
+                "pre_takeoff_profile_config": (
+                    "" if local_odom_mode else LaunchConfiguration("pre_takeoff_profile_config")
                 ),
                 "use_speed_profile": ParameterValue(
-                    LaunchConfiguration("use_speed_profile"), value_type=bool
+                    False if local_odom_mode else LaunchConfiguration("use_speed_profile"), value_type=bool
                 ),
                 "speed_profile_config": resolved_speed_profile_config,
             },
@@ -392,9 +437,17 @@ def launch_setup(context, *args, **kwargs):
             )
         )
 
+    tracking_action = tracking_launch
+    if local_odom_mode:
+        start_delay_s = float(LaunchConfiguration("zed_start_delay_s").perform(context))
+        if start_delay_s < 0.0 or start_delay_s > 60.0:
+            raise ValueError("zed_start_delay_s must be between 0 and 60 seconds")
+        if start_delay_s:
+            tracking_action = TimerAction(period=start_delay_s, actions=[tracking_launch])
+
     return [
         pose_bridge_launch,
-        tracking_launch,
+        tracking_action,
         mavros_velocity_node,
         milestone3_demo_node,
         *tracking_metrics_actions,
@@ -453,6 +506,16 @@ def generate_launch_description():
                 default_value=_default_arg(defaults, "pose_source", "optitrack"),
             ),
             DeclareLaunchArgument("source_pose_topic", default_value=""),
+            DeclareLaunchArgument("zed_mount_config", default_value=""),
+            DeclareLaunchArgument("zed_depth_mode", default_value="PERFORMANCE"),
+            DeclareLaunchArgument("zed_image_rate_hz", default_value="8.0"),
+            DeclareLaunchArgument("zed_grab_compute_capping_fps", default_value="0.0"),
+            DeclareLaunchArgument("zed_start_delay_s", default_value="0.0"),
+            DeclareLaunchArgument("zed_depth_maximum_distance_m", default_value="20.0"),
+            DeclareLaunchArgument("tracker_inference_device", default_value=""),
+            DeclareLaunchArgument("enable_flight", default_value="true"),
+            DeclareLaunchArgument("max_local_excursion_m", default_value="20.0"),
+            DeclareLaunchArgument("max_vel_xy_mps", default_value="0.6"),
             DeclareLaunchArgument("tracks_topic", default_value=""),
             DeclareLaunchArgument("engagement_state_topic", default_value=""),
             DeclareLaunchArgument(
@@ -489,6 +552,8 @@ def generate_launch_description():
             DeclareLaunchArgument("world_track_compare_topic", default_value=""),
             DeclareLaunchArgument("experiment_tag", default_value=""),
             DeclareLaunchArgument("model_path", default_value=""),
+            DeclareLaunchArgument("model_task", default_value="detect"),
+            DeclareLaunchArgument("model_data_config", default_value=""),
             DeclareLaunchArgument(
                 "tracker_config_file",
                 default_value=default_tracker_config,
@@ -526,6 +591,8 @@ def generate_launch_description():
                 default_value="",
             ),
             DeclareLaunchArgument("recording_save_depth_video", default_value="true"),
+            DeclareLaunchArgument("tracker_record_mission_video", default_value="true"),
+            DeclareLaunchArgument("require_detector_target_on_start", default_value="false"),
             DeclareLaunchArgument(
                 "recording_replace_depth_tile_with_yolo",
                 default_value="false",

@@ -5,16 +5,16 @@ import os
 from typing import Dict, Optional, Tuple
 
 import rclpy
-from drone_msgs.msg import EngagementState, TargetTrackArray
+from drone_msgs.msg import EngagementState, PerceptionStatus, TargetTrackArray
 from geographic_msgs.msg import GeoPointStamped
-from geometry_msgs.msg import PoseStamped, TwistStamped
-from mavros_msgs.msg import CompanionProcessStatus, HomePosition, State
-from mavros_msgs.srv import CommandBool, CommandTOLLocal, ParamPull, SetMode
+from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, TwistStamped
+from mavros_msgs.msg import CompanionProcessStatus, EstimatorStatus, HomePosition, State
+from mavros_msgs.srv import CommandBool, CommandTOLLocal, MessageInterval, ParamPull, SetMode
 from rcl_interfaces.msg import Parameter, ParameterType, ParameterValue
 from rcl_interfaces.srv import GetParameters, SetParameters
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
-from std_msgs.msg import Bool
+from std_msgs.msg import Bool, String
 from std_srvs.srv import Trigger
 
 from drone_control_pkg.deployment_config import (
@@ -23,6 +23,8 @@ from drone_control_pkg.deployment_config import (
 )
 from drone_control_pkg.follow_utils import (
     FollowCommand,
+    add_target_velocity_feedforward,
+    TRACK_SOURCE_DETECTED,
     TRACK_SOURCE_PREDICTED,
     TrackSnapshot,
     clamp_follow_command_altitude,
@@ -44,6 +46,9 @@ from drone_control_pkg.milestone3_state_logic import (
     requires_runtime_tracking_guards,
 )
 from drone_control_pkg.perimeter_utils import PerimeterGuard
+from drone_control_pkg.local_flight import (
+    horizontal_excursion_m, outward_limit_reached, pose_discontinuity,
+    setpoint_source)
 from drone_control_pkg.px4_param_profile import Px4ParamProfile
 from drone_control_pkg.topic_utils import cdrone_topic, join_topic
 
@@ -86,6 +91,13 @@ def normalize_takeoff_strategy(value: str) -> str:
 
 
 class Milestone3DemoSequenceNode(Node):
+    ZED_PROFILE = {
+        "EKF2_EV_CTRL": 11, "EKF2_HGT_REF": 3, "EKF2_OF_CTRL": 0,
+        "EKF2_RNG_CTRL": 0, "EKF2_BARO_CTRL": 1, "EKF2_GPS_CTRL": 0,
+        "EKF2_MAG_TYPE": 5, "EKF2_EV_DELAY": 0.0, "EKF2_EV_NOISE_MD": 0,
+        "EKF2_EV_POS_X": 0.0, "EKF2_EV_POS_Y": 0.0, "EKF2_EV_POS_Z": 0.0,
+        "COM_OBL_RC_ACT": 4, "COM_OF_LOSS_T": 1.0,
+    }
     TERMINAL_STATES = {"IDLE", "COMPLETE", "ABORT"}
     ACTIVE_ENGAGEMENT_STATES = {"SEARCH", "FOLLOW", "DWELL"}
     RETURN_STATES = {"RETURN_TO_START", "RETURN_HOME_HOLD"}
@@ -108,6 +120,15 @@ class Milestone3DemoSequenceNode(Node):
         self.declare_parameter("takeoff_altitude_m", 2.6)
         self.declare_parameter("takeoff_rate_m_s", 0.5)
         self.declare_parameter("takeoff_strategy", "AUTO_MODE")
+        self.declare_parameter("local_odom_mode", False)
+        self.declare_parameter("enable_flight", True)
+        self.declare_parameter("require_detector_target_on_start", False)
+        self.declare_parameter("max_local_excursion_m", 20.0)
+        self.declare_parameter("min_follow_height_m", 1.0)
+        self.declare_parameter("max_follow_height_m", 2.5)
+        self.declare_parameter("target_velocity_feedforward_gain", 0.0)
+        self.declare_parameter("local_takeoff_setpoint_lead_m", 0.6)
+        self.declare_parameter("local_takeoff_no_lift_timeout_s", 8.0)
         self.declare_parameter("altitude_tolerance_m", 0.10)
         self.declare_parameter("touchdown_altitude_m", 0.15)
         self.declare_parameter("touchdown_dwell_s", 1.0)
@@ -115,8 +136,12 @@ class Milestone3DemoSequenceNode(Node):
         self.declare_parameter("arm_zero_throttle_hold_s", 1.5)
         self.declare_parameter("offboard_warmup_s", 1.5)
         self.declare_parameter("stage_hover_duration_s", 2.0)
+        self.declare_parameter("stable_hover_max_horizontal_speed_mps", 0.25)
+        self.declare_parameter("stable_hover_max_vertical_speed_mps", 0.15)
         self.declare_parameter("climb_handoff_timeout_s", 8.0)
         self.declare_parameter("local_pose_timeout_s", 0.5)
+        self.declare_parameter("estimator_timeout_s", 2.5)
+        self.declare_parameter("local_preflight_dwell_s", 2.0)
         self.declare_parameter("local_pose_timeout_during_param_sync_s", 1.0)
         self.declare_parameter("state_timeout_s", 2.0)
         self.declare_parameter("state_timeout_during_param_sync_s", 8.0)
@@ -202,6 +227,23 @@ class Milestone3DemoSequenceNode(Node):
         self.takeoff_strategy = normalize_takeoff_strategy(
             str(self.get_parameter("takeoff_strategy").value)
         )
+        self.local_odom_mode = bool(self.get_parameter("local_odom_mode").value)
+        self.enable_flight = bool(self.get_parameter("enable_flight").value)
+        self.require_detector_target_on_start = bool(
+            self.get_parameter("require_detector_target_on_start").value)
+        self.max_local_excursion_m = float(self.get_parameter("max_local_excursion_m").value)
+        self.min_follow_height_m = float(self.get_parameter("min_follow_height_m").value)
+        self.max_follow_height_m = float(self.get_parameter("max_follow_height_m").value)
+        self.target_velocity_feedforward_gain = float(
+            self.get_parameter("target_velocity_feedforward_gain").value)
+        self.local_takeoff_setpoint_lead_m = float(
+            self.get_parameter("local_takeoff_setpoint_lead_m").value)
+        self.local_takeoff_no_lift_timeout_s = float(
+            self.get_parameter("local_takeoff_no_lift_timeout_s").value)
+        if self.local_odom_mode and (self.max_local_excursion_m <= 0 or
+            self.min_follow_height_m <= 0 or
+            self.max_follow_height_m <= self.takeoff_altitude_m):
+            raise ValueError("invalid ZED local mission limits")
         self.altitude_tolerance_m = float(
             self.get_parameter("altitude_tolerance_m").value
         )
@@ -217,11 +259,21 @@ class Milestone3DemoSequenceNode(Node):
         self.stage_hover_duration_s = float(
             self.get_parameter("stage_hover_duration_s").value
         )
+        self.stable_hover_max_horizontal_speed_mps = float(
+            self.get_parameter("stable_hover_max_horizontal_speed_mps").value)
+        self.stable_hover_max_vertical_speed_mps = float(
+            self.get_parameter("stable_hover_max_vertical_speed_mps").value)
         self.climb_handoff_timeout_s = float(
             self.get_parameter("climb_handoff_timeout_s").value
         )
         self.local_pose_timeout_s = float(
             self.get_parameter("local_pose_timeout_s").value
+        )
+        self.estimator_timeout_s = float(
+            self.get_parameter("estimator_timeout_s").value
+        )
+        self.local_preflight_dwell_s = float(
+            self.get_parameter("local_preflight_dwell_s").value
         )
         self.local_pose_timeout_during_param_sync_s = float(
             self.get_parameter("local_pose_timeout_during_param_sync_s").value
@@ -356,6 +408,8 @@ class Milestone3DemoSequenceNode(Node):
         self.kp_z = float(self.get_parameter("kp_z").value)
         self.kp_yaw = float(self.get_parameter("kp_yaw").value)
         self.max_vel_xy_mps = float(self.get_parameter("max_vel_xy_mps").value)
+        if self.local_odom_mode:
+            self.max_vel_xy_mps = min(max(self.max_vel_xy_mps, 0.0), 1.2)
         self.max_vel_z_mps = float(self.get_parameter("max_vel_z_mps").value)
         self.max_yaw_rate_rps = float(self.get_parameter("max_yaw_rate_rps").value)
         self.enable_perimeter_guard = bool(
@@ -449,6 +503,34 @@ class Milestone3DemoSequenceNode(Node):
         self.last_global_origin_time_s = 0.0
         self.last_companion_time_s = 0.0
         self.companion_active = False
+        self.last_estimator_time_s = 0.0
+        self.estimator_ok = False
+        self.estimator_reason = "missing"
+        self.estimator_interval_future = None
+        self.estimator_interval_started_s = 0.0
+        self.estimator_interval_retry_after_s = 0.0
+        self.estimator_interval_attempts = 0
+        self.vision_profile_ok = False
+        self.vision_profile_reason = "PX4 vision profile not verified"
+        self.vision_profile_future = None
+        self.vision_profile_started_s = 0.0
+        self.vision_profile_retry_after_s = 0.0
+        self.last_vision_time_s = 0.0
+        self.accepted_vision_pose_count = 0
+        self.vision_hold_start_count = 0
+        self.vision_hold_started_s = 0.0
+        self.latest_local_velocity = TwistStamped()
+        self.last_local_velocity_time_s = 0.0
+        self.stable_hover_since_s = None
+        self.last_perception_time_s = 0.0
+        self.last_valid_detector_target_time_s = 0.0
+        self.zed_status = "missing"
+        self.last_zed_status_s = 0.0
+        self.local_pose_discontinuous = False
+        self.local_pose_fault_until_s = 0.0
+        self.local_preflight_ready_since_s = None
+        self.local_takeoff_target_z = 0.0
+        self.local_takeoff_last_update_s = 0.0
         self.connection_lost_since_s: Optional[float] = None
         self.connection_loss_warned = False
 
@@ -509,6 +591,11 @@ class Milestone3DemoSequenceNode(Node):
         self.last_altitude_clamp_log_s = 0.0
 
         self.cmd_pub = self.create_publisher(TwistStamped, self.cmd_vel_topic, 10)
+        if self.local_odom_mode:
+            self.position_pub = self.create_publisher(
+                PoseStamped, join_topic(self.mavros_namespace, "setpoint_position/local"), 10)
+            self.velocity_enable_pub = self.create_publisher(
+                Bool, cdrone_topic(self.drone_id, "control/velocity_stream_enabled"), 10)
         self.state_pub = self.create_publisher(
             EngagementState,
             self.engagement_state_topic,
@@ -535,6 +622,22 @@ class Milestone3DemoSequenceNode(Node):
             self.pose_callback,
             best_effort_qos,
         )
+        if self.local_odom_mode:
+            self.create_subscription(
+                TwistStamped, join_topic(self.mavros_namespace, "local_position/velocity_local"),
+                self.local_velocity_callback, best_effort_qos)
+            self.create_subscription(
+                PerceptionStatus, cdrone_topic(self.drone_id, "perception/status"),
+                self.perception_status_callback, 10)
+            self.create_subscription(
+                EstimatorStatus, join_topic(self.mavros_namespace, "estimator_status"),
+                self.estimator_callback, best_effort_qos)
+            self.create_subscription(
+                PoseWithCovarianceStamped, cdrone_topic(self.drone_id, "zed/pose_cov"),
+                self.vision_callback, best_effort_qos)
+            self.create_subscription(
+                String, cdrone_topic(self.drone_id, "zed/tracking_status"),
+                self.zed_status_callback, 10)
         self.create_subscription(
             HomePosition,
             self.home_position_topic,
@@ -572,6 +675,9 @@ class Milestone3DemoSequenceNode(Node):
         self.param_set_client = self.create_client(
             SetParameters, join_topic(self.mavros_namespace, "param/set_parameters")
         )
+        if self.local_odom_mode:
+            self.estimator_interval_client = self.create_client(
+                MessageInterval, join_topic(self.mavros_namespace, "set_message_interval"))
 
         self.create_service(
             Trigger,
@@ -583,6 +689,9 @@ class Milestone3DemoSequenceNode(Node):
             self.abort_service_name,
             self.handle_abort_request,
         )
+        if self.local_odom_mode:
+            self.create_service(Trigger, cdrone_topic(self.drone_id, "demo/milestone4_check"),
+                                self.handle_check_request)
 
         self.timer = self.create_timer(
             1.0 / max(self.publish_rate_hz, 1.0),
@@ -617,13 +726,250 @@ class Milestone3DemoSequenceNode(Node):
             self.last_fcu_connect_time_s = now_s
             self.last_home_position_time_s = 0.0
             self.last_global_origin_time_s = 0.0
+            self.vision_profile_ok = False
+            self.vision_profile_reason = "PX4 vision profile not verified after connection"
+            self.estimator_ok = False
+            self.estimator_reason = "waiting for PX4 estimator status after connection"
+            self.last_estimator_time_s = 0.0
+            self.local_preflight_ready_since_s = None
+            self.estimator_interval_attempts = 0
+            self.estimator_interval_retry_after_s = now_s + 2.0
+            if self.vision_profile_future is not None:
+                self.vision_profile_future.cancel()
+                self.vision_profile_future = None
         elif was_connected and not msg.connected:
             self.last_home_position_time_s = 0.0
             self.last_global_origin_time_s = 0.0
+            self.vision_profile_ok = False
+            self.vision_profile_reason = "PX4 disconnected"
+            self.estimator_ok = False
+            self.estimator_reason = "PX4 disconnected"
+            self.last_estimator_time_s = 0.0
+            self.local_preflight_ready_since_s = None
+            if self.vision_profile_future is not None:
+                self.vision_profile_future.cancel()
+                self.vision_profile_future = None
+            if self.estimator_interval_future is not None:
+                self.estimator_interval_future.cancel()
+                self.estimator_interval_future = None
 
     def pose_callback(self, msg: PoseStamped) -> None:
+        if self.local_odom_mode and self.last_pose_time_s > 0.0 and self.pose_fresh():
+            old = self.latest_pose.pose.position
+            new = msg.pose.position
+            q = msg.pose.orientation
+            new_yaw = math.atan2(2 * (q.w * q.z + q.x * q.y),
+                                 1 - 2 * (q.y * q.y + q.z * q.z))
+            frame_changed = self.latest_pose.header.frame_id != msg.header.frame_id
+            if (frame_changed or
+                    pose_discontinuity((old.x, old.y, old.z), (new.x, new.y, new.z),
+                                       self.current_yaw_rad(), new_yaw)):
+                self.local_pose_fault_until_s = self.now_s() + self.local_preflight_dwell_s
+                self.local_preflight_ready_since_s = None
+                if self.demo_state not in self.TERMINAL_STATES:
+                    self.local_pose_discontinuous = True
+                    self.enter_abort("local odometry discontinuity")
         self.latest_pose = msg
         self.last_pose_time_s = self.now_s()
+
+    def estimator_callback(self, msg: EstimatorStatus) -> None:
+        self.last_estimator_time_s = self.now_s()
+        checks = {
+            "attitude invalid": msg.attitude_status_flag,
+            "horizontal velocity invalid": msg.velocity_horiz_status_flag,
+            "vertical velocity invalid": msg.velocity_vert_status_flag,
+            "horizontal position invalid": (
+                msg.pos_horiz_rel_status_flag or msg.pos_horiz_abs_status_flag),
+            "vertical position invalid": msg.pos_vert_abs_status_flag,
+            "accelerometer error": not msg.accel_error_status_flag,
+        }
+        self.estimator_ok = all(checks.values())
+        self.estimator_reason = ", ".join(
+            name for name, good in checks.items() if not good) or "valid"
+
+    def vision_callback(self, msg: PoseWithCovarianceStamped) -> None:
+        del msg
+        self.last_vision_time_s = self.now_s()
+        self.accepted_vision_pose_count += 1
+
+    def local_velocity_callback(self, msg: TwistStamped) -> None:
+        self.latest_local_velocity = msg
+        self.last_local_velocity_time_s = self.now_s()
+
+    def perception_status_callback(self, msg: PerceptionStatus) -> None:
+        del msg
+        self.last_perception_time_s = self.now_s()
+
+    def zed_status_callback(self, msg: String) -> None:
+        self.zed_status = str(msg.data)
+        self.last_zed_status_s = self.now_s()
+        if (self.zed_status == "ZED pose jump" and self.local_odom_mode and
+                self.demo_state in ({"STAGE_HOVER"} | self.ACTIVE_ENGAGEMENT_STATES |
+                                    self.RETURN_STATES)):
+            if (self.latest_state.connected and self.latest_state.armed and
+                    self.pose_fresh() and not self.local_pose_discontinuous and
+                    self.estimator_ok and
+                    self.now_s() - self.last_estimator_time_s <= self.estimator_timeout_s):
+                self.enter_vision_hold()
+            else:
+                self.enter_abort("ZED pose jump; PX4 local control became unsafe")
+
+    def local_health_reason(self) -> str:
+        if not self.vision_profile_ok:
+            return self.vision_profile_reason
+        if self.local_pose_discontinuous:
+            return "local odometry discontinuity; restart required"
+        if self.now_s() < self.local_pose_fault_until_s:
+            return "local odometry changed discontinuously; waiting to settle"
+        if self.now_s() - self.last_zed_status_s > 1.0 or self.zed_status != "OK":
+            return f"ZED tracking unavailable: {self.zed_status}"
+        if self.now_s() - self.last_vision_time_s > 0.5:
+            return "ZED vision pose stale"
+        if self.now_s() - self.last_estimator_time_s > self.estimator_timeout_s:
+            return "PX4 estimator status stale or missing"
+        if not self.estimator_ok:
+            return f"PX4 estimator: {self.estimator_reason}"
+        return ""
+
+    def enter_vision_hold(self) -> None:
+        self.vision_hold_started_s = self.now_s()
+        self.vision_hold_start_count = self.accepted_vision_pose_count
+        self.vision_hold_resume_state = (
+            "STAGE_HOVER" if self.demo_state == "STAGE_HOVER" else "SEARCH")
+        self.tracks.clear()
+        self.clear_active_target()
+        self.publish_zero_command()
+        self.set_demo_state("VISION_HOLD", "ZED pose jump; checking for recovery")
+
+    def service_vision_hold(self) -> None:
+        now_s = self.now_s()
+        if (not self.state_fresh() or not self.latest_state.connected or
+                not self.latest_state.armed or not self.mode_matches(self.offboard_mode) or
+                not self.pose_fresh() or self.local_pose_discontinuous or
+                not self.vision_profile_ok or
+                now_s - self.last_estimator_time_s > self.estimator_timeout_s or
+                not self.estimator_ok or self.estop_latched):
+            self.enter_abort("ZED pose jump; PX4 local control became unsafe")
+            return
+        boundary_reason = self.perimeter_runtime_violation_reason()
+        height = self.current_altitude_m() - (self.takeoff_origin_altitude_m or 0.0)
+        if (boundary_reason or height < self.min_follow_height_m - 0.2 or
+                height > self.max_follow_height_m + 0.2):
+            self.enter_abort(boundary_reason or "ZED pose jump; local height unsafe")
+            return
+        if (now_s - self.last_zed_status_s > 1.0 or
+                self.zed_status not in {"OK", "ZED pose jump"}):
+            self.enter_abort(f"ZED tracking unavailable: {self.zed_status}")
+            return
+        if (self.zed_status == "OK" and
+                self.accepted_vision_pose_count >= self.vision_hold_start_count + 2 and
+                now_s - self.last_vision_time_s <= 0.5):
+            self.set_demo_state(self.vision_hold_resume_state,
+                                "ZED pose recovered after brief hold")
+            return
+        if now_s - self.vision_hold_started_s >= 0.5:
+            self.enter_abort("ZED pose jump persisted beyond 0.5 s")
+            return
+        self.publish_zero_command()
+
+    def update_local_preflight_readiness(self) -> None:
+        if not self.local_odom_mode or self.demo_state not in self.TERMINAL_STATES:
+            self.local_preflight_ready_since_s = None
+            return
+        now_s = self.now_s()
+        healthy = (
+            self.state_fresh() and self.latest_state.connected and
+            not self.latest_state.armed and not self.estop_latched and
+            self.pose_fresh() and not self.local_health_reason() and
+            now_s - self.last_perception_time_s <= 3.0 and
+            (not self.require_detector_target_on_start or
+             now_s - self.last_valid_detector_target_time_s <= 3.0)
+        )
+        if not healthy:
+            self.local_preflight_ready_since_s = None
+        elif self.local_preflight_ready_since_s is None:
+            self.local_preflight_ready_since_s = now_s
+
+    def service_estimator_stream(self) -> None:
+        """Ask PX4 for the same 5 Hz estimator stream used by Milestone 1."""
+        if not self.local_odom_mode or not self.latest_state.connected:
+            return
+        now_s = self.now_s()
+        future = self.estimator_interval_future
+        if future is not None:
+            if future.done():
+                try:
+                    accepted = bool(future.result().success)
+                except Exception:
+                    accepted = False
+                self.estimator_interval_future = None
+                if accepted:
+                    self.estimator_interval_attempts = 3
+                    return
+                if self.estimator_interval_attempts >= 3:
+                    self.get_logger().warn(
+                        "PX4 did not accept the 5 Hz estimator status stream; "
+                        "readiness still checks received estimator flags")
+            elif now_s - self.estimator_interval_started_s <= 2.0:
+                return
+            else:
+                future.cancel()
+                self.estimator_interval_future = None
+                if self.estimator_interval_attempts >= 3:
+                    self.get_logger().warn(
+                        "PX4 estimator status stream request timed out; "
+                        "readiness still checks received estimator flags")
+            self.estimator_interval_retry_after_s = now_s + 2.0
+        if (self.estimator_interval_attempts >= 3 or
+                now_s < self.estimator_interval_retry_after_s or
+                not self.estimator_interval_client.service_is_ready()):
+            return
+        request = MessageInterval.Request()
+        request.message_id = 230  # MAVLink ESTIMATOR_STATUS
+        request.message_rate = 5.0
+        self.estimator_interval_future = self.estimator_interval_client.call_async(request)
+        self.estimator_interval_started_s = now_s
+        self.estimator_interval_attempts += 1
+
+    def service_vision_profile(self) -> None:
+        if not self.local_odom_mode or not self.latest_state.connected or self.vision_profile_ok:
+            return
+        now_s = self.now_s()
+        future = self.vision_profile_future
+        if future is not None:
+            if not future.done():
+                if now_s - self.vision_profile_started_s > 2.0:
+                    future.cancel()
+                    self.vision_profile_future = None
+                    self.vision_profile_reason = "PX4 vision parameter read timed out"
+                    self.vision_profile_retry_after_s = now_s + 2.0
+                return
+            try:
+                values = future.result().values
+                if len(values) != len(self.ZED_PROFILE):
+                    raise ValueError("incomplete PX4 vision parameter response")
+                for (name, expected), value in zip(self.ZED_PROFILE.items(), values):
+                    expected_type = (ParameterType.PARAMETER_DOUBLE if isinstance(expected, float)
+                                     else ParameterType.PARAMETER_INTEGER)
+                    if value.type != expected_type:
+                        raise ValueError(f"PX4 {name} unavailable or wrong type")
+                    actual = value.double_value if isinstance(expected, float) else value.integer_value
+                    if not math.isclose(float(actual), float(expected), abs_tol=1e-5):
+                        raise ValueError(f"PX4 {name}={actual}, expected {expected}")
+            except Exception as exc:
+                self.vision_profile_reason = str(exc)
+                self.vision_profile_retry_after_s = now_s + 2.0
+            else:
+                self.vision_profile_ok = True
+                self.vision_profile_reason = "valid"
+            self.vision_profile_future = None
+            return
+        if now_s < self.vision_profile_retry_after_s or not self.param_get_client.service_is_ready():
+            return
+        request = GetParameters.Request()
+        request.names = list(self.ZED_PROFILE)
+        self.vision_profile_future = self.param_get_client.call_async(request)
+        self.vision_profile_started_s = now_s
 
     def home_position_callback(self, msg: HomePosition) -> None:
         self.latest_home_position = msg
@@ -682,6 +1028,14 @@ class Milestone3DemoSequenceNode(Node):
                 ),
             )
             self.tracks[snapshot.track_id] = snapshot
+            if (self.local_odom_mode and snapshot.source == TRACK_SOURCE_DETECTED
+                    and snapshot.last_observed_age_s <= 0.5
+                    and self.min_target_distance_m <= snapshot.distance_m
+                    <= self.max_target_distance_m
+                    and snapshot.confidence >= self.min_track_confidence
+                    and all(math.isfinite(v) for v in (
+                        snapshot.x_b_m, snapshot.y_b_m, snapshot.z_b_m))):
+                self.last_valid_detector_target_time_s = now_s
             seen_ids.add(snapshot.track_id)
 
         gc_window_s = max(self.track_gc_s, self.track_timeout_s)
@@ -697,7 +1051,7 @@ class Milestone3DemoSequenceNode(Node):
     def load_perimeter_guard(self) -> None:
         self.perimeter_guard = None
         self.perimeter_guard_error = ""
-        if not self.enable_perimeter_guard:
+        if self.local_odom_mode or not self.enable_perimeter_guard:
             self.get_logger().info("Perimeter guard disabled for milestone 3 demo.")
             return
         if not self.perimeter_config:
@@ -918,6 +1272,20 @@ class Milestone3DemoSequenceNode(Node):
             self.takeoff_target_altitude_m() - self.altitude_tolerance_m
         )
 
+    def local_hover_stable(self) -> bool:
+        if (not self.pose_fresh() or
+                self.now_s() - self.last_local_velocity_time_s > 0.5):
+            return False
+        velocity = self.latest_local_velocity.twist.linear
+        values = (velocity.x, velocity.y, velocity.z, self.current_altitude_m())
+        return bool(
+            all(math.isfinite(value) for value in values) and
+            abs(self.current_altitude_m() - self.takeoff_target_altitude_m())
+            <= self.altitude_tolerance_m and
+            math.hypot(velocity.x, velocity.y)
+            <= self.stable_hover_max_horizontal_speed_mps and
+            abs(velocity.z) <= self.stable_hover_max_vertical_speed_mps)
+
     def touchdown_threshold_altitude_m(self) -> float:
         if self.takeoff_origin_altitude_m is None:
             return self.touchdown_altitude_m
@@ -930,6 +1298,33 @@ class Milestone3DemoSequenceNode(Node):
 
     def publish_zero_command(self) -> None:
         self.cmd_pub.publish(self.zero_cmd())
+
+    def publish_local_position_setpoint(self) -> None:
+        if self.takeoff_origin_xy is None or self.takeoff_origin_yaw_rad is None:
+            return
+        if self.demo_state == "LOCAL_TAKEOFF":
+            now_s = self.now_s()
+            dt_s = max(0.0, min(now_s - self.local_takeoff_last_update_s, 0.1))
+            self.local_takeoff_last_update_s = now_s
+            self.local_takeoff_target_z = min(
+                self.takeoff_target_altitude_m(),
+                self.local_takeoff_target_z + self.takeoff_rate_m_s * dt_s,
+                self.current_altitude_m() + self.local_takeoff_setpoint_lead_m)
+        msg = PoseStamped()
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.header.frame_id = self.current_frame_id()
+        msg.pose.position.x, msg.pose.position.y = self.takeoff_origin_xy
+        msg.pose.position.z = self.local_takeoff_target_z
+        yaw = self.takeoff_origin_yaw_rad
+        msg.pose.orientation.z = math.sin(yaw / 2.0)
+        msg.pose.orientation.w = math.cos(yaw / 2.0)
+        self.position_pub.publish(msg)
+
+    def publish_velocity_enable(self) -> None:
+        msg = Bool()
+        msg.data = setpoint_source(self.demo_state,
+                                   armed=bool(self.latest_state.armed)) == "velocity"
+        self.velocity_enable_pub.publish(msg)
 
     def publish_follow_command(self, command: FollowCommand) -> None:
         msg = TwistStamped()
@@ -985,6 +1380,8 @@ class Milestone3DemoSequenceNode(Node):
         old_state = self.demo_state
         self.demo_state = new_state
         self.stage_started_s = self.now_s()
+        if new_state == "STAGE_HOVER":
+            self.stable_hover_since_s = None
         if new_state == "TAKEOFF":
             self.last_takeoff_progress_log_s = 0.0
         if new_state == "CLIMB_TO_TAKEOFF_ALTITUDE":
@@ -1106,6 +1503,8 @@ class Milestone3DemoSequenceNode(Node):
         )
 
     def perimeter_start_violation_reason(self) -> Optional[str]:
+        if self.local_odom_mode:
+            return None
         if not self.enable_perimeter_guard:
             return None
         if self.perimeter_guard is None:
@@ -1131,6 +1530,17 @@ class Milestone3DemoSequenceNode(Node):
         )
 
     def perimeter_runtime_violation_reason(self) -> Optional[str]:
+        if self.local_odom_mode:
+            if self.takeoff_origin_xy is not None and horizontal_excursion_m(
+                self.takeoff_origin_xy, self.current_xy()) > self.max_local_excursion_m + 0.5:
+                return "local excursion exceeded hard limit"
+            if self.demo_state in self.ACTIVE_ENGAGEMENT_STATES | self.RETURN_STATES:
+                height = self.current_altitude_m() - (self.takeoff_origin_altitude_m or 0.0)
+                if height < self.min_follow_height_m - 0.2:
+                    return "local height fell below pursuit floor"
+                if height > self.max_follow_height_m + 0.2:
+                    return "local height exceeded ceiling"
+            return None
         if not self.enable_perimeter_guard:
             return None
         if self.perimeter_guard is None:
@@ -1161,6 +1571,15 @@ class Milestone3DemoSequenceNode(Node):
         self,
         command: FollowCommand,
     ) -> Optional[str]:
+        if self.local_odom_mode:
+            if self.takeoff_origin_xy is None:
+                return "local takeoff origin missing"
+            if outward_limit_reached(
+                self.takeoff_origin_xy, self.current_xy(), self.current_yaw_rad(),
+                command.vx, command.vy, self.max_local_excursion_m,
+                self.projected_path_horizon_s):
+                return "local excursion limit"
+            return None
         if not self.enable_perimeter_guard or self.perimeter_guard is None:
             return None
         current_xy = self.current_xy()
@@ -1190,6 +1609,13 @@ class Milestone3DemoSequenceNode(Node):
         self,
         command: FollowCommand,
     ) -> FollowCommand:
+        if self.local_odom_mode:
+            origin_z = self.takeoff_origin_altitude_m or 0.0
+            return clamp_follow_command_altitude(
+                command, current_altitude_m=self.current_altitude_m(),
+                projected_horizon_s=self.projected_path_horizon_s,
+                min_z_m=origin_z + self.min_follow_height_m,
+                max_z_m=origin_z + self.max_follow_height_m)
         if not self.enable_perimeter_guard or self.perimeter_guard is None:
             return command
 
@@ -1275,7 +1701,7 @@ class Milestone3DemoSequenceNode(Node):
             )
         return chosen
 
-    def startable(self) -> Tuple[bool, str]:
+    def startable(self, *, check_flight: bool = True) -> Tuple[bool, str]:
         if self.demo_state not in {"IDLE", "COMPLETE", "ABORT"}:
             return False, f"demo already active in state {self.demo_state}"
         if (
@@ -1290,16 +1716,14 @@ class Milestone3DemoSequenceNode(Node):
             return False, "mode service is unavailable"
         if not self.arm_client.wait_for_service(timeout_sec=1.0):
             return False, "arming service is unavailable"
-        if (
-            self.takeoff_strategy == "LOCAL_COMMAND"
-            and not self.takeoff_client.wait_for_service(timeout_sec=1.0)
-        ):
+        if (not self.local_odom_mode and self.takeoff_strategy == "LOCAL_COMMAND"
+                and not self.takeoff_client.wait_for_service(timeout_sec=1.0)):
             return False, "local takeoff service is unavailable"
-        if not self.param_get_client.wait_for_service(timeout_sec=1.0):
+        if not self.local_odom_mode and not self.param_get_client.wait_for_service(timeout_sec=1.0):
             return False, "param get service is unavailable"
-        if not self.param_pull_client.wait_for_service(timeout_sec=1.0):
+        if not self.local_odom_mode and not self.param_pull_client.wait_for_service(timeout_sec=1.0):
             return False, "param pull service is unavailable"
-        if not self.param_set_client.wait_for_service(timeout_sec=1.0):
+        if not self.local_odom_mode and not self.param_set_client.wait_for_service(timeout_sec=1.0):
             return False, "param set service is unavailable"
         if self.pre_takeoff_profile_config and self.pre_takeoff_profile is None:
             return (
@@ -1314,10 +1738,26 @@ class Milestone3DemoSequenceNode(Node):
             return False, "FCU is not connected"
         if not self.pose_fresh():
             return False, "local pose is stale or missing"
-        if not self.global_origin_ready():
+        if not self.local_odom_mode and not self.global_origin_ready():
             return False, "global origin is missing"
-        if not self.home_position_ready():
+        if not self.local_odom_mode and not self.home_position_ready():
             return False, "home position is missing"
+        if self.local_odom_mode:
+            if self.estop_latched:
+                return False, "ESTOP is latched"
+            reason = self.local_health_reason()
+            if reason:
+                return False, reason
+            if self.now_s() - self.last_perception_time_s > 3.0:
+                return False, "detector has not processed a recent camera frame"
+            if (self.require_detector_target_on_start and
+                    self.now_s() - self.last_valid_detector_target_time_s > 3.0):
+                return False, "no recent detected 3D drone target; validate best.engine with a visible target"
+            ready_since_s = self.local_preflight_ready_since_s
+            if (ready_since_s is None or
+                    self.now_s() - ready_since_s < self.local_preflight_dwell_s):
+                return False, (
+                    f"waiting for {self.local_preflight_dwell_s:g} s continuous local readiness")
         if self.require_companion_active:
             if not self.companion_status_fresh():
                 return False, "external pose status is stale or missing"
@@ -1328,7 +1768,15 @@ class Milestone3DemoSequenceNode(Node):
         perimeter_reason = self.perimeter_start_violation_reason()
         if perimeter_reason is not None:
             return False, perimeter_reason
+        if check_flight and not self.enable_flight:
+            return False, "flight disabled by enable_flight:=false"
         return True, "ready"
+
+    def handle_check_request(self, request, response):
+        del request
+        response.success, response.message = self.startable(check_flight=False)
+        response.message += f"; enable_flight={self.enable_flight}"
+        return response
 
     def handle_start_request(
         self,
@@ -1380,7 +1828,12 @@ class Milestone3DemoSequenceNode(Node):
         self.completed_track_ids.clear()
         self.blocked_track_ids.clear()
         self.clear_active_target()
-        self.set_demo_state("SYNC_TAKEOFF_PARAM", "start requested")
+        if self.local_odom_mode:
+            self.local_takeoff_target_z = self.current_altitude_m()
+            self.local_takeoff_last_update_s = self.now_s()
+            self.set_demo_state("LOCAL_WARMUP", "local ZED takeoff requested")
+        else:
+            self.set_demo_state("SYNC_TAKEOFF_PARAM", "start requested")
         response.success = True
         response.message = "milestone3 demo sequence started"
         return response
@@ -1405,6 +1858,8 @@ class Milestone3DemoSequenceNode(Node):
             return
         self.abort_reason = reason
         self.last_blocked_reason = ""
+        if self.local_odom_mode:
+            self.tracks.clear()
         self.clear_active_target()
         self.publish_zero_command()
         self.set_demo_state("ABORT", reason)
@@ -1839,6 +2294,38 @@ class Milestone3DemoSequenceNode(Node):
         if self.demo_state in self.TERMINAL_STATES:
             return
 
+        if self.local_odom_mode:
+            if self.demo_state == "VISION_HOLD":
+                self.service_vision_hold()
+                return
+            reason = self.local_health_reason()
+            if reason:
+                if (reason == "ZED tracking unavailable: ZED pose jump" and
+                        self.demo_state in ({"STAGE_HOVER"} |
+                                            self.ACTIVE_ENGAGEMENT_STATES |
+                                            self.RETURN_STATES) and
+                        self.latest_state.connected and self.latest_state.armed and
+                        self.pose_fresh() and not self.local_pose_discontinuous and
+                        self.estimator_ok and
+                        self.now_s() - self.last_estimator_time_s <= self.estimator_timeout_s):
+                    self.enter_vision_hold()
+                    return
+                self.enter_abort(reason)
+                return
+            if self.demo_state in {"LOCAL_ARMING", "LOCAL_TAKEOFF", "LOCAL_HANDOFF"}:
+                if not self.mode_matches(self.offboard_mode):
+                    self.enter_abort("OFFBOARD mode lost during local takeoff")
+                    return
+            if self.demo_state in {"LOCAL_TAKEOFF", "LOCAL_HANDOFF"} and not self.latest_state.armed:
+                self.enter_abort("vehicle disarmed during local takeoff")
+                return
+            if self.demo_state in {"LOCAL_WARMUP", "LOCAL_SET_OFFBOARD", "LOCAL_ARMING",
+                                   "LOCAL_TAKEOFF", "LOCAL_HANDOFF"}:
+                reason = self.perimeter_runtime_violation_reason()
+                if reason:
+                    self.enter_abort(reason)
+                    return
+
         if not self.state_fresh():
             self.enter_abort("lost MAVROS state updates")
             return
@@ -1964,6 +2451,8 @@ class Milestone3DemoSequenceNode(Node):
             blocked_reason = self.last_blocked_reason or self.control_block_reason()
         elif self.demo_state == "IDLE":
             blocked_reason = ""
+        elif self.demo_state == "VISION_HOLD":
+            blocked_reason = "ZED pose jump; holding for recovery"
         elif self.estop_latched:
             blocked_reason = "ESTOP"
 
@@ -1996,6 +2485,43 @@ class Milestone3DemoSequenceNode(Node):
         now_s = self.now_s()
 
         if self.demo_state == "IDLE":
+            return None
+
+        if self.demo_state == "VISION_HOLD":
+            self.publish_zero_command()
+            return None
+
+        if self.local_odom_mode and self.demo_state in {
+            "LOCAL_WARMUP", "LOCAL_SET_OFFBOARD", "LOCAL_ARMING", "LOCAL_TAKEOFF"
+        }:
+            self.publish_local_position_setpoint()
+            if self.demo_state == "LOCAL_WARMUP":
+                if self.stage_elapsed_s() >= self.offboard_warmup_s:
+                    self.set_demo_state("LOCAL_SET_OFFBOARD", "position setpoint warmup complete")
+            elif self.demo_state == "LOCAL_SET_OFFBOARD":
+                if self.mode_matches(self.offboard_mode):
+                    self.set_demo_state("LOCAL_ARMING", "OFFBOARD confirmed")
+                elif self.mode_future is None and self.mode_request_retry_ready():
+                    self.request_mode(self.offboard_mode)
+            elif self.demo_state == "LOCAL_ARMING":
+                if self.latest_state.armed:
+                    self.local_takeoff_last_update_s = now_s
+                    self.set_demo_state("LOCAL_TAKEOFF", "vehicle armed")
+                elif self.stage_elapsed_s() >= self.arm_zero_throttle_hold_s and not self.arm_request_sent:
+                    self.arm_request_sent = True
+                    self.request_arm(True)
+            elif self.demo_state == "LOCAL_TAKEOFF":
+                if self.takeoff_altitude_reached():
+                    self.set_demo_state("LOCAL_HANDOFF", "local takeoff altitude reached")
+                elif (self.stage_elapsed_s() >= self.local_takeoff_no_lift_timeout_s and
+                      self.current_altitude_m() - (self.takeoff_origin_altitude_m or 0.0) < 0.03):
+                    self.enter_abort("no ZED-confirmed liftoff")
+            return None
+
+        if self.local_odom_mode and self.demo_state == "LOCAL_HANDOFF":
+            self.publish_zero_command()
+            if self.stage_elapsed_s() >= self.offboard_warmup_s:
+                self.set_demo_state("STAGE_HOVER", "velocity stream handoff complete")
             return None
 
         if self.demo_state in {
@@ -2248,7 +2774,15 @@ class Milestone3DemoSequenceNode(Node):
             return None
 
         if self.demo_state == "STAGE_HOVER":
-            if self.stage_elapsed_s() >= self.stage_hover_duration_s:
+            if self.local_odom_mode:
+                if self.local_hover_stable():
+                    if self.stable_hover_since_s is None:
+                        self.stable_hover_since_s = now_s
+                    elif now_s - self.stable_hover_since_s >= self.stage_hover_duration_s:
+                        self.set_demo_state("SEARCH", "stable local hover complete")
+                else:
+                    self.stable_hover_since_s = None
+            elif self.stage_elapsed_s() >= self.stage_hover_duration_s:
                 self.set_demo_state("SEARCH", "stage hover complete")
             return None
 
@@ -2284,6 +2818,11 @@ class Milestone3DemoSequenceNode(Node):
                 max_yaw_rate_rps=self.max_yaw_rate_rps,
                 min_safe_distance_m=self.min_safe_distance_m,
             )
+            if self.local_odom_mode and self.target_velocity_feedforward_gain > 0.0:
+                command = add_target_velocity_feedforward(
+                    command, target, gain=self.target_velocity_feedforward_gain,
+                    max_target_velocity_mps=2.0,
+                    max_vel_xy_mps=self.max_vel_xy_mps)
             if target.source == TRACK_SOURCE_PREDICTED:
                 command = clamp_follow_command_velocity(
                     command,
@@ -2300,6 +2839,7 @@ class Milestone3DemoSequenceNode(Node):
                 if (
                     active_track_id is not None
                     and self.block_target_on_perimeter_violation
+                    and not self.local_odom_mode
                 ):
                     self.blocked_track_ids.add(active_track_id)
                     self.get_logger().warn(
@@ -2637,8 +3177,13 @@ class Milestone3DemoSequenceNode(Node):
         return None
 
     def timer_callback(self) -> None:
+        self.service_vision_profile()
+        self.service_estimator_stream()
         self.poll_service_futures()
         self.run_safety_checks()
+        self.update_local_preflight_readiness()
+        if self.local_odom_mode:
+            self.publish_velocity_enable()
         target = self.step_state_machine()
         if target is None and self.active_track_id is not None:
             target = self.tracks.get(self.active_track_id)

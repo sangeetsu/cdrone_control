@@ -39,10 +39,15 @@ def test_pose_gate_rejects_stale_duplicate_lost_and_jumped_frames():
     gate = PoseGate()
     p, q = np.zeros(3), np.array((0, 0, 0, 1))
     assert gate.accept("OK", 1_000_000_000, 1_050_000_000, p, q)[0]
-    assert not gate.accept("OK", 1_000_000_000, 1_050_000_000, p, q)[0]
-    assert not gate.accept("OK", 1_100_000_000, 1_500_000_000, p, q)[0]
+    assert gate.accept("OK", 1_000_000_000, 1_050_000_000, p, q)[1] == "repeated camera frame"
+    assert gate.accept("OK", 1_100_000_000, 1_500_000_000, p, q)[1] == "stale camera frame"
+    assert gate.accept("OK", 1_700_000_000, 1_500_000_000, p, q)[1] == "future camera frame"
+    assert gate.accept("OK", 0, 1_500_000_000, p, q)[1] == "invalid camera frame timestamp"
     assert not gate.accept("UNAVAILABLE", 1_100_000_000, 1_120_000_000, p, q)[0]
     assert not gate.accept("OK", 1_100_000_000, 1_120_000_000, np.array((1, 0, 0)), q)[0]
+    assert gate.last_jump["translation_m"] == pytest.approx(1.0)
+    assert gate.last_jump["yaw_change_rad"] == pytest.approx(0.0)
+    assert gate.last_jump["frame_interval_s"] == pytest.approx(0.1)
     assert gate.accept("OK", 1_100_000_000, 1_120_000_000, np.array((0.1, 0, 0)), q)[0]
 
 

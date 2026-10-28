@@ -7,10 +7,37 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from drone_control_pkg.follow_utils import (
     FollowCommand,
+    TrackSnapshot,
+    TRACK_SOURCE_DETECTED,
+    TRACK_SOURCE_PREDICTED,
+    add_target_velocity_feedforward,
     clamp_follow_command_velocity,
     clamp_follow_command_altitude,
     compute_return_to_point_command,
 )
+
+
+def test_moving_target_feedforward_is_capped_and_prediction_stays_cautious():
+    track = TrackSnapshot(1, 4.0, 0.0, 0.0, 1.0, 0.5, 0.0,
+                          4.0, 0.9, 100.0, False, 0.0,
+                          source=TRACK_SOURCE_DETECTED)
+    command = FollowCommand(0.5, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                            0.0, False)
+    assisted = add_target_velocity_feedforward(
+        command, track, gain=0.8, max_target_velocity_mps=2.0,
+        max_vel_xy_mps=1.2)
+    assert assisted.vx > command.vx
+    assert (assisted.vx ** 2 + assisted.vy ** 2) ** 0.5 <= 1.2 + 1e-9
+    track.source = TRACK_SOURCE_PREDICTED
+    assert add_target_velocity_feedforward(
+        command, track, gain=0.8, max_target_velocity_mps=2.0,
+        max_vel_xy_mps=1.2) == command
+    track.source = TRACK_SOURCE_DETECTED
+    gated = FollowCommand(0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
+                          0.0, True)
+    assert add_target_velocity_feedforward(
+        gated, track, gain=0.8, max_target_velocity_mps=2.0,
+        max_vel_xy_mps=1.2).vx == 0.0
 
 
 def make_command(*, vz: float) -> FollowCommand:

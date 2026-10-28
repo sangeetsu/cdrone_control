@@ -30,6 +30,18 @@ def generate_launch_description():
                 default_value=default_arg(defaults, "drone_namespace", "/cdrone"),
             ),
             DeclareLaunchArgument("source_mode", default_value="direct"),
+            DeclareLaunchArgument("embedded_zed", default_value="false"),
+            DeclareLaunchArgument("zed_mount_config", default_value=""),
+            DeclareLaunchArgument("mavros_namespace", default_value="/cdrone/cdrone3/mavros"),
+            DeclareLaunchArgument("zed_depth_mode", default_value="PERFORMANCE"),
+            DeclareLaunchArgument("zed_image_rate_hz", default_value="8.0"),
+            DeclareLaunchArgument("zed_grab_compute_capping_fps", default_value="0.0"),
+            DeclareLaunchArgument("zed_depth_maximum_distance_m", default_value="20.0"),
+            DeclareLaunchArgument("zed_ready_before_inference_s", default_value="0.0"),
+            DeclareLaunchArgument("inference_device", default_value=""),
+            DeclareLaunchArgument("color_topic", default_value="/camera/color/image_raw"),
+            DeclareLaunchArgument("depth_topic", default_value="/camera/aligned_depth_to_color/image_raw"),
+            DeclareLaunchArgument("camera_info_topic", default_value="/camera/color/camera_info"),
             DeclareLaunchArgument("zed_rotate_180", default_value="true"),
             DeclareLaunchArgument(
                 "pose_topic",
@@ -45,6 +57,8 @@ def generate_launch_description():
             DeclareLaunchArgument("world_track_compare_topic", default_value=""),
             DeclareLaunchArgument("experiment_tag", default_value=""),
             DeclareLaunchArgument("model_path", default_value=""),
+            DeclareLaunchArgument("model_task", default_value="detect"),
+            DeclareLaunchArgument("model_data_config", default_value=""),
             DeclareLaunchArgument("enable_reid", default_value="false"),
             DeclareLaunchArgument("reid_histogram_bins", default_value="32"),
             DeclareLaunchArgument(
@@ -66,6 +80,7 @@ def generate_launch_description():
                 default_value="",
             ),
             DeclareLaunchArgument("recording_save_depth_video", default_value="true"),
+            DeclareLaunchArgument("record_mission_video", default_value="true"),
             DeclareLaunchArgument(
                 "recording_replace_depth_tile_with_yolo",
                 default_value="false",
@@ -87,6 +102,21 @@ def generate_launch_description():
                     "drone_id": LaunchConfiguration("drone_id"),
                     "drone_namespace": LaunchConfiguration("drone_namespace"),
                     "source_mode": LaunchConfiguration("source_mode"),
+                    "embedded_zed": LaunchConfiguration("embedded_zed"),
+                    "zed_mount_config": LaunchConfiguration("zed_mount_config"),
+                    "mavros_namespace": LaunchConfiguration("mavros_namespace"),
+                    "zed_depth_mode": LaunchConfiguration("zed_depth_mode"),
+                    "zed_image_rate_hz": LaunchConfiguration("zed_image_rate_hz"),
+                    "zed_grab_compute_capping_fps": LaunchConfiguration(
+                        "zed_grab_compute_capping_fps"),
+                    "zed_depth_maximum_distance_m": LaunchConfiguration(
+                        "zed_depth_maximum_distance_m"),
+                    "zed_ready_before_inference_s": LaunchConfiguration(
+                        "zed_ready_before_inference_s"),
+                    "inference_device": LaunchConfiguration("inference_device"),
+                    "color_topic": LaunchConfiguration("color_topic"),
+                    "depth_topic": LaunchConfiguration("depth_topic"),
+                    "camera_info_topic": LaunchConfiguration("camera_info_topic"),
                     "zed_rotate_180": LaunchConfiguration("zed_rotate_180"),
                     "pose_topic": LaunchConfiguration("pose_topic"),
                     "publish_world_track_compare": LaunchConfiguration(
@@ -98,6 +128,8 @@ def generate_launch_description():
                     ),
                     "experiment_tag": LaunchConfiguration("experiment_tag"),
                     "model_path": LaunchConfiguration("model_path"),
+                    "model_task": LaunchConfiguration("model_task"),
+                    "model_data_config": LaunchConfiguration("model_data_config"),
                     "enable_reid": LaunchConfiguration("enable_reid"),
                     "reid_histogram_bins": LaunchConfiguration(
                         "reid_histogram_bins"
@@ -123,6 +155,7 @@ def generate_launch_description():
                     "recording_save_depth_video": LaunchConfiguration(
                         "recording_save_depth_video"
                     ),
+                    "record_mission_video": LaunchConfiguration("record_mission_video"),
                     "recording_replace_depth_tile_with_yolo": LaunchConfiguration(
                         "recording_replace_depth_tile_with_yolo"
                     ),

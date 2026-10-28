@@ -1,0 +1,12 @@
+{"utc": "2026-10-23T23:10:09.212+00:00", "stage": "started", "oc1_events": 15395, "vdd_in_mv": 4864, "mode": "engine", "pid": 6995}
+{"utc": "2026-10-23T23:10:09.418+00:00", "stage": "saved_frame_loaded", "oc1_events": 15395, "vdd_in_mv": 4832, "sample": "output_dump/zed_engine_probe/sample_frame.npz"}
+{"utc": "2026-10-23T23:10:09.510+00:00", "stage": "model_hash", "oc1_events": 15395, "vdd_in_mv": 4824, "path": "models/best.pt", "bytes": 52966893, "sha256": "442ab410a574ea30c6fb35807abfe6a1875504883bb2ee722175450a1347023c"}
+{"utc": "2026-10-23T23:10:09.514+00:00", "stage": "loading_model", "oc1_events": 15395, "vdd_in_mv": 4824, "model": "best.pt", "device": "cpu"}
+{"utc": "2026-10-23T23:10:14.498+00:00", "stage": "model_loaded", "oc1_events": 15395, "vdd_in_mv": 4768}
+{"utc": "2026-10-23T23:10:14.503+00:00", "stage": "first_inference_started", "oc1_events": 15395, "vdd_in_mv": 4768}
+{"utc": "2026-10-23T23:10:18.393+00:00", "stage": "first_inference_completed", "oc1_events": 15505, "vdd_in_mv": 4752, "obb_count": 0}
+{"utc": "2026-10-23T23:10:21.228+00:00", "stage": "progress", "oc1_events": 15561, "vdd_in_mv": 4752, "elapsed_s": 2.83, "frames": 1, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:10:24.082+00:00", "stage": "progress", "oc1_events": 15645, "vdd_in_mv": 4760, "elapsed_s": 5.68, "frames": 2, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:10:26.963+00:00", "stage": "progress", "oc1_events": 15650, "vdd_in_mv": 4760, "elapsed_s": 8.57, "frames": 3, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:10:29.791+00:00", "stage": "progress", "oc1_events": 15673, "vdd_in_mv": 4760, "elapsed_s": 11.39, "frames": 4, "detections": 0, "frames_with_3d": 0, "latest_3d": null}
+{"utc": "2026-10-23T23:10:29.797+00:00", "stage": "completed", "oc1_events": 15673, "vdd_in_mv": 4760, "summary": {"mode": "engine", "duration_s": 11.399, "camera_or_pipeline": {"count": 4, "hz": 0.351, "max_gap_s": 2.88}, "detected_frames": {"count": 0, "hz": 0.0, "max_gap_s": null}, "valid_3d_frames": {"count": 0, "hz": 0.0, "max_gap_s": null}, "detections": 0, "detections_with_valid_depth": 0, "valid_depth_fraction": null, "duplicate_or_stale_timestamps": 0, "grab_latency": {"median_ms": null, "p95_ms": null}, "inference_latency": {"median_ms": 2839.28, "p95_ms": 2871.09}, "latest_3d": null}}

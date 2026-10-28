@@ -9,6 +9,7 @@ from drone_control_pkg.onboard_initial_climb import RangeClimb, vertical_distanc
 @dataclass(frozen=True)
 class HoverSettings:
     localization_source: str = "ark_flow"
+    mission_mode: str = "hover"
     enable_flight: bool = False
     publish_rate_hz: float = 20.0
     takeoff_altitude_m: float = 1.0
@@ -28,6 +29,14 @@ class HoverSettings:
     sensor_timeout_s: float = 0.5
     state_timeout_s: float = 2.5
     max_horizontal_excursion_m: float = 0.5
+    square_edge_m: float = 1.0
+    square_speed_m_s: float = 0.2
+    square_setpoint_lead_m: float = 0.3
+    square_waypoint_tolerance_m: float = 0.15
+    square_waypoint_dwell_s: float = 1.0
+    square_waypoint_timeout_s: float = 20.0
+    square_max_excursion_m: float = 1.8
+    square_max_path_error_m: float = 0.35
     max_pose_jump_m: float = 0.5
     max_yaw_jump_rad: float = 0.52
     altitude_overshoot_m: float = 0.3
@@ -62,10 +71,14 @@ class HoverSettings:
     def __post_init__(self):
         if self.localization_source not in {"ark_flow", "zed"}:
             raise ValueError("localization_source must be ark_flow or zed")
+        if self.mission_mode not in {"hover", "square"}:
+            raise ValueError("mission_mode must be hover or square")
+        if self.mission_mode == "square" and self.localization_source != "zed":
+            raise ValueError("square mode requires ZED localization")
         if self.localization_source == "zed" and self.initial_climb_enabled:
             raise ValueError("ZED hover starts with position control; initial climb is unavailable")
         for name, value in vars(self).items():
-            if name in {"enable_flight", "initial_climb_enabled", "localization_source"}:
+            if name in {"enable_flight", "initial_climb_enabled", "localization_source", "mission_mode"}:
                 continue
             if name == "initial_climb_hover_thrust" and value == 0:
                 continue
@@ -77,6 +90,10 @@ class HoverSettings:
             raise ValueError("invalid range limits or flow quality threshold")
         if self.altitude_tolerance_m >= self.takeoff_altitude_m:
             raise ValueError("altitude tolerance must be smaller than the climb")
+        if (self.mission_mode == "square" and
+                math.sqrt(2) * self.square_edge_m + self.square_waypoint_tolerance_m
+                >= self.square_max_excursion_m):
+            raise ValueError("square corners and tolerance must fit inside excursion limit")
         if not 0.3 <= self.zed_takeoff_setpoint_lead_m <= 0.6:
             raise ValueError("ZED takeoff setpoint lead must be between 0.3 and 0.6 m")
         if not 6.0 <= self.zed_takeoff_no_lift_timeout_s <= 10.0:
@@ -201,7 +218,7 @@ class Output:
 class HoverController:
     TERMINAL = {"IDLE", "COMPLETE", "ABORT", "OPERATOR_CONTROL", "FAILSAFE"}
     FLYING = {"WARMUP", "SET_OFFBOARD", "ARMING", "INITIAL_CLIMB",
-              "POSITION_HANDOVER", "TAKEOFF", "HOVER"}
+              "POSITION_HANDOVER", "TAKEOFF", "HOVER", "SQUARE"}
     INITIAL = {"WARMUP", "SET_OFFBOARD", "ARMING", "INITIAL_CLIMB"}
 
     def __init__(self, settings=None):
@@ -232,6 +249,72 @@ class HoverController:
         self.aborted = False
         self.arm_requested = False
         self.climb = None
+        self.square_vertices = ()
+        self.square_leg = 0
+        self.square_progress_m = 0.0
+        self.square_leg_started = None
+        self.square_arrival_since = None
+        self.square_hover_settled_since = None
+
+    @staticmethod
+    def square_path(origin, edge_m):
+        """Return four heading-relative edges in the current local ENU frame."""
+        x, y, _, yaw = origin
+        forward = (edge_m * math.cos(yaw), edge_m * math.sin(yaw))
+        left = (-edge_m * math.sin(yaw), edge_m * math.cos(yaw))
+        return ((x, y), (x + forward[0], y + forward[1]),
+                (x + forward[0] + left[0], y + forward[1] + left[1]),
+                (x + left[0], y + left[1]), (x, y))
+
+    def square_path_error_m(self):
+        start = self.square_vertices[self.square_leg]
+        end = self.square_vertices[self.square_leg + 1]
+        edge = self.settings.square_edge_m
+        unit = ((end[0] - start[0]) / edge, (end[1] - start[1]) / edge)
+        pose = self.telemetry.pose
+        along = max(0.0, min(edge, (pose[0] - start[0]) * unit[0]
+                             + (pose[1] - start[1]) * unit[1]))
+        return math.hypot(pose[0] - start[0] - along * unit[0],
+                          pose[1] - start[1] - along * unit[1])
+
+    def square_tick(self, now, dt):
+        """Advance one edge while measured position limits setpoint lead."""
+        s = self.settings
+        if now - self.square_leg_started > s.square_waypoint_timeout_s:
+            self.abort(now, f"square waypoint {self.square_leg + 1} timed out")
+            return
+        start = self.square_vertices[self.square_leg]
+        end = self.square_vertices[self.square_leg + 1]
+        unit = ((end[0] - start[0]) / s.square_edge_m,
+                (end[1] - start[1]) / s.square_edge_m)
+        pose = self.telemetry.pose
+        measured = max(0.0, min(s.square_edge_m,
+                                (pose[0] - start[0]) * unit[0]
+                                + (pose[1] - start[1]) * unit[1]))
+        if self.square_progress_m > measured + s.square_setpoint_lead_m + 1e-6:
+            self.abort(now, "square setpoint lead limit exceeded")
+            return
+        self.square_progress_m = min(s.square_edge_m,
+                                     self.square_progress_m + s.square_speed_m_s * dt,
+                                     measured + s.square_setpoint_lead_m)
+        arrived = (self.square_progress_m >= s.square_edge_m
+                   and math.hypot(pose[0] - end[0], pose[1] - end[1])
+                   <= s.square_waypoint_tolerance_m
+                   and abs(pose[2] - self.target_z) <= self.settings.altitude_tolerance_m)
+        if arrived:
+            if self.square_arrival_since is None:
+                self.square_arrival_since = now
+            elif now - self.square_arrival_since >= s.square_waypoint_dwell_s:
+                if self.square_leg == 3:
+                    self.transition("LANDING", now, "square complete")
+                else:
+                    self.square_leg += 1
+                    self.square_progress_m = 0.0
+                    self.square_leg_started = now
+                    self.square_arrival_since = None
+                    self.reason = f"square waypoint {self.square_leg + 1}/4"
+        else:
+            self.square_arrival_since = None
 
     def uses_initial_climb(self):
         return self.settings.initial_climb_enabled and self.state in self.INITIAL
@@ -333,6 +416,13 @@ class HoverController:
         self.takeoff_start_range = None
         self.range_error_since = None
         self.target_z = self.origin[2]
+        self.square_vertices = (self.square_path(self.origin, self.settings.square_edge_m)
+                                if self.settings.mission_mode == "square" else ())
+        self.square_leg = 0
+        self.square_progress_m = 0.0
+        self.square_leg_started = None
+        self.square_arrival_since = None
+        self.square_hover_settled_since = None
         self.offboard_confirmed = self.aborted = self.arm_requested = False
         self.altitude_since = None
         self.last_tick = now
@@ -340,7 +430,8 @@ class HoverController:
             self.climb = RangeClimb(vertical_distance(self.telemetry), self.telemetry.attitude[2],
                                     self.telemetry.received["range"])
         self.transition("WARMUP", now, "streaming measured starting pose")
-        return True, "onboard hover started"
+        return True, ("ZED square started" if self.settings.mission_mode == "square"
+                      else "onboard hover started")
 
     def abort(self, now, reason):
         if self.state in self.TERMINAL:
@@ -416,12 +507,17 @@ class HoverController:
             reasons = t.blockers(now, s, initial_climb=initial)
             if tick_gap > s.sensor_timeout_s or tick_gap < 0:
                 reasons.append("control loop timing discontinuity")
-            if not initial and t.pose is not None and math.hypot(
-                    t.pose[0] - self.origin[0],
-                    t.pose[1] - self.origin[1]) > s.max_horizontal_excursion_m:
-                reasons.append("horizontal excursion limit exceeded")
+            if not initial and t.pose is not None:
+                excursion_limit = (s.square_max_excursion_m if self.state == "SQUARE"
+                                   else s.max_horizontal_excursion_m)
+                if math.hypot(t.pose[0] - self.origin[0],
+                              t.pose[1] - self.origin[1]) > excursion_limit:
+                    reasons.append("horizontal excursion limit exceeded")
+                if (self.state == "SQUARE" and
+                        self.square_path_error_m() > s.square_max_path_error_m):
+                    reasons.append("square path error limit exceeded")
             range_climb = None
-            if (s.localization_source == "zed" and self.state in {"TAKEOFF", "HOVER"}
+            if (s.localization_source == "zed" and self.state in {"TAKEOFF", "HOVER", "SQUARE"}
                     and t.pose is not None and t.vision_pose is not None
                     and self.vision_start is not None):
                 vision_climb = t.vision_pose[2] - self.vision_start[2]
@@ -462,9 +558,10 @@ class HoverController:
             goal_z = self.origin[2] + s.takeoff_altitude_m
             if not initial and t.pose is not None and t.pose[2] > goal_z + s.altitude_overshoot_m:
                 reasons.append("altitude overshoot limit exceeded")
-            if (t.pose is not None and self.state == "HOVER"
+            if (t.pose is not None and self.state in {"HOVER", "SQUARE"}
                     and abs(t.pose[2] - goal_z) > s.altitude_overshoot_m):
-                reasons.append("altitude left hover band")
+                reasons.append("altitude left hover band" if self.state == "HOVER"
+                               else "altitude left square-flight band")
             if reasons:
                 self.abort(now, "; ".join(reasons))
             elif self.offboard_confirmed and t.mode != "OFFBOARD":
@@ -475,12 +572,12 @@ class HoverController:
                 self.transition("OPERATOR_CONTROL", now,
                                 "vehicle armed externally; releasing control")
                 return output
-            elif self.state in {"INITIAL_CLIMB", "POSITION_HANDOVER", "TAKEOFF", "HOVER"} and not t.armed:
+            elif self.state in {"INITIAL_CLIMB", "POSITION_HANDOVER", "TAKEOFF", "HOVER", "SQUARE"} and not t.armed:
                 self.transition("ABORT", now, "vehicle disarmed during flight sequence")
                 return output
 
         if self.state in self.FLYING:
-            if self.state != "HOVER" and now - self.entered > s.stage_timeout_s:
+            if self.state not in {"HOVER", "SQUARE"} and now - self.entered > s.stage_timeout_s:
                 self.abort(now, "stage timed out (no confirmed progress)")
             else:
                 if self.state == "WARMUP" and now - self.entered >= s.offboard_warmup_s:
@@ -530,13 +627,40 @@ class HoverController:
                     else:
                         self.altitude_since = None
                 elif self.state == "HOVER" and now - self.entered >= s.hover_duration_s:
-                    self.transition("LANDING", now, "hover complete")
+                    if s.mission_mode == "hover":
+                        self.transition("LANDING", now, "hover complete")
+                    else:
+                        at_start = (math.hypot(t.pose[0] - self.origin[0],
+                                               t.pose[1] - self.origin[1])
+                                    <= s.square_waypoint_tolerance_m
+                                    and abs(t.pose[2] - self.target_z) <= s.altitude_tolerance_m)
+                        if at_start:
+                            if self.square_hover_settled_since is None:
+                                self.square_hover_settled_since = now
+                            elif now - self.square_hover_settled_since >= s.square_waypoint_dwell_s:
+                                self.square_leg_started = now
+                                self.transition("SQUARE", now, "square waypoint 1/4")
+                        else:
+                            self.square_hover_settled_since = None
+                        if (self.state == "HOVER" and now - self.entered
+                                > s.hover_duration_s + s.square_waypoint_timeout_s):
+                            self.abort(now, "square start did not settle at hover point")
+                elif self.state == "SQUARE":
+                    self.square_tick(now, dt)
                 if self.state in self.FLYING:
                     if self.uses_initial_climb():
                         if output.attitude_setpoint is None:
                             output.attitude_setpoint = (self.climb.yaw, 0.0)
                     else:
-                        output.setpoint = (*self.origin[:2], self.target_z, self.origin[3])
+                        if self.state == "SQUARE":
+                            start = self.square_vertices[self.square_leg]
+                            end = self.square_vertices[self.square_leg + 1]
+                            fraction = self.square_progress_m / s.square_edge_m
+                            xy = (start[0] + (end[0] - start[0]) * fraction,
+                                  start[1] + (end[1] - start[1]) * fraction)
+                        else:
+                            xy = self.origin[:2]
+                        output.setpoint = (*xy, self.target_z, self.origin[3])
 
         if self.state == "LANDING":
             # No further position setpoints: especially important after an EKF reset.

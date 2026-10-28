@@ -89,6 +89,7 @@ class TargetMemoryTrack:
     inbound: bool
     first_observed_s: float
     last_observed_s: float
+    last_observed_position_m: np.ndarray
     last_observation_received_s: float
     last_update_s: float
     source: int = TRACK_SOURCE_DETECTED
@@ -159,6 +160,10 @@ class TargetMemory:
         velocity_blend_alpha: float = 0.55,
         max_velocity_mps: float = 8.0,
         history_length: int = 30,
+        max_observation_speed_mps: float = 0.0,
+        position_noise_allowance_m: float = 0.0,
+        confirmation_count: int = 1,
+        confirmation_span_s: float = 0.0,
     ) -> None:
         self.association_gate_m = float(association_gate_m)
         self.association_uncertainty_scale = float(association_uncertainty_scale)
@@ -172,6 +177,10 @@ class TargetMemory:
         self.velocity_blend_alpha = max(0.0, min(1.0, float(velocity_blend_alpha)))
         self.max_velocity_mps = float(max_velocity_mps)
         self.history_length = max(2, int(history_length))
+        self.max_observation_speed_mps = max(0.0, float(max_observation_speed_mps))
+        self.position_noise_allowance_m = max(0.0, float(position_noise_allowance_m))
+        self.confirmation_count = max(1, int(confirmation_count))
+        self.confirmation_span_s = max(0.0, float(confirmation_span_s))
         self.tracks: dict[int, TargetMemoryTrack] = {}
         self.next_map_id = 1
 
@@ -192,10 +201,15 @@ class TargetMemory:
                 observation.velocity_mps
             ):
                 continue
+            if self.max_observation_speed_mps > 0.0 and observation.source != TRACK_SOURCE_DETECTED:
+                continue
             map_id = self._find_match(observation, available_track_ids, now_s=now_s)
             if map_id is None:
                 map_id = self._create_track(observation, now_s=now_s)
             else:
+                if (self.max_observation_speed_mps > 0.0 and
+                        observation.observed_at_s <= self.tracks[map_id].last_observed_s + 1e-3):
+                    continue
                 self._update_track(map_id, observation, now_s=now_s)
             available_track_ids.discard(map_id)
 
@@ -220,6 +234,8 @@ class TargetMemory:
         for track in self.tracks.values():
             if track.observed_age_s(now_s) > self.max_prediction_horizon_s:
                 continue
+            if not self._is_confirmed(track):
+                continue
             if (
                 track.output_source(now_s, observation_fresh_s=observation_fresh_s)
                 == TRACK_SOURCE_PREDICTED
@@ -235,9 +251,16 @@ class TargetMemory:
             map_id
             for map_id, track in self.tracks.items()
             if track.observed_age_s(now_s) > prune_after_s
+            or (self.max_observation_speed_mps > 0.0 and
+                not self._is_confirmed(track) and
+                track.observed_age_s(now_s) > 0.5)
         ]
         for map_id in stale_ids:
             self.tracks.pop(map_id, None)
+
+    def _is_confirmed(self, track: TargetMemoryTrack) -> bool:
+        return (track.observed_count >= self.confirmation_count and
+                track.last_observed_s - track.first_observed_s >= self.confirmation_span_s)
 
     def _find_match(
         self,
@@ -246,12 +269,20 @@ class TargetMemory:
         *,
         now_s: float,
     ) -> int | None:
+        def plausible(track: TargetMemoryTrack) -> bool:
+            if self.max_observation_speed_mps <= 0.0:
+                return True
+            dt_s = max(0.0, min(observation.observed_at_s - track.last_observed_s, 0.5))
+            limit_m = self.position_noise_allowance_m + self.max_observation_speed_mps * dt_s
+            return float(np.linalg.norm(track.position_m - observation.position_m)) <= limit_m
+
         detector_track_id = int(observation.detector_track_id)
         if detector_track_id >= 0:
             detector_matches = [
                 map_id
                 for map_id in available_track_ids
-                if self.tracks[map_id].detector_track_id == detector_track_id
+                if (self.tracks[map_id].detector_track_id == detector_track_id and
+                    plausible(self.tracks[map_id]))
             ]
             if detector_matches:
                 return min(detector_matches)
@@ -261,6 +292,8 @@ class TargetMemory:
         for map_id in available_track_ids:
             track = self.tracks[map_id]
             if track.observed_age_s(now_s) > self.max_prediction_horizon_s:
+                continue
+            if not plausible(track):
                 continue
             distance_m = float(np.linalg.norm(track.position_m - observation.position_m))
             gate_m = max(
@@ -298,13 +331,16 @@ class TargetMemory:
             map_id=map_id,
             detector_track_id=int(observation.detector_track_id),
             position_m=np.asarray(observation.position_m, dtype=np.float64).copy(),
-            velocity_mps=self._bounded_velocity(observation.velocity_mps),
+            velocity_mps=(np.zeros(3, dtype=np.float64)
+                          if self.max_observation_speed_mps > 0.0 else
+                          self._bounded_velocity(observation.velocity_mps)),
             confidence=float(max(0.0, min(1.0, observation.confidence))),
             bbox_area_px=float(observation.bbox_area_px),
             distance_m=float(observation.distance_m),
             inbound=bool(observation.inbound),
             first_observed_s=float(observation.observed_at_s),
             last_observed_s=float(observation.observed_at_s),
+            last_observed_position_m=np.asarray(observation.position_m, dtype=np.float64).copy(),
             last_observation_received_s=float(now_s),
             last_update_s=float(now_s),
             source=int(observation.source),
@@ -324,11 +360,16 @@ class TargetMemory:
         now_s: float,
     ) -> None:
         track = self.tracks[map_id]
-        previous_position_m = track.position_m.copy()
+        previous_position_m = (track.last_observed_position_m.copy()
+                               if self.max_observation_speed_mps > 0.0 else
+                               track.position_m.copy())
         previous_observed_s = track.last_observed_s
         observed_dt_s = max(float(observation.observed_at_s) - previous_observed_s, 0.0)
         observed_velocity_mps = self._bounded_velocity(observation.velocity_mps)
-        if np.linalg.norm(observed_velocity_mps) <= 1e-6 and observed_dt_s > 1e-3:
+        if self.max_observation_speed_mps > 0.0 and observed_dt_s > 1e-3:
+            observed_velocity_mps = self._bounded_velocity(
+                (observation.position_m - previous_position_m) / observed_dt_s)
+        elif np.linalg.norm(observed_velocity_mps) <= 1e-6 and observed_dt_s > 1e-3:
             observed_velocity_mps = self._bounded_velocity(
                 (observation.position_m - previous_position_m) / observed_dt_s
             )
@@ -338,6 +379,7 @@ class TargetMemory:
             (alpha * observed_velocity_mps) + ((1.0 - alpha) * track.velocity_mps)
         )
         track.position_m = np.asarray(observation.position_m, dtype=np.float64).copy()
+        track.last_observed_position_m = track.position_m.copy()
         track.detector_track_id = int(observation.detector_track_id)
         track.confidence = float(max(0.0, min(1.0, observation.confidence)))
         track.bbox_area_px = float(observation.bbox_area_px)

@@ -5,10 +5,12 @@ from dataclasses import dataclass
 import json
 import math
 from pathlib import Path
+import threading
 import time
 
 import numpy as np
 import rclpy
+from builtin_interfaces.msg import Time as TimeMsg
 from drone_control_pkg.deployment_config import (
     configured_compare_pose_topic,
     configured_drone_id,
@@ -25,6 +27,7 @@ from drone_msgs.msg import (
 )
 from geometry_msgs.msg import PoseStamped
 from mavros_msgs.msg import State
+from rclpy.callback_groups import MutuallyExclusiveCallbackGroup
 from rclpy.node import Node
 from rclpy.qos import (
     HistoryPolicy,
@@ -274,6 +277,59 @@ def compute_mean_depth(
     return float(np.median(crop[mask]))
 
 
+def compute_detection_depth(
+    depth_frame: np.ndarray | None,
+    center: np.ndarray,
+    *,
+    frame_shape: tuple[int, ...],
+    bbox: list[float] | None,
+    obb_polygon: list[list[float]] | None,
+    radius_px: int,
+    max_valid_depth_m: float,
+) -> float:
+    """Sample the inner detection region, excluding surrounding background."""
+    if depth_frame is None:
+        return 0.0
+    height, width = depth_frame.shape[:2]
+    if height <= 0 or width <= 0:
+        return 0.0
+    source_height, source_width = frame_shape[:2]
+    if source_height <= 0 or source_width <= 0:
+        return 0.0
+    sx, sy = width / source_width, height / source_height
+    mask = np.zeros((height, width), dtype=np.uint8)
+    if obb_polygon is not None and len(obb_polygon) == 4 and cv2 is not None:
+        polygon = np.asarray(obb_polygon, dtype=np.float32)
+        polygon *= np.array([sx, sy], dtype=np.float32)
+        polygon = polygon.mean(axis=0) + 0.7 * (polygon - polygon.mean(axis=0))
+        cv2.fillConvexPoly(mask, np.rint(polygon).astype(np.int32), 1)
+    elif bbox is not None and len(bbox) == 4:
+        x1, y1, x2, y2 = map(float, bbox)
+        cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+        half_width = max((x2 - x1) * sx * 0.3, 1.0)
+        half_height = max((y2 - y1) * sy * 0.3, 1.0)
+        left = max(0, int(np.floor(cx * sx - half_width)))
+        right = min(width, int(np.ceil(cx * sx + half_width)) + 1)
+        top = max(0, int(np.floor(cy * sy - half_height)))
+        bottom = min(height, int(np.ceil(cy * sy + half_height)) + 1)
+        mask[top:bottom, left:right] = 1
+    else:
+        return compute_mean_depth(
+            depth_frame, center, radius_px, max_valid_depth_m)
+    values = np.asarray(depth_frame, dtype=np.float32)[mask != 0]
+    if values.size < 3:
+        return 0.0
+    values = values[np.isfinite(values)]
+    if values.size < 3:
+        return 0.0
+    if float(np.max(values)) > 100.0:
+        values = values * 0.001
+    values = values[(values > 0.0) & (values <= max_valid_depth_m)]
+    if values.size < 3:
+        return 0.0
+    return float(np.median(values))
+
+
 def normalize_zed_enum_name(
     value: object,
     *,
@@ -326,6 +382,23 @@ def normalize_zed_image_view(value: object) -> str:
 def zed_timestamp_key(timestamp_ns: int) -> tuple[int, int]:
     timestamp_ns = int(timestamp_ns)
     return (timestamp_ns // 1_000_000_000, timestamp_ns % 1_000_000_000)
+
+
+def matching_image_stamps(color_msg: Image, depth_msg: Image | None) -> bool:
+    return depth_msg is not None and (
+        color_msg.header.stamp.sec == depth_msg.header.stamp.sec and
+        color_msg.header.stamp.nanosec == depth_msg.header.stamp.nanosec
+    )
+
+
+def frame_pose_matches(frame_time_s: float, pose: PoseStamped | None,
+                       now_s: float, world_frame: str) -> bool:
+    if pose is None or not -0.25 <= now_s - frame_time_s <= 0.5:
+        return False
+    if world_frame and pose.header.frame_id and pose.header.frame_id != world_frame:
+        return False
+    pose_time_s = pose.header.stamp.sec + pose.header.stamp.nanosec * 1e-9
+    return abs(pose_time_s - frame_time_s) <= 0.25
 
 
 def rotate_camera_intrinsics_180(
@@ -401,6 +474,8 @@ def yolo_boxes_to_detections(
     if len(xyxy) == 0:
         return []
     conf = boxes.conf.cpu().numpy() if boxes.conf is not None else np.ones(len(xyxy))
+    polygon_tensor = getattr(boxes, "xyxyxyxy", None)
+    polygons = polygon_tensor.cpu().numpy() if polygon_tensor is not None else None
     detections: list[Detection] = []
     for idx, bbox in enumerate(xyxy):
         x1, y1, x2, y2 = [float(value) for value in bbox[:4]]
@@ -413,6 +488,8 @@ def yolo_boxes_to_detections(
                 scores=np.array([float(conf[idx])], dtype=np.float32),
                 data={
                     "bbox": [x1, y1, x2, y2],
+                    "obb_polygon": (polygons[idx].tolist()
+                                    if polygons is not None else None),
                     "bbox_area_px": bbox_area_px,
                     "confidence": float(conf[idx]),
                 },
@@ -427,6 +504,15 @@ def yolo_boxes_to_detections(
     return detections
 
 
+def select_yolo_boxes(result, model_task: str):
+    boxes = getattr(result, "obb" if model_task == "obb" else "boxes", None)
+    if boxes is None:
+        raise RuntimeError(
+            f"Detector returned no {model_task} output. Check engine task and "
+            "TensorRT compatibility before flight.")
+    return boxes
+
+
 class RealsenseTrackerNode(Node):
     def __init__(self) -> None:
         super().__init__("realsense_tracker_node")
@@ -436,6 +522,8 @@ class RealsenseTrackerNode(Node):
         self.declare_parameter("tracker_rate_hz", 10.0)
         self.declare_parameter("device_id", 0)
         self.declare_parameter("model_path", "")
+        self.declare_parameter("model_task", "detect")
+        self.declare_parameter("model_data_config", "")
         self.declare_parameter("model_input_size", 640)
         self.declare_parameter("detection_conf_threshold", 0.4)
         self.declare_parameter("norfair_distance_threshold", 80.0)
@@ -494,7 +582,10 @@ class RealsenseTrackerNode(Node):
         self.declare_parameter("zed_depth_minimum_distance_m", 0.4)
         self.declare_parameter("zed_depth_maximum_distance_m", 20.0)
         self.declare_parameter("zed_image_view", "left")
+        self.declare_parameter("zed_mount_config", "")
+        self.declare_parameter("zed_ready_before_inference_s", 0.0)
         self.declare_parameter("mavros_namespace", configured_mavros_namespace())
+        self.declare_parameter("inference_device", "")
         self.declare_parameter("record_mission_video", True)
         self.declare_parameter("recording_output_dir", "mission_recordings")
         self.declare_parameter("recording_fps", 10.0)
@@ -513,9 +604,18 @@ class RealsenseTrackerNode(Node):
 
         self.drone_id = str(self.get_parameter("drone_id").value)
         self.source_mode = str(self.get_parameter("source_mode").value).strip().lower()
+        self.zed_ready_before_inference_s = max(
+            0.0, float(self.get_parameter("zed_ready_before_inference_s").value))
         self.tracker_rate_hz = float(self.get_parameter("tracker_rate_hz").value)
         self.device_id = int(self.get_parameter("device_id").value)
+        self.inference_device = (str(self.get_parameter("inference_device").value).strip()
+                                 or self.device_id)
         self.model_input_size = int(self.get_parameter("model_input_size").value)
+        self.model_task = str(self.get_parameter("model_task").value).strip().lower()
+        if self.model_task not in {"detect", "obb"}:
+            raise ValueError("model_task must be detect or obb")
+        self.model_data_config = str(
+            self.get_parameter("model_data_config").value).strip()
         self.conf_threshold = float(
             self.get_parameter("detection_conf_threshold").value
         )
@@ -721,11 +821,25 @@ class RealsenseTrackerNode(Node):
             float(value)
             for value in self.get_parameter("camera_body_axis_signs").value
         ]
+        zed_mount_config = str(self.get_parameter("zed_mount_config").value).strip()
+        if zed_mount_config:
+            from scipy.spatial.transform import Rotation
+            from drone_control_pkg.zed_vio import load_mount
 
-        if self.source_mode not in {"direct", "ros", "zed_sdk"}:
+            mount = load_mount(zed_mount_config)
+            if mount is None:
+                raise RuntimeError("ZED mount must be calibrated for target projection")
+            camera_offset_body_m = list(mount.body_to_camera_translation_m)
+            rotation = Rotation.from_euler("xyz", mount.body_to_camera_rpy_rad)
+            if self.zed_rotate_180:
+                rotation = rotation * Rotation.from_euler("x", 180.0, degrees=True)
+            camera_rpy_body_rad = list(rotation.as_euler("xyz"))
+            camera_body_axis_signs = [1.0, 1.0, 1.0]
+
+        if self.source_mode not in {"direct", "ros", "zed_sdk", "embedded_zed"}:
             raise RuntimeError(
-                "Unsupported source_mode. Expected 'direct', 'ros', or "
-                f"'zed_sdk', got '{self.source_mode}'."
+                "Unsupported source_mode. Expected 'direct', 'ros', "
+                f"'zed_sdk', or 'embedded_zed', got '{self.source_mode}'."
             )
         if cv2 is None or YOLO is None or Detection is None or Tracker is None:
             raise RuntimeError(
@@ -755,7 +869,7 @@ class RealsenseTrackerNode(Node):
             world_frame=self.world_frame,
             camera_body_axis_signs=camera_body_axis_signs,
         )
-        self.model = YOLO(self.model_path, task="detect")
+        self.model = YOLO(self.model_path, task=self.model_task)
         self.tracker = self._build_tracker()
         self.motion_estimator = (
             MotionEstimator()
@@ -765,9 +879,12 @@ class RealsenseTrackerNode(Node):
 
         self.latest_color_msg: Image | None = None
         self.latest_depth_msg: Image | None = None
+        self.embedded_frame_lock = threading.Lock()
+        self.latest_embedded_frame: tuple[np.ndarray, np.ndarray, tuple[int, int]] | None = None
         self.last_color_stamp_key: tuple[int, int] = (-1, -1)
         self.last_process_s = 0.0
         self.last_inference_ms = 0.0
+        self.last_perf_log_s = 0.0
         self.last_wait_warn_s = 0.0
         self.last_pose_warn_s = 0.0
         self.last_compare_pose_warn_s = 0.0
@@ -795,6 +912,18 @@ class RealsenseTrackerNode(Node):
         self.zed_image_view = None
         self.depth_scale_m = 0.001
         self.latest_compare_pose: PoseStamped | None = None
+        self.last_projection_pose_s = 0.0
+        self.pose_history: list[PoseStamped] = []
+        self.pose_history_lock = threading.Lock()
+        self.last_received_pose_position_m: np.ndarray | None = None
+        self.last_received_pose_stamp_s = 0.0
+        self.pose_jump_pending = False
+        # Keep pose and ZED health callbacks responsive during slow inference.
+        self.pose_callback_group = MutuallyExclusiveCallbackGroup()
+        self.frame_pose_aligned = True
+        self.zed_tracking_status = "missing"
+        self.zed_ready_since_s: float | None = None
+        self.last_zed_status_s = 0.0
         self.latest_engagement_state = EngagementState()
         self.latest_engagement_state.state = "IDLE"
         self.latest_mavros_state = State()
@@ -824,6 +953,12 @@ class RealsenseTrackerNode(Node):
             depth=10,
         )
 
+        if self.source_mode in {"ros", "embedded_zed"}:
+            if self.zed_ready_before_inference_s > 0.0:
+                self.create_subscription(
+                    String, cdrone_topic(self.drone_id, "zed/tracking_status"),
+                    self.zed_tracking_status_callback, 10,
+                    callback_group=self.pose_callback_group)
         if self.source_mode == "ros":
             self.create_subscription(
                 Image,
@@ -845,7 +980,7 @@ class RealsenseTrackerNode(Node):
             )
         elif self.source_mode == "direct":
             self._start_direct_pipeline()
-        else:
+        elif self.source_mode == "zed_sdk":
             self._start_zed_sdk_pipeline()
 
         if self.publish_world_tracks:
@@ -854,6 +989,9 @@ class RealsenseTrackerNode(Node):
                 self.pose_topic,
                 self.pose_callback,
                 best_effort_qos,
+                callback_group=(self.pose_callback_group
+                                if self.source_mode in {"ros", "embedded_zed"}
+                                else None),
             )
         if self.publish_world_track_compare:
             self.create_subscription(
@@ -949,6 +1087,9 @@ class RealsenseTrackerNode(Node):
         self.get_logger().info(
             "RealSense tracker started: "
             f"source_mode={self.source_mode}, model={self.model_path}, "
+            f"model_task={self.model_task}, "
+            f"inference_device={self.inference_device}, "
+            f"zed_ready_before_inference_s={self.zed_ready_before_inference_s:.1f}, "
             f"tracks={self.tracks_topic}, "
             f"world_tracks={self.world_tracks_topic}, "
             f"pose={self.pose_topic if self.publish_world_tracks else 'disabled'}, "
@@ -1003,6 +1144,23 @@ class RealsenseTrackerNode(Node):
     def now_s(self) -> float:
         return self.get_clock().now().nanoseconds / 1e9
 
+    def zed_tracking_status_callback(self, msg: String) -> None:
+        self.zed_tracking_status = str(msg.data)
+        self.last_zed_status_s = self.now_s()
+        if self.zed_tracking_status == "OK":
+            if self.zed_ready_since_s is None:
+                self.zed_ready_since_s = self.now_s()
+        else:
+            self.zed_ready_since_s = None
+
+    def zed_ready_for_inference(self) -> bool:
+        if self.zed_ready_before_inference_s <= 0.0:
+            return True
+        return (self.zed_ready_since_s is not None and
+                self.now_s() - self.last_zed_status_s <= 1.0 and
+                self.now_s() - self.zed_ready_since_s >=
+                self.zed_ready_before_inference_s)
+
     def destroy_node(self) -> bool:
         self._stop_mission_recording("node shutdown")
         self._flush_world_track_compare_csv(force=True)
@@ -1035,6 +1193,18 @@ class RealsenseTrackerNode(Node):
     def color_callback(self, msg: Image) -> None:
         self.latest_color_msg = msg
 
+    def accept_zed_frame(self, color: np.ndarray, depth: np.ndarray,
+                         stamp_ns: int,
+                         intrinsics: tuple[float, float, float, float]) -> None:
+        """Receive the camera owner's latest frame without ROS image transport."""
+        if self.source_mode != "embedded_zed":
+            return
+        fx, fy, cx, cy = intrinsics
+        if not self.projector.has_intrinsics():
+            self.projector.set_intrinsics(fx=fx, fy=fy, cx=cx, cy=cy)
+        with self.embedded_frame_lock:
+            self.latest_embedded_frame = (color, depth, zed_timestamp_key(stamp_ns))
+
     def depth_callback(self, msg: Image) -> None:
         self.latest_depth_msg = msg
 
@@ -1042,7 +1212,36 @@ class RealsenseTrackerNode(Node):
         self.projector.update_camera_info(msg)
 
     def pose_callback(self, msg: PoseStamped) -> None:
+        if self.source_mode in {"ros", "embedded_zed"}:
+            current = np.array([msg.pose.position.x, msg.pose.position.y,
+                                msg.pose.position.z], dtype=np.float64)
+            stamp_s = msg.header.stamp.sec + msg.header.stamp.nanosec * 1e-9
+            with self.pose_history_lock:
+                if stamp_s <= self.last_received_pose_stamp_s:
+                    return
+                if self.last_received_pose_position_m is not None:
+                    elapsed_s = stamp_s - self.last_received_pose_stamp_s
+                    if float(np.linalg.norm(current - self.last_received_pose_position_m)) > (
+                            0.5 + 2.0 * elapsed_s):
+                        self.pose_history.clear()
+                        self.pose_jump_pending = True
+                self.last_received_pose_position_m = current
+                self.last_received_pose_stamp_s = stamp_s
+                self.pose_history.append(msg)
+                self.pose_history = self.pose_history[-30:]
+            self.last_projection_pose_s = self.now_s()
+            return
+        if self.projector.drone_position_m is not None:
+            previous = self.projector.drone_position_m
+            current = np.array([msg.pose.position.x, msg.pose.position.y,
+                                msg.pose.position.z], dtype=np.float64)
+            if float(np.linalg.norm(current - previous)) > 0.5:
+                self.prev_world_positions.clear()
+                self.pose_history.clear()
         self.projector.update_pose(msg)
+        self.last_projection_pose_s = self.now_s()
+        self.pose_history.append(msg)
+        self.pose_history = self.pose_history[-30:]
 
     def compare_pose_callback(self, msg: PoseStamped) -> None:
         self.latest_compare_pose = msg
@@ -2126,6 +2325,12 @@ class RealsenseTrackerNode(Node):
         return f"{float(flow_range.range):.2f}m age={age_s:.1f}s"
 
     def process_latest_frame(self) -> None:
+        if not self.zed_ready_for_inference():
+            self._warn_throttled(
+                "Waiting for stable ZED tracking before detector inference: "
+                f"status={self.zed_tracking_status}",
+                attr_name="last_wait_warn_s")
+            return
         frame: np.ndarray | None = None
         depth_frame: np.ndarray | None = None
 
@@ -2137,6 +2342,15 @@ class RealsenseTrackerNode(Node):
         elif self.source_mode == "zed_sdk":
             zed_frame = self._read_zed_sdk_frame()
             if zed_frame is None:
+                return
+            frame, depth_frame, stamp_key = zed_frame
+        elif self.source_mode == "embedded_zed":
+            with self.embedded_frame_lock:
+                zed_frame = self.latest_embedded_frame
+            if zed_frame is None:
+                self._warn_throttled(
+                    "Waiting for the first in-process ZED frame.",
+                    attr_name="last_wait_warn_s")
                 return
             frame, depth_frame, stamp_key = zed_frame
         else:
@@ -2153,32 +2367,53 @@ class RealsenseTrackerNode(Node):
                 int(color_msg.header.stamp.sec),
                 int(color_msg.header.stamp.nanosec),
             )
-            if stamp_key == self.last_color_stamp_key:
+            if stamp_key <= self.last_color_stamp_key:
+                return
+
+            if not matching_image_stamps(color_msg, self.latest_depth_msg):
                 return
 
             frame = self.bridge.imgmsg_to_cv2(color_msg, desired_encoding="bgr8")
-            if self.latest_depth_msg is not None:
-                depth_frame = self.bridge.imgmsg_to_cv2(
-                    self.latest_depth_msg,
-                    desired_encoding="passthrough",
-                )
+            depth_frame = self.bridge.imgmsg_to_cv2(
+                self.latest_depth_msg, desired_encoding="passthrough")
 
-        if stamp_key == self.last_color_stamp_key:
+        if stamp_key <= self.last_color_stamp_key:
             return
         self.last_color_stamp_key = stamp_key
 
+        self.frame_pose_aligned = True
+        if self.source_mode in {"ros", "embedded_zed"}:
+            frame_time_s = stamp_key[0] + stamp_key[1] * 1e-9
+            with self.pose_history_lock:
+                nearby = min(self.pose_history,
+                             key=lambda pose: abs(pose.header.stamp.sec +
+                                                  pose.header.stamp.nanosec * 1e-9 - frame_time_s),
+                             default=None)
+                pose_jump_pending = self.pose_jump_pending
+                self.pose_jump_pending = False
+            if pose_jump_pending:
+                self.prev_world_positions.clear()
+            self.frame_pose_aligned = frame_pose_matches(
+                frame_time_s, nearby, self.now_s(), self.projector.world_frame)
+            if self.frame_pose_aligned:
+                self.projector.update_pose(nearby)
+
         infer_start_s = time.perf_counter()
+        predict_kwargs = {"data": self.model_data_config} if self.model_data_config else {}
         results = self.model.predict(
             source=frame,
             conf=self.conf_threshold,
             imgsz=self.model_input_size,
             verbose=False,
-            device=self.device_id,
+            device=self.inference_device,
+            **predict_kwargs,
         )
         self.last_inference_ms = (time.perf_counter() - infer_start_s) * 1000.0
+        if not results:
+            raise RuntimeError("Detector returned no result; flight readiness is unavailable")
 
         detections = yolo_boxes_to_detections(
-            results[0].boxes if results else None,
+            select_yolo_boxes(results[0], self.model_task),
             frame=frame,
             enable_reid=self.enable_reid,
             reid_histogram_bins=self.reid_histogram_bins,
@@ -2199,6 +2434,11 @@ class RealsenseTrackerNode(Node):
         if self.last_process_s > 0.0:
             tracker_fps = 1.0 / max(process_time_s - self.last_process_s, 1e-3)
         self.last_process_s = process_time_s
+        world_observation_s = process_time_s
+        world_stamp_msg = now_msg
+        if self.source_mode in {"ros", "embedded_zed"}:
+            world_observation_s = stamp_key[0] + stamp_key[1] * 1e-9
+            world_stamp_msg = TimeMsg(sec=stamp_key[0], nanosec=stamp_key[1])
 
         body_tracks, body_track_debug = self._build_body_tracks(
             tracked_objects=tracked_objects,
@@ -2209,9 +2449,13 @@ class RealsenseTrackerNode(Node):
         )
         world_tracks = self._build_world_tracks(
             body_tracks=body_tracks,
-            stamp_msg=now_msg,
-            now_s=process_time_s,
+            stamp_msg=world_stamp_msg,
+            now_s=world_observation_s,
         )
+        if self.source_mode in {"ros", "embedded_zed"}:
+            capture_age_s = max(0.0, process_time_s - world_observation_s)
+            for track in world_tracks:
+                track.last_observed_age_s += capture_age_s
 
         body_array = TargetTrackArray()
         body_array.stamp = now_msg
@@ -2219,7 +2463,7 @@ class RealsenseTrackerNode(Node):
         self.tracks_pub.publish(body_array)
 
         world_array = WorldTargetTrackArray()
-        world_array.stamp = now_msg
+        world_array.stamp = world_stamp_msg
         world_array.frame_id = self.projector.frame_id
         world_array.tracks = world_tracks
         self.world_tracks_pub.publish(world_array)
@@ -2250,6 +2494,15 @@ class RealsenseTrackerNode(Node):
         status.paired_detections = 0
         status.active_tracks = int(len(body_tracks))
         self.status_pub.publish(status)
+        if process_time_s - self.last_perf_log_s >= 5.0:
+            self.last_perf_log_s = process_time_s
+            frame_age_s = max(0.0, process_time_s - world_observation_s)
+            self.get_logger().info(
+                f"Detector timing: tracker_hz={tracker_fps:.2f}, "
+                f"inference_ms={self.last_inference_ms:.1f}, "
+                f"frame_age_ms={frame_age_s * 1000.0:.1f}, "
+                f"detections={len(detections)}, body_tracks={len(body_tracks)}, "
+                f"world_tracks={len(world_tracks)}, pose_aligned={self.frame_pose_aligned}")
         self._maybe_record_mission_frame(
             frame=frame,
             depth_frame=depth_frame,
@@ -2521,9 +2774,12 @@ class RealsenseTrackerNode(Node):
                 frame.shape,
                 None if depth_frame is None else depth_frame.shape,
             )
-            depth_m = compute_mean_depth(
+            depth_m = compute_detection_depth(
                 depth_frame,
                 depth_center,
+                frame_shape=frame.shape,
+                bbox=detection.data.get("bbox"),
+                obb_polygon=detection.data.get("obb_polygon"),
                 radius_px=self.depth_window_px,
                 max_valid_depth_m=self.max_valid_depth_m,
             )
@@ -2729,7 +2985,8 @@ class RealsenseTrackerNode(Node):
     ) -> list[WorldTargetTrack]:
         if not self.publish_world_tracks:
             return []
-        if not self.projector.has_pose():
+        if (not self.projector.has_pose() or not self.frame_pose_aligned or
+                self.now_s() - self.last_projection_pose_s > 0.5):
             if body_tracks:
                 self._warn_throttled(
                     "Ownship pose is missing, so world tracks are not being "

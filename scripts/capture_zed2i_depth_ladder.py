@@ -77,7 +77,9 @@ def load_detector(model_path: str):
         return None
     if YOLO is None:
         raise SystemExit("ultralytics is not available, but --model-path was supplied.")
-    return YOLO(resolve_model_path(model_path), task="detect")
+    resolved = resolve_model_path(model_path)
+    task = "obb" if Path(resolved).name == "best.engine" else "detect"
+    return YOLO(resolved, task=task)
 
 
 def best_detection(detector, image_bgr: np.ndarray, *, conf_threshold: float):
@@ -85,15 +87,21 @@ def best_detection(detector, image_bgr: np.ndarray, *, conf_threshold: float):
 
     if detector is None:
         return None, 0
+    task = str(getattr(detector, "task", "detect"))
+    predict_kwargs = ({"data": str(ROS_SRC / "config" / "drone_detector.yaml")}
+                      if task == "obb" else {})
     results = detector.predict(
         image_bgr,
         imgsz=640,
         conf=float(conf_threshold),
         verbose=False,
+        **predict_kwargs,
     )
-    if not results or results[0].boxes is None or results[0].boxes.xyxy is None:
+    if not results:
         return None, 0
-    boxes = results[0].boxes
+    boxes = results[0].obb if task == "obb" else results[0].boxes
+    if boxes is None or boxes.xyxy is None:
+        raise RuntimeError(f"{task} detector returned no compatible output")
     xyxy = boxes.xyxy.cpu().numpy()
     if len(xyxy) == 0:
         return None, 0
@@ -111,7 +119,7 @@ def best_detection(detector, image_bgr: np.ndarray, *, conf_threshold: float):
             continue
         area = (x2 - x1) * (y2 - y1)
         area_fraction = area / image_area
-        if area_fraction < 0.001 or area_fraction > 0.50:
+        if area_fraction < 0.00001 or area_fraction > 0.50:
             continue
         bbox_center = np.array([(x1 + x2) / 2.0, (y1 + y2) / 2.0])
         center_distance = float(np.linalg.norm(bbox_center - image_center))
@@ -441,7 +449,7 @@ def main() -> int:
     parser.add_argument("--depth-mode", default="NEURAL")
     parser.add_argument("--coordinate-system", default="RIGHT_HANDED_Z_UP_X_FWD")
     parser.add_argument("--min-depth-m", type=float, default=0.4)
-    parser.add_argument("--max-depth-m", type=float, default=20.0)
+    parser.add_argument("--max-depth-m", type=float, default=25.0)
     parser.add_argument("--rotate-180", action="store_true", default=False)
     return capture(parser.parse_args())
 

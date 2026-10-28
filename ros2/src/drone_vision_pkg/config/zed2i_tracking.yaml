@@ -1,14 +1,14 @@
 realsense_tracker_node:
   ros__parameters:
     source_mode: zed_sdk
-    tracker_rate_hz: 10.0
+    tracker_rate_hz: 15.0
     device_id: 0
     model_path: ""
     model_input_size: 640
     detection_conf_threshold: 0.40
     norfair_distance_threshold: 80.0
     track_hit_counter_max: 12
-    max_valid_depth_m: 20.0
+    max_valid_depth_m: 25.0
     depth_window_px: 5
     publish_world_tracks: true
     publish_world_track_compare: true
@@ -35,7 +35,7 @@ realsense_tracker_node:
     zed_flip_mode: "OFF"
     zed_rotate_180: true
     zed_depth_minimum_distance_m: 0.4
-    zed_depth_maximum_distance_m: 20.0
+    zed_depth_maximum_distance_m: 25.0
     zed_image_view: left
     record_mission_video: true
     recording_output_dir: /home/jetson/cdrone_control/mission_recordings
