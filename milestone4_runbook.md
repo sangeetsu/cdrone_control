@@ -1,6 +1,18 @@
 # Milestone 4 Runbook
 
 Commands below assume your shell already loaded ROS 2 and the local workspace.
+For paired operation, use these settings in **every command terminal on both
+Jetsons** before starting ROS processes:
+
+```bash
+export ROS_DOMAIN_ID=3
+export ROS_LOCALHOST_ONLY=1
+```
+
+If a ROS CLI daemon was started with different settings, run `ros2 daemon stop`
+once after exporting them. Each Jetson discovers only its own stack. SSH is
+used for launch and explicit start/check/abort requests; there is no exchange
+of target tracks, poses, mission state, or heartbeats between the drones.
 Detailed notes live in `docs/milestones/milestone4.md`. For SDK, topic,
 camera, detector, and reboot diagnosis, use
 [Milestone 4 troubleshooting](milestone4_troubleshooting.md).
@@ -25,12 +37,101 @@ output and real-world speed must be verified on this Jetson.
 
 ## Build
 
+After pushing the changes, pull the same `OF_localise` revision and run this
+build on **both** Jetsons. Each needs its own ZED SDK, compatible detector
+engine, and measured mount file. Do not copy cdrone3's calibration onto cdrone4.
+
 ```bash
 cd /home/jetson/cdrone_control/ros2
 source /opt/ros/humble/setup.bash
 colcon build --packages-select drone_msgs drone_control_pkg drone_vision_pkg drone_bringup
 source /home/jetson/cdrone_control/ros2/install/setup.bash
 ```
+
+## Paired launch setup
+
+The launching Jetson is `cdrone3`; the peer is `jetson@192.168.0.121`
+(`cdrone4`). Both use ZED 2i and `/home/jetson/cdrone_control`. The launch passes
+explicit identities and namespaces, so pulling the tracked cdrone3 defaults
+on the peer does not cause a namespace collision in this paired workflow.
+
+Set up SSH key authentication from cdrone3, then verify noninteractive access:
+
+```bash
+ssh-copy-id jetson@192.168.0.121
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes jetson@192.168.0.121 \
+  'test -f /home/jetson/cdrone_control/ros2/install/setup.bash && test -f /home/jetson/zed_hover_mount_run2.yaml'
+```
+
+The peer needs its **own** calibration at that path. Override
+`peer_zed_mount_config` if it uses another filename. The other optional
+arguments are `peer_user`, `peer_workspace`, and `peer_drone_id`.
+Initial inspection found SSH authentication failing; complete this setup before
+trying paired launch. A failed peer launch prevents the shared start service
+from starting either drone.
+
+The peer runs in a detached process session, with logs in
+`~/.ros/milestone4/cdrone4_<UTC timestamp>.log` and its PID/log path in
+`~/.ros/milestone4/session.json`. Closing SSH does not stop it. Each host allows
+only one Milestone 4 launch at a time, including a single-drone launch.
+
+## One-time setup without RC or QGC
+
+`companion_only:=true` enables **read-only** checks of the additional PX4
+settings below. It does not change flight-controller parameters. The existing
+ZED vision profile still applies. The added profile is
+[`milestone4_companion_only_px4_1_16.yaml`](ros2/src/drone_bringup/config/milestone4_companion_only_px4_1_16.yaml).
+
+| PX4 parameter | Required value | Purpose |
+| --- | --- | --- |
+| `COM_RC_IN_MODE` | `4` | Disable RC/joystick stick input |
+| `NAV_DLL_ACT` | `0` | Do not require a QGC/GCS connection |
+| `COM_OBL_RC_ACT` | `4` | Land if OFFBOARD control is lost |
+| `COM_OF_LOSS_T` | `1.0` | Retain the existing OFFBOARD-loss timeout |
+
+These are for PX4 1.16; see the [PX4 OFFBOARD documentation](https://docs.px4.io/v1.16/en/flight_modes/offboard).
+With stick input disabled, RC/joystick takeover is unavailable. Use each
+drone's abort service to request landing; loss of its onboard OFFBOARD stream
+still invokes PX4's landing failsafe.
+
+Start a flight-disabled stack first. For both drones together, use the paired
+flight command below with `enable_flight:=false`. On **each Jetson's own
+terminal**, source ROS and the workspace, export the localhost settings above,
+and set `M4_DRONE_ID=cdrone3` locally or `M4_DRONE_ID=cdrone4` on the peer.
+With motors disconnected, confirm the state reports `armed: false`, then back
+up the parameter mirror before making the four explicit changes:
+
+```bash
+M4_DRONE_ID=cdrone3  # Use cdrone4 on 192.168.0.121.
+ros2 topic echo --once /cdrone/$M4_DRONE_ID/mavros/state
+ros2 service call /cdrone/$M4_DRONE_ID/mavros/param/pull \
+  mavros_msgs/srv/ParamPull '{force_pull: true}'
+M4_BACKUP="$HOME/milestone4_params_${M4_DRONE_ID}_$(date -u +%Y%m%dT%H%M%SZ).yaml"
+ros2 param dump /cdrone/$M4_DRONE_ID/mavros/param > "$M4_BACKUP"
+
+ros2 param set /cdrone/$M4_DRONE_ID/mavros/param COM_RC_IN_MODE 4
+ros2 param set /cdrone/$M4_DRONE_ID/mavros/param NAV_DLL_ACT 0
+ros2 param set /cdrone/$M4_DRONE_ID/mavros/param COM_OBL_RC_ACT 4
+ros2 param set /cdrone/$M4_DRONE_ID/mavros/param COM_OF_LOSS_T 1.0
+
+ros2 param get /cdrone/$M4_DRONE_ID/mavros/param COM_RC_IN_MODE
+ros2 param get /cdrone/$M4_DRONE_ID/mavros/param NAV_DLL_ACT
+ros2 param get /cdrone/$M4_DRONE_ID/mavros/param COM_OBL_RC_ACT
+ros2 param get /cdrone/$M4_DRONE_ID/mavros/param COM_OF_LOSS_T
+```
+
+Require a successful parameter pull, a populated backup, successful sets, and
+the four matching readbacks. Stop the stacks while disarmed, reboot the FCUs,
+and repeat readback/readiness checks to verify persistence. Retain the backup
+to restore the original values explicitly if returning to RC/joystick use.
+Do not apply these changes while airborne.
+
+Telemetry stream configuration and rates are unchanged: there is **no new
+30 Hz request or minimum-rate requirement**. The existing 5 Hz estimator-status
+request remains. Readiness additionally checks the velocity data already
+needed by stable hover: finite values received within the existing 0.5 s
+freshness window. A missing stream is reported rather than having its rate
+changed. Verify readiness with RC and QGC disconnected.
 
 ## ZED 2i Preflight
 
@@ -248,7 +349,8 @@ position and velocity, a recent `/cdrone/cdrone3/perception/status` message,
 and `milestone4_check` success even with no target visible. The check reports
 `enable_flight=false` separately. To require a visible detected 3D target
 before starting, opt in with `require_detector_target_on_start:=true`.
-In QGroundControl's MAVLink Console,
+During setup, the PX4 console (QGroundControl's MAVLink Console is an optional
+way to access it)
 `listener estimator_status_flags -n 1` must show sustained `cs_ev_pos`,
 `cs_ev_hgt`, and `cs_ev_yaw`; ROS estimator validity alone does not identify
 which sensor PX4 is fusing. Move the disconnected airframe by known X/Y/Z
@@ -280,14 +382,20 @@ range and motion gates.
 Use a physically clear area that accommodates a 20 m radius, the airframe,
 and stopping margin. The local limit measures odometric excursion from
 takeoff; it does not detect obstacles or establish a surveyed boundary.
-Recheck the mount, PX4 profile, vision fusion, QGroundControl/RC link, and
-operator takeover. Stop the bench launch before reconnecting flight hardware.
+Recheck each mount, PX4 profile, vision fusion, and independent abort path.
+QGroundControl and RC are not required with the companion-only profile.
+Stop both bench stacks before reconnecting flight hardware; stopping the local
+launch does not stop the detached peer (see the stop commands below).
 
 ```bash
 ros2 launch drone_bringup milestone4_demo.launch.py \
   pose_source:=zed_local enable_flight:=true \
+  companion_only:=true launch_peer:=true \
+  peer_host:=192.168.0.121 peer_drone_id:=cdrone4 \
   zed_mount_config:=/home/jetson/zed_hover_mount_run2.yaml \
-  takeoff_altitude_m:=2.0 max_target_distance_m:=20.0 \
+  peer_zed_mount_config:=/home/jetson/zed_hover_mount_run2.yaml \
+  takeoff_altitude_m:=2.0 altitude_tolerance_m:=0.10 \
+  required_completion_count:=1 max_target_distance_m:=20.0 \
   max_local_excursion_m:=20.0 max_vel_xy_mps:=0.6
 ```
 
@@ -295,13 +403,26 @@ Use this command only after the full flight-disabled launch stays stable,
 `best.engine` passes the bench rate and 20 m range gates, PX4 fuses ZED vision,
 and the shared power rails remain stable under load.
 
-Run the check service again. Once it succeeds, call the existing start service,
-even if no target is visible. The local position stream warms OFFBOARD, arms,
-climbs to 2.0 m above takeoff, then hands control to the velocity stream. The
-controller waits for **2 continuous seconds** within 0.10 m of the requested
-height, with measured horizontal speed at most 0.25 m/s and vertical speed at
-most 0.15 m/s. The existing 30 s stage timeout requests landing if hover never
-stabilizes. Targets are ignored until the state changes to `SEARCH`.
+Run the local check, and optionally the peer check below. Then call the
+**unchanged start service**: in paired mode it checks both stacks, including
+`enable_flight`, before sending either start request. It sends the requests
+concurrently and reports each result; acceptance does not mean both vehicles
+are already airborne or guarantee an identical takeoff instant. A failed
+readiness check sends neither start. Partial success is reported explicitly:
+an accepted mission continues independently, with no automatic abort or retry.
+An uncertain start response blocks another paired attempt until the launcher
+is restarted after inspecting both drones.
+
+Each controller warms OFFBOARD, arms, climbs relative to its own takeoff
+origin, and hands control to its velocity stream. During handoff and staged
+hover it corrects altitude and holds takeoff XY/yaw. With
+`altitude_tolerance_m:=0.10`, the accepted climb band is **1.90–2.10 m** for a
+2.0 m target, including the boundaries. Exact 2.0 m attainment is unnecessary.
+The controller waits for **2 continuous seconds** in that band, with measured
+horizontal speed at most 0.25 m/s and vertical speed at most 0.15 m/s. The
+altitude-control deadband is half the acceptance tolerance. The existing 30 s
+stage timeout requests landing if hover never stabilizes. Targets are ignored
+until the state changes to `SEARCH`.
 
 ```bash
 ros2 service call /cdrone/cdrone3/demo/milestone4_check std_srvs/srv/Trigger "{}"
@@ -309,9 +430,42 @@ ros2 service call /cdrone/cdrone3/demo/milestone3_start std_srvs/srv/Trigger "{}
 ros2 topic echo /cdrone/cdrone3/engagement/state
 ```
 
+Optional peer readiness check from cdrone3 (this exits after one request):
+
+```bash
+ssh jetson@192.168.0.121 'source /opt/ros/humble/setup.bash && source /home/jetson/cdrone_control/ros2/install/setup.bash && export ROS_DOMAIN_ID=3 ROS_LOCALHOST_ONLY=1 && ros2 run drone_control_pkg milestone4_session check --drone-id cdrone4'
+```
+
+The local mission controller's private start endpoint is
+`/cdrone/cdrone3/demo/milestone3_start_local` in paired mode; use the public
+service above for both drones. On the peer, the normal
+`/cdrone/cdrone4/demo/milestone3_start` remains local to that Jetson.
+`required_completion_count` defaults to `1`, must be an integer of at least
+`1`, and is applied separately to each drone. A completed target-map track ID
+counts once per mission. Each drone returns and lands on reaching its own
+count, regardless of the other drone's progress.
+
+For a single drone, set `launch_peer:=false` (the default). Its original start
+service then directly starts only that drone. A single-drone launch on cdrone4
+must explicitly set `drone_id:=cdrone4 drone_namespace:=/cdrone/cdrone4
+mavros_namespace:=/cdrone/cdrone4/mavros` if the installed defaults still name
+cdrone3.
+
+The latest saved failed run reached `LOCAL_HANDOFF` and then spent 30 s in
+`STAGE_HOVER`; it had already passed the takeoff-altitude threshold. Older logs
+did not record which hover condition failed. New `Waiting for SEARCH` logs and
+the engagement message's `blocked_reason` include altitude error, velocity
+age, horizontal/vertical speed, and dwell progress. The timeout includes this
+detail. Check velocity without changing its configured rate:
+
+```bash
+ros2 topic echo --once /cdrone/cdrone3/mavros/local_position/velocity_local
+ros2 topic echo /cdrone/cdrone3/engagement/state
+```
+
 In `SEARCH`, the mission sends zero velocity and waits indefinitely for a
-confirmed target. If none appears, use the abort service below to land; PX4
-failsafes and RC takeover remain available. A new target needs three coherent
+confirmed target. If none appears, use that drone's abort service below to
+land; PX4 failsafes remain available. A new target needs three coherent
 3D observations spanning at least 0.2 s before pursuit starts. First follow a
 stationary target at the reduced 0.6 m/s cap. After takeoff,
 handoff, follow, return, landing, and disarm all complete cleanly, repeat
@@ -334,6 +488,43 @@ An abort requested by the operator uses the same landing path:
 ```bash
 ros2 service call /cdrone/cdrone3/demo/milestone3_abort std_srvs/srv/Trigger "{}"
 ```
+
+This abort affects **cdrone3 only**. To abort cdrone4 from cdrone3:
+
+```bash
+ssh jetson@192.168.0.121 'source /opt/ros/humble/setup.bash && source /home/jetson/cdrone_control/ros2/install/setup.bash && export ROS_DOMAIN_ID=3 ROS_LOCALHOST_ONLY=1 && ros2 run drone_control_pkg milestone4_session abort --drone-id cdrone4'
+```
+
+After both vehicles have landed and disarmed, stop the local launch with
+Ctrl-C. Stop the detached peer separately:
+
+```bash
+ssh jetson@192.168.0.121 'source /opt/ros/humble/setup.bash && source /home/jetson/cdrone_control/ros2/install/setup.bash && export ROS_DOMAIN_ID=3 ROS_LOCALHOST_ONLY=1 && ros2 run drone_control_pkg milestone4_session stop'
+```
+
+The peer stop helper requires fresh, connected MAVROS state reporting
+`armed: false`, then signals only the recorded launch process group. It
+refuses to stop an armed vehicle or signal a reused PID. To inspect peer logs:
+
+```bash
+ssh jetson@192.168.0.121 'cat ~/.ros/milestone4/session.json'
+```
+
+Read the log path printed there on that Jetson. No peer status is polled during
+flight. Loss of SSH, the startup dispatcher, or the other drone does not stop
+a mission already running; each onboard controller still handles its own
+localization faults, OFFBOARD loss, completion, and landing.
+
+## Paired bench acceptance
+
+Before flight, use `enable_flight:=false` and verify two separate local stacks,
+correct per-drone topics/LEDs, and separate recordings. The shared start must
+report flight disabled and send no starts. Verify single-drone operation too.
+Complete profile readback with RC/QGC disconnected and check that velocity
+remains fresh at its existing configured rate. A failed peer SSH connection,
+missing calibration, duplicate launch, or failed readiness must be visible.
+On a flight-disabled launch, disconnect the SSH session and confirm the remote
+stack stays running; stop it using its own stop command afterward.
 
 ## Live checks
 

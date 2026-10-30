@@ -247,6 +247,10 @@ def launch_setup(context, *args, **kwargs):
                 "mavros_namespace": mavros_namespace,
                 "local_odom_mode": local_odom_mode,
                 "enable_flight": ParameterValue(LaunchConfiguration("enable_flight"), value_type=bool),
+                "companion_only": ParameterValue(LaunchConfiguration("companion_only"), value_type=bool),
+                "altitude_tolerance_m": ParameterValue(
+                    LaunchConfiguration("altitude_tolerance_m"), value_type=float),
+                "start_service": ParameterValue(LaunchConfiguration("start_service"), value_type=str),
                 "require_detector_target_on_start": ParameterValue(
                     LaunchConfiguration("require_detector_target_on_start"), value_type=bool),
                 "max_local_excursion_m": ParameterValue(LaunchConfiguration("max_local_excursion_m"), value_type=float),
@@ -514,6 +518,9 @@ def generate_launch_description():
             DeclareLaunchArgument("zed_depth_maximum_distance_m", default_value="20.0"),
             DeclareLaunchArgument("tracker_inference_device", default_value=""),
             DeclareLaunchArgument("enable_flight", default_value="true"),
+            DeclareLaunchArgument("companion_only", default_value="false"),
+            DeclareLaunchArgument("altitude_tolerance_m", default_value="0.10"),
+            DeclareLaunchArgument("start_service", default_value=""),
             DeclareLaunchArgument("max_local_excursion_m", default_value="20.0"),
             DeclareLaunchArgument("max_vel_xy_mps", default_value="0.6"),
             DeclareLaunchArgument("tracks_topic", default_value=""),

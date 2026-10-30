@@ -1,0 +1,17 @@
+{
+  "reference": "/home/jetson/cdrone_control/current_qgc_params.params",
+  "captured_utc": "2026-10-29T01:40:44.979373+00:00",
+  "firmware": "1.16.0",
+  "system_id": 1,
+  "component_id": 1,
+  "snapshot_count": 1070,
+  "live_count": 1082,
+  "received_indices": 1082,
+  "comparison": "REAL32 compared after float32 normalization; integer values compared exactly; all types compared",
+  "counts": {
+    "value changed": 85,
+    "live only": 12
+  },
+  "snapshot": "/home/jetson/cdrone_control/backup/param_comparison_20261029T014044Z/live_fcu.params",
+  "differences": "/home/jetson/cdrone_control/backup/param_comparison_20261029T014044Z/differences.csv"
+}

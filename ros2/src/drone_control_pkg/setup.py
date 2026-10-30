@@ -32,6 +32,8 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
+            "milestone4_start_dispatcher = drone_control_pkg.milestone4_start_dispatcher:main",
+            "milestone4_session = drone_control_pkg.milestone4_session:main",
             "drone_control_node = drone_control_pkg.drone_control_node:main",
             "drone_setup_node = drone_control_pkg.drone_setup_node:main",
             "mavros_velocity_node = drone_control_pkg.mavros_velocity_node:main",

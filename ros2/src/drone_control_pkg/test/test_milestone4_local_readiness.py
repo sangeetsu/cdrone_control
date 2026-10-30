@@ -2,6 +2,9 @@
 
 from types import SimpleNamespace
 from concurrent.futures import Future
+import math
+
+import pytest
 
 from geometry_msgs.msg import PoseStamped, TwistStamped
 from mavros_msgs.msg import EstimatorStatus
@@ -109,6 +112,7 @@ def test_preflight_requires_continuous_health_after_recovery():
         last_valid_detector_target_time_s=100.0,
         now_s=lambda: current[0], state_fresh=lambda: True,
         pose_fresh=lambda: True, local_health_reason=lambda: "",
+        local_velocity_reason=lambda: "",
     )
     Milestone3DemoSequenceNode.update_local_preflight_readiness(node)
     assert node.local_preflight_ready_since_s == 100.0
@@ -156,6 +160,7 @@ def test_no_target_still_allows_preflight_health_dwell():
         last_valid_detector_target_time_s=0.0,
         now_s=lambda: 100.0, state_fresh=lambda: True,
         pose_fresh=lambda: True, local_health_reason=lambda: "",
+        local_velocity_reason=lambda: "",
     )
     Milestone3DemoSequenceNode.update_local_preflight_readiness(node)
     assert node.local_preflight_ready_since_s == 100.0
@@ -171,6 +176,7 @@ def test_stable_hover_requires_altitude_and_measured_velocity():
         stable_hover_max_horizontal_speed_mps=0.25,
         stable_hover_max_vertical_speed_mps=0.15,
     )
+    bind_hover_methods(node)
     assert Milestone3DemoSequenceNode.local_hover_stable(node)
     velocity.twist.linear.x = 0.3
     assert not Milestone3DemoSequenceNode.local_hover_stable(node)
@@ -191,6 +197,9 @@ def test_stage_hover_waits_for_two_continuous_stable_seconds_then_searches():
         stable_hover_since_s=None, stage_hover_duration_s=2.0,
         local_hover_stable=lambda: stable[0],
         publish_zero_command=lambda: None,
+        publish_takeoff_hold_command=lambda: None,
+        last_hover_progress_log_s=100.0, hover_progress=lambda: "waiting",
+        get_logger=lambda: SimpleNamespace(info=lambda msg: None),
         set_demo_state=lambda state, reason="": states.append(state),
     )
     Milestone3DemoSequenceNode.step_state_machine(node)
@@ -215,12 +224,13 @@ def test_stage_hover_waits_for_two_continuous_stable_seconds_then_searches():
 
 def test_no_target_local_takeoff_reaches_hover_without_detector_track():
     clock = [100.0]
-    position_setpoints, velocity_zeros, arm_requests = [], [], []
+    position_setpoints, velocity_zeros, arm_requests, velocity_holds = [], [], [], []
     node = SimpleNamespace(
         now_s=lambda: clock[0], demo_state="LOCAL_WARMUP", local_odom_mode=True,
         stage_started_s=100.0, offboard_warmup_s=1.0,
         publish_local_position_setpoint=lambda: position_setpoints.append(True),
         publish_zero_command=lambda: velocity_zeros.append(True),
+        publish_takeoff_hold_command=lambda: velocity_holds.append(True),
         latest_state=SimpleNamespace(armed=False), offboard_mode="OFFBOARD",
         mode_matches=lambda mode: True, arm_zero_throttle_hold_s=0.0,
         arm_request_sent=False, request_arm=lambda arm: arm_requests.append(arm),
@@ -245,7 +255,112 @@ def test_no_target_local_takeoff_reaches_hover_without_detector_track():
     Milestone3DemoSequenceNode.step_state_machine(node)
     assert node.demo_state == "STAGE_HOVER"
     assert len(position_setpoints) == 5
-    assert velocity_zeros == [True]
+    assert not velocity_zeros
+    assert velocity_holds == [True]
+
+
+def bind_hover_methods(node):
+    for name in ("local_velocity_reason", "local_hover_reason", "local_hover_stable", "hover_progress"):
+        setattr(node, name, getattr(Milestone3DemoSequenceNode, name).__get__(node))
+
+
+def hover_node(height=2.0, origin=0.0):
+    node = SimpleNamespace(
+        now_s=lambda: 100.0, pose_fresh=lambda: True,
+        last_local_velocity_time_s=100.0, latest_local_velocity=TwistStamped(),
+        current_altitude_m=lambda: origin + height,
+        takeoff_target_altitude_m=lambda: origin + 2.0,
+        altitude_tolerance_m=0.1, stable_hover_max_horizontal_speed_mps=0.25,
+        stable_hover_max_vertical_speed_mps=0.15,
+        stable_hover_since_s=None, stage_hover_duration_s=2.0,
+    )
+    bind_hover_methods(node)
+    return node
+
+
+@pytest.mark.parametrize("origin", [0.0, 0.73, -2.5])
+@pytest.mark.parametrize("height,accepted", [(1.899, False), (1.9, True), (1.95, True),
+                                           (2.0, True), (2.1, True), (2.101, False)])
+def test_hover_band_includes_boundaries_above_takeoff_origin(origin, height, accepted):
+    node = hover_node(height, origin)
+    assert node.local_hover_stable() is accepted
+    assert Milestone3DemoSequenceNode.takeoff_altitude_reached(node) is (height >= 1.9)
+
+
+def test_hover_reports_stale_nonfinite_and_fast_velocity():
+    node = hover_node()
+    node.last_local_velocity_time_s = 99.49
+    assert "stale or missing" in node.hover_progress()
+    node.last_local_velocity_time_s = 100.0
+    node.latest_local_velocity.twist.linear.x = math.nan
+    assert "non-finite" in node.local_hover_reason()
+    node.latest_local_velocity.twist.linear.x = 0.26
+    assert "horizontal speed" in node.local_hover_reason()
+    node.latest_local_velocity.twist.linear.x = 0.0
+    node.latest_local_velocity.twist.linear.z = -0.16
+    assert "vertical speed" in node.local_hover_reason()
+    assert "velocity_age=" in node.hover_progress()
+
+
+@pytest.mark.parametrize("state", ["LOCAL_HANDOFF", "STAGE_HOVER"])
+@pytest.mark.parametrize("height,direction", [(1.85, 1), (1.93, 1), (2.0, 0), (2.15, -1)])
+def test_hover_actively_corrects_altitude_and_holds_takeoff_xy(state, height, direction):
+    commands = []
+    node = hover_node(height)
+    node.__dict__.update(
+        local_odom_mode=True, demo_state=state,
+        takeoff_origin_xy=(0.0, 0.0), takeoff_origin_yaw_rad=0.0,
+        current_xy=lambda: (0.5, 0.0), current_yaw_rad=lambda: 0.0,
+        return_position_tolerance_m=0.2, yaw_deadband_rad=0.08,
+        kp_xy=0.45, kp_z=0.3, kp_yaw=0.8,
+        max_vel_xy_mps=0.6, max_vel_z_mps=0.3, max_yaw_rate_rps=0.4,
+        clamp_command_to_perimeter_altitude=lambda command: command,
+        command_projection_violation_reason=lambda command: None,
+        publish_follow_command=commands.append,
+    )
+    Milestone3DemoSequenceNode.publish_takeoff_hold_command(node)
+    assert len(commands) == 1
+    assert commands[0].vx < 0.0
+    assert (0 if commands[0].vz == 0 else math.copysign(1, commands[0].vz)) == direction
+
+
+def test_hover_timeout_includes_the_actual_blocker():
+    aborts = []
+    node = hover_node(1.85)
+    node.__dict__.update(
+        demo_state="STAGE_HOVER", local_odom_mode=True,
+        TERMINAL_STATES={"IDLE", "COMPLETE", "ABORT"},
+        ACTIVE_ENGAGEMENT_STATES={"SEARCH", "FOLLOW", "DWELL"},
+        RETURN_STATES={"RETURN_TO_START", "RETURN_HOME_HOLD"},
+        local_health_reason=lambda: "", state_fresh=lambda: True,
+        latest_state=SimpleNamespace(connected=True, armed=True, mode="OFFBOARD"),
+        connection_lost_since_s=None, connection_loss_warned=False,
+        perimeter_runtime_violation_reason=lambda: None, require_companion_active=False,
+        mode_future=None, offboard_mode="OFFBOARD", mode_matches=lambda mode: True,
+        stage_timeout_limit_s=lambda: 30.0, stage_elapsed_s=lambda: 30.1,
+        enter_abort=aborts.append,
+    )
+    Milestone3DemoSequenceNode.run_safety_checks(node)
+    assert len(aborts) == 1
+    assert "stage timeout in STAGE_HOVER: altitude error" in aborts[0]
+    assert "dwell=0.00/2.00s" in aborts[0]
+
+
+def test_fresh_velocity_is_required_for_preflight_dwell():
+    node = hover_node()
+    node.__dict__.update(
+        local_odom_mode=True, demo_state="IDLE", TERMINAL_STATES={"IDLE"},
+        local_preflight_ready_since_s=98.0,
+        latest_state=SimpleNamespace(connected=True, armed=False), estop_latched=False,
+        last_perception_time_s=100.0, require_detector_target_on_start=False,
+        state_fresh=lambda: True, local_health_reason=lambda: "",
+    )
+    node.last_local_velocity_time_s = 99.49
+    Milestone3DemoSequenceNode.update_local_preflight_readiness(node)
+    assert node.local_preflight_ready_since_s is None
+    node.last_local_velocity_time_s = 100.0
+    Milestone3DemoSequenceNode.update_local_preflight_readiness(node)
+    assert node.local_preflight_ready_since_s == 100.0
 
 
 def fake_vision_hold_node():

@@ -1,0 +1,9 @@
+name: milestone4_companion_only_px4_1_16
+description: >-
+  PX4 1.16 operation without RC or QGC. Apply explicitly while disarmed and
+  read back before flight. Stick input is disabled. OFFBOARD loss still lands.
+parameters:
+  COM_RC_IN_MODE: 4
+  NAV_DLL_ACT: 0
+  COM_OBL_RC_ACT: 4
+  COM_OF_LOSS_T: 1.0

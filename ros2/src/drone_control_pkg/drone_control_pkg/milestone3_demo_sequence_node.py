@@ -122,6 +122,7 @@ class Milestone3DemoSequenceNode(Node):
         self.declare_parameter("takeoff_strategy", "AUTO_MODE")
         self.declare_parameter("local_odom_mode", False)
         self.declare_parameter("enable_flight", True)
+        self.declare_parameter("companion_only", False)
         self.declare_parameter("require_detector_target_on_start", False)
         self.declare_parameter("max_local_excursion_m", 20.0)
         self.declare_parameter("min_follow_height_m", 1.0)
@@ -229,6 +230,12 @@ class Milestone3DemoSequenceNode(Node):
         )
         self.local_odom_mode = bool(self.get_parameter("local_odom_mode").value)
         self.enable_flight = bool(self.get_parameter("enable_flight").value)
+        self.companion_only = bool(self.get_parameter("companion_only").value)
+        if self.companion_only and not self.local_odom_mode:
+            raise ValueError("companion_only requires ZED local odometry")
+        self.ZED_PROFILE = dict(type(self).ZED_PROFILE)
+        if self.companion_only:
+            self.ZED_PROFILE.update(COM_RC_IN_MODE=4, NAV_DLL_ACT=0)
         self.require_detector_target_on_start = bool(
             self.get_parameter("require_detector_target_on_start").value)
         self.max_local_excursion_m = float(self.get_parameter("max_local_excursion_m").value)
@@ -247,6 +254,9 @@ class Milestone3DemoSequenceNode(Node):
         self.altitude_tolerance_m = float(
             self.get_parameter("altitude_tolerance_m").value
         )
+        if (not math.isfinite(self.altitude_tolerance_m) or
+                not 0.0 < self.altitude_tolerance_m < self.takeoff_altitude_m):
+            raise ValueError("altitude_tolerance_m must be positive and below takeoff_altitude_m")
         self.touchdown_altitude_m = float(
             self.get_parameter("touchdown_altitude_m").value
         )
@@ -339,9 +349,9 @@ class Milestone3DemoSequenceNode(Node):
         self.return_hold_duration_s = float(
             self.get_parameter("return_hold_duration_s").value
         )
-        self.required_completion_count = max(
-            1, int(self.get_parameter("required_completion_count").value)
-        )
+        self.required_completion_count = int(self.get_parameter("required_completion_count").value)
+        if self.required_completion_count < 1:
+            raise ValueError("required_completion_count must be at least 1")
         self.dwell_time_s = float(self.get_parameter("dwell_time_s").value)
         self.follow_distance_m = float(self.get_parameter("follow_distance_m").value)
         self.follow_distance_tolerance_m = float(
@@ -522,6 +532,7 @@ class Milestone3DemoSequenceNode(Node):
         self.latest_local_velocity = TwistStamped()
         self.last_local_velocity_time_s = 0.0
         self.stable_hover_since_s = None
+        self.last_hover_progress_log_s = -math.inf
         self.last_perception_time_s = 0.0
         self.last_valid_detector_target_time_s = 0.0
         self.zed_status = "missing"
@@ -692,6 +703,8 @@ class Milestone3DemoSequenceNode(Node):
         if self.local_odom_mode:
             self.create_service(Trigger, cdrone_topic(self.drone_id, "demo/milestone4_check"),
                                 self.handle_check_request)
+            self.create_service(Trigger, cdrone_topic(self.drone_id, "demo/milestone4_start_check"),
+                                self.handle_start_check_request)
 
         self.timer = self.create_timer(
             1.0 / max(self.publish_rate_hz, 1.0),
@@ -881,6 +894,7 @@ class Milestone3DemoSequenceNode(Node):
             self.state_fresh() and self.latest_state.connected and
             not self.latest_state.armed and not self.estop_latched and
             self.pose_fresh() and not self.local_health_reason() and
+            not self.local_velocity_reason() and
             now_s - self.last_perception_time_s <= 3.0 and
             (not self.require_detector_target_on_start or
              now_s - self.last_valid_detector_target_time_s <= 3.0)
@@ -1268,23 +1282,54 @@ class Milestone3DemoSequenceNode(Node):
         return self.takeoff_origin_altitude_m + self.takeoff_altitude_m
 
     def takeoff_altitude_reached(self) -> bool:
-        return self.current_altitude_m() >= (
-            self.takeoff_target_altitude_m() - self.altitude_tolerance_m
+        return math.isfinite(self.current_altitude_m()) and self.current_altitude_m() >= (
+            self.takeoff_target_altitude_m() - self.altitude_tolerance_m - 1e-9
         )
 
-    def local_hover_stable(self) -> bool:
-        if (not self.pose_fresh() or
-                self.now_s() - self.last_local_velocity_time_s > 0.5):
-            return False
+    def local_velocity_reason(self) -> str:
+        age_s = self.now_s() - self.last_local_velocity_time_s
+        if self.last_local_velocity_time_s <= 0.0 or not 0.0 <= age_s <= 0.5:
+            return f"local velocity stale or missing (age={age_s:.2f}s, limit=0.50s)"
         velocity = self.latest_local_velocity.twist.linear
-        values = (velocity.x, velocity.y, velocity.z, self.current_altitude_m())
-        return bool(
-            all(math.isfinite(value) for value in values) and
-            abs(self.current_altitude_m() - self.takeoff_target_altitude_m())
-            <= self.altitude_tolerance_m and
-            math.hypot(velocity.x, velocity.y)
-            <= self.stable_hover_max_horizontal_speed_mps and
-            abs(velocity.z) <= self.stable_hover_max_vertical_speed_mps)
+        if not all(math.isfinite(value) for value in (velocity.x, velocity.y, velocity.z)):
+            return "local velocity contains non-finite values"
+        return ""
+
+    def local_hover_reason(self) -> str:
+        if not self.pose_fresh():
+            return "local pose stale or missing"
+        velocity_reason = self.local_velocity_reason()
+        if velocity_reason:
+            return velocity_reason
+        altitude = self.current_altitude_m()
+        if not math.isfinite(altitude):
+            return "local altitude is non-finite"
+        error = altitude - self.takeoff_target_altitude_m()
+        if abs(error) > self.altitude_tolerance_m + 1e-9:
+            return f"altitude error {error:+.3f}m exceeds +/-{self.altitude_tolerance_m:.3f}m"
+        velocity = self.latest_local_velocity.twist.linear
+        horizontal = math.hypot(velocity.x, velocity.y)
+        if horizontal > self.stable_hover_max_horizontal_speed_mps:
+            return (f"horizontal speed {horizontal:.3f}m/s exceeds "
+                    f"{self.stable_hover_max_horizontal_speed_mps:.3f}m/s")
+        if abs(velocity.z) > self.stable_hover_max_vertical_speed_mps:
+            return (f"vertical speed {abs(velocity.z):.3f}m/s exceeds "
+                    f"{self.stable_hover_max_vertical_speed_mps:.3f}m/s")
+        return ""
+
+    def local_hover_stable(self) -> bool:
+        return not self.local_hover_reason()
+
+    def hover_progress(self) -> str:
+        elapsed = (0.0 if self.stable_hover_since_s is None else
+                   max(0.0, self.now_s() - self.stable_hover_since_s))
+        velocity = self.latest_local_velocity.twist.linear
+        reason = self.local_hover_reason() or "stable hover dwell"
+        return (f"{reason}; altitude_error="
+                f"{self.current_altitude_m() - self.takeoff_target_altitude_m():+.3f}m; "
+                f"velocity_age={self.now_s() - self.last_local_velocity_time_s:.2f}s; "
+                f"vxy={math.hypot(velocity.x, velocity.y):.3f}m/s; "
+                f"vz={velocity.z:.3f}m/s; dwell={elapsed:.2f}/{self.stage_hover_duration_s:.2f}s")
 
     def touchdown_threshold_altitude_m(self) -> float:
         if self.takeoff_origin_altitude_m is None:
@@ -1336,9 +1381,13 @@ class Milestone3DemoSequenceNode(Node):
         self.cmd_pub.publish(msg)
 
     def publish_takeoff_hold_command(self) -> None:
-        target_xy = self.climb_hold_xy or self.current_xy()
+        local_hover = self.local_odom_mode and self.demo_state in {"LOCAL_HANDOFF", "STAGE_HOVER"}
+        if local_hover and (not self.pose_fresh() or not math.isfinite(self.current_altitude_m())):
+            self.publish_zero_command()
+            return
+        target_xy = (self.takeoff_origin_xy if local_hover else self.climb_hold_xy) or self.current_xy()
         current_altitude_m = self.current_altitude_m()
-        target_yaw_rad = self.climb_hold_yaw_rad
+        target_yaw_rad = self.takeoff_origin_yaw_rad if local_hover else self.climb_hold_yaw_rad
         if target_yaw_rad is None:
             target_yaw_rad = self.current_yaw_rad()
         current_yaw_rad = self.current_yaw_rad()
@@ -1350,7 +1399,7 @@ class Milestone3DemoSequenceNode(Node):
             target_altitude_m=self.takeoff_target_altitude_m(),
             target_yaw_rad=target_yaw_rad,
             xy_deadband_m=self.return_position_tolerance_m,
-            z_deadband_m=self.altitude_tolerance_m,
+            z_deadband_m=self.altitude_tolerance_m * (0.5 if local_hover else 1.0),
             yaw_deadband_rad=self.yaw_deadband_rad,
             kp_xy=self.kp_xy,
             kp_z=self.kp_z,
@@ -1382,6 +1431,7 @@ class Milestone3DemoSequenceNode(Node):
         self.stage_started_s = self.now_s()
         if new_state == "STAGE_HOVER":
             self.stable_hover_since_s = None
+            self.last_hover_progress_log_s = -math.inf
         if new_state == "TAKEOFF":
             self.last_takeoff_progress_log_s = 0.0
         if new_state == "CLIMB_TO_TAKEOFF_ALTITUDE":
@@ -1748,6 +1798,9 @@ class Milestone3DemoSequenceNode(Node):
             reason = self.local_health_reason()
             if reason:
                 return False, reason
+            velocity_reason = self.local_velocity_reason()
+            if velocity_reason:
+                return False, velocity_reason
             if self.now_s() - self.last_perception_time_s > 3.0:
                 return False, "detector has not processed a recent camera frame"
             if (self.require_detector_target_on_start and
@@ -1776,6 +1829,12 @@ class Milestone3DemoSequenceNode(Node):
         del request
         response.success, response.message = self.startable(check_flight=False)
         response.message += f"; enable_flight={self.enable_flight}"
+        return response
+
+    def handle_start_check_request(self, request, response):
+        """Read-only readiness check including enable_flight for paired startup."""
+        del request
+        response.success, response.message = self.startable(check_flight=True)
         return response
 
     def handle_start_request(
@@ -2430,7 +2489,9 @@ class Milestone3DemoSequenceNode(Node):
 
         timeout_limit = self.stage_timeout_limit_s()
         if timeout_limit is not None and self.stage_elapsed_s() > timeout_limit:
-            self.enter_abort(f"stage timeout in {self.demo_state}")
+            detail = (f": {self.hover_progress()}" if self.local_odom_mode and
+                      self.demo_state == "STAGE_HOVER" else "")
+            self.enter_abort(f"stage timeout in {self.demo_state}{detail}")
 
     def publish_engagement_state(
         self,
@@ -2453,6 +2514,8 @@ class Milestone3DemoSequenceNode(Node):
             blocked_reason = ""
         elif self.demo_state == "VISION_HOLD":
             blocked_reason = "ZED pose jump; holding for recovery"
+        elif self.local_odom_mode and self.demo_state == "STAGE_HOVER":
+            blocked_reason = self.hover_progress()
         elif self.estop_latched:
             blocked_reason = "ESTOP"
 
@@ -2519,7 +2582,7 @@ class Milestone3DemoSequenceNode(Node):
             return None
 
         if self.local_odom_mode and self.demo_state == "LOCAL_HANDOFF":
-            self.publish_zero_command()
+            self.publish_takeoff_hold_command()
             if self.stage_elapsed_s() >= self.offboard_warmup_s:
                 self.set_demo_state("STAGE_HOVER", "velocity stream handoff complete")
             return None
@@ -2531,7 +2594,6 @@ class Milestone3DemoSequenceNode(Node):
             "ARMING",
             "REQUEST_TAKEOFF",
             "TAKEOFF",
-            "STAGE_HOVER",
             "RETURN_HOME_HOLD",
         }:
             self.publish_zero_command()
@@ -2775,6 +2837,7 @@ class Milestone3DemoSequenceNode(Node):
 
         if self.demo_state == "STAGE_HOVER":
             if self.local_odom_mode:
+                self.publish_takeoff_hold_command()
                 if self.local_hover_stable():
                     if self.stable_hover_since_s is None:
                         self.stable_hover_since_s = now_s
@@ -2782,8 +2845,13 @@ class Milestone3DemoSequenceNode(Node):
                         self.set_demo_state("SEARCH", "stable local hover complete")
                 else:
                     self.stable_hover_since_s = None
-            elif self.stage_elapsed_s() >= self.stage_hover_duration_s:
-                self.set_demo_state("SEARCH", "stage hover complete")
+                if self.demo_state == "STAGE_HOVER" and now_s - self.last_hover_progress_log_s >= 1.0:
+                    self.last_hover_progress_log_s = now_s
+                    self.get_logger().info(f"Waiting for SEARCH: {self.hover_progress()}")
+            else:
+                self.publish_zero_command()
+                if self.stage_elapsed_s() >= self.stage_hover_duration_s:
+                    self.set_demo_state("SEARCH", "stage hover complete")
             return None
 
         if self.demo_state in self.ACTIVE_ENGAGEMENT_STATES:

@@ -1,3 +1,5 @@
+import json
+import math
 import os
 from pathlib import Path
 
@@ -6,8 +8,13 @@ from drone_control_pkg.deployment_config import (
     default_arg as _default_arg,
     load_drone_launch_defaults,
 )
+from drone_control_pkg.milestone4_session import (
+    claim_launch_lock, peer_launch_arguments, ssh_command, validate_drone_id,
+)
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction
+from launch.actions import (
+    DeclareLaunchArgument, IncludeLaunchDescription, OpaqueFunction, SetEnvironmentVariable,
+)
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
@@ -57,6 +64,31 @@ def launch_setup(context, *args, **kwargs):
 
     bringup_share = get_package_share_directory("drone_bringup")
     local_odom_mode = LaunchConfiguration("pose_source").perform(context).strip() == "zed_local"
+    count = int(LaunchConfiguration("required_completion_count").perform(context))
+    tolerance = float(LaunchConfiguration("altitude_tolerance_m").perform(context))
+    altitude = float(LaunchConfiguration("takeoff_altitude_m").perform(context))
+    if count < 1:
+        raise ValueError("required_completion_count must be at least 1")
+    if not math.isfinite(tolerance) or not 0 < tolerance < altitude:
+        raise ValueError("altitude_tolerance_m must be positive and below takeoff_altitude_m")
+    paired = LaunchConfiguration("launch_peer").perform(context).lower() == "true"
+    if paired:
+        if not local_odom_mode:
+            raise ValueError("paired Milestone 4 requires pose_source:=zed_local")
+        drone_id = validate_drone_id(LaunchConfiguration("drone_id").perform(context))
+        peer_id = validate_drone_id(LaunchConfiguration("peer_drone_id").perform(context))
+        if drone_id == peer_id:
+            raise ValueError("local and peer drone IDs must differ")
+        namespace = f"/cdrone/{drone_id}"
+        context.launch_configurations.update(
+            drone_namespace=namespace, mavros_namespace=namespace + "/mavros",
+            mocap_namespace=namespace + "/vrpn_mocap",
+            engagement_state_topic=namespace + "/engagement/state",
+            start_service=namespace + "/demo/milestone3_start_local",
+        )
+        # Validate SSH arguments now; no connection or process is started here.
+        ssh_command(*(LaunchConfiguration(name).perform(context) for name in
+                      ("peer_host", "peer_user", "peer_workspace")), ["python3"])
     tracker_model_path, tracker_inference_device, tracker_model_task = _tracker_backend(
         LaunchConfiguration("pose_source").perform(context),
         LaunchConfiguration("model_path").perform(context),
@@ -66,6 +98,9 @@ def launch_setup(context, *args, **kwargs):
     drone_namespace_text = (
         LaunchConfiguration("drone_namespace").perform(context).strip() or "/cdrone"
     )
+    if not LaunchConfiguration("engagement_state_topic").perform(context).strip():
+        context.launch_configurations["engagement_state_topic"] = _cdrone_topic(
+            drone_namespace_text, drone_id_text, "engagement/state")
     target_map_tracks_topic = (
         LaunchConfiguration("target_map_tracks_topic").perform(context).strip()
         or _cdrone_topic(drone_namespace_text, drone_id_text, "target_map/tracks")
@@ -184,6 +219,9 @@ def launch_setup(context, *args, **kwargs):
                 "zed_depth_maximum_distance_m"),
             "tracker_inference_device": tracker_inference_device,
             "enable_flight": LaunchConfiguration("enable_flight"),
+            "companion_only": LaunchConfiguration("companion_only"),
+            "altitude_tolerance_m": LaunchConfiguration("altitude_tolerance_m"),
+            "start_service": LaunchConfiguration("start_service"),
             "max_local_excursion_m": LaunchConfiguration("max_local_excursion_m"),
             "max_vel_xy_mps": LaunchConfiguration("max_vel_xy_mps") if local_odom_mode else "0.6",
             "source_pose_topic": LaunchConfiguration("source_pose_topic"),
@@ -333,7 +371,27 @@ def launch_setup(context, *args, **kwargs):
         }.items(),
     )
 
-    return [milestone3_launch, target_map_node]
+    if not paired:
+        return [milestone3_launch, target_map_node]
+    arguments = {action.name: LaunchConfiguration(action.name).perform(context)
+                 for action in generate_launch_description().entities
+                 if isinstance(action, DeclareLaunchArgument)}
+    remote_arguments = peer_launch_arguments(
+        arguments, peer_id, arguments["peer_zed_mount_config"], arguments["peer_workspace"])
+    dispatcher = Node(
+        package="drone_control_pkg", executable="milestone4_start_dispatcher",
+        namespace=drone_namespace_text, output="screen",
+        parameters=[{
+            "drone_id": drone_id_text,
+            "peer_drone_id": peer_id,
+            "peer_host": arguments["peer_host"],
+            "peer_user": arguments["peer_user"],
+            "peer_workspace": arguments["peer_workspace"],
+            "peer_arguments_json": ParameterValue(json.dumps(remote_arguments), value_type=str),
+        }],
+    )
+    return [SetEnvironmentVariable("ROS_LOCALHOST_ONLY", "1"),
+            milestone3_launch, target_map_node, dispatcher]
 
 
 def generate_launch_description():
@@ -401,6 +459,16 @@ def generate_launch_description():
             DeclareLaunchArgument("zed_depth_maximum_distance_m", default_value="25.0"),
             DeclareLaunchArgument("tracker_inference_device", default_value=""),
             DeclareLaunchArgument("enable_flight", default_value="false"),
+            DeclareLaunchArgument("companion_only", default_value="false"),
+            DeclareLaunchArgument("altitude_tolerance_m", default_value="0.10"),
+            DeclareLaunchArgument("start_service", default_value=""),
+            DeclareLaunchArgument("launch_peer", default_value="false", choices=["true", "false"]),
+            DeclareLaunchArgument("peer_host", default_value="192.168.0.121"),
+            DeclareLaunchArgument("peer_user", default_value="jetson"),
+            DeclareLaunchArgument("peer_workspace", default_value="/home/jetson/cdrone_control"),
+            DeclareLaunchArgument("peer_drone_id", default_value="cdrone4"),
+            DeclareLaunchArgument("peer_zed_mount_config",
+                                  default_value="/home/jetson/zed_hover_mount_run2.yaml"),
             DeclareLaunchArgument("max_local_excursion_m", default_value="20.0"),
             DeclareLaunchArgument("max_vel_xy_mps", default_value="1.2"),
             DeclareLaunchArgument("source_pose_topic", default_value=""),
@@ -585,6 +653,7 @@ def generate_launch_description():
             DeclareLaunchArgument("watchdog_timeout_s", default_value="0.5"),
             DeclareLaunchArgument("require_guided_mode", default_value="true"),
             DeclareLaunchArgument("follow_rate_hz", default_value="20.0"),
+            OpaqueFunction(function=claim_launch_lock),
             OpaqueFunction(function=launch_setup),
         ]
     )

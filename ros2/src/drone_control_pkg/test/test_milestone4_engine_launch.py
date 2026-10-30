@@ -1,4 +1,5 @@
 import importlib.util
+import json
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -38,6 +39,70 @@ def launched_nodes(actions):
         if hasattr(action, "node_executable"):
             yield action
         yield from launched_nodes(getattr(action, "actions", []))
+
+
+def test_pair_launch_isolated_identities_and_mission_arguments_reach_both_controllers():
+    module = load_launch("milestone4_demo.launch.py")
+    context = context_with_defaults(module)
+    context.launch_configurations.update(
+        launch_peer="true", drone_id="cdrone3", required_completion_count="3",
+        companion_only="true", altitude_tolerance_m="0.10",
+        peer_zed_mount_config="/home/jetson/cdrone4_mount.yaml", max_vel_xy_mps="0.6")
+    actions = module.launch_setup(context)
+    assert actions[0].__class__.__name__ == "SetEnvironmentVariable"
+    actions[0].execute(context)
+    assert context.environment["ROS_LOCALHOST_ONLY"] == "1"
+    forwarded = dict(actions[1].launch_arguments)
+    local_arguments = {key: perform_substitutions(context, normalize_to_list_of_substitutions(value))
+                       for key, value in forwarded.items()}
+    assert local_arguments["start_service"] == "/cdrone/cdrone3/demo/milestone3_start_local"
+    dispatcher = actions[-1]
+    assert executable(context, dispatcher) == "milestone4_start_dispatcher"
+    parameters = evaluate_parameters(context, dispatcher._Node__parameters)[0]
+    peer_arguments = json.loads(parameters["peer_arguments_json"])
+    assert peer_arguments["launch_peer"] == "false"
+    assert peer_arguments["start_service"] == ""
+    assert peer_arguments["drone_namespace"] == "/cdrone/cdrone4"
+    assert peer_arguments["mavros_namespace"] == "/cdrone/cdrone4/mavros"
+    assert peer_arguments["engagement_state_topic"] == "/cdrone/cdrone4/engagement/state"
+    assert peer_arguments["zed_mount_config"] == "/home/jetson/cdrone4_mount.yaml"
+    assert not any("/cdrone/cdrone3/" in value for value in peer_arguments.values())
+    m3 = load_launch("milestone3_demo.launch.py")
+    for arguments in (local_arguments, peer_arguments):
+        child = context_with_defaults(m3)
+        child.launch_configurations.update(arguments)
+        controller = next(node for node in launched_nodes(m3.launch_setup(child))
+                          if executable(child, node) == "milestone3_demo_sequence_node")
+        params = next(p for p in evaluate_parameters(child, controller._Node__parameters)
+                      if isinstance(p, dict))
+        assert params["required_completion_count"] == 3
+        assert params["altitude_tolerance_m"] == 0.1
+        assert params["companion_only"] is True
+        assert params["max_vel_xy_mps"] == 0.6
+
+
+@pytest.mark.parametrize("argument,value", [
+    ("required_completion_count", "0"), ("required_completion_count", "-1"),
+    ("required_completion_count", "1.5"), ("altitude_tolerance_m", "nan"),
+    ("altitude_tolerance_m", "0"), ("altitude_tolerance_m", "2.0"),
+])
+def test_invalid_completion_count_and_altitude_tolerance_rejected(argument, value):
+    module = load_launch("milestone4_demo.launch.py")
+    context = context_with_defaults(module)
+    context.launch_configurations[argument] = value
+    with pytest.raises(ValueError):
+        module.launch_setup(context)
+
+
+def test_single_drone_keeps_existing_start_service_and_correct_led_topic():
+    module = load_launch("milestone4_demo.launch.py")
+    context = context_with_defaults(module)
+    context.launch_configurations.update(drone_id="cdrone4", drone_namespace="/cdrone/cdrone4",
+                                         mavros_namespace="/cdrone/cdrone4/mavros")
+    actions = module.launch_setup(context)
+    assert len(actions) == 2
+    assert context.launch_configurations["start_service"] == ""
+    assert context.launch_configurations["engagement_state_topic"] == "/cdrone/cdrone4/engagement/state"
 
 
 def test_local_mission_requires_engine_and_defaults_to_best():
