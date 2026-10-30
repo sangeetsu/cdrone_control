@@ -251,6 +251,9 @@ def launch_setup(context, *args, **kwargs):
                 "altitude_tolerance_m": ParameterValue(
                     LaunchConfiguration("altitude_tolerance_m"), value_type=float),
                 "start_service": ParameterValue(LaunchConfiguration("start_service"), value_type=str),
+                "abort_service": ParameterValue(LaunchConfiguration("abort_service"), value_type=str),
+                "latch_operator_abort": ParameterValue(
+                    LaunchConfiguration("latch_operator_abort"), value_type=bool),
                 "require_detector_target_on_start": ParameterValue(
                     LaunchConfiguration("require_detector_target_on_start"), value_type=bool),
                 "max_local_excursion_m": ParameterValue(LaunchConfiguration("max_local_excursion_m"), value_type=float),
@@ -521,6 +524,8 @@ def generate_launch_description():
             DeclareLaunchArgument("companion_only", default_value="false"),
             DeclareLaunchArgument("altitude_tolerance_m", default_value="0.10"),
             DeclareLaunchArgument("start_service", default_value=""),
+            DeclareLaunchArgument("abort_service", default_value=""),
+            DeclareLaunchArgument("latch_operator_abort", default_value="false"),
             DeclareLaunchArgument("max_local_excursion_m", default_value="20.0"),
             DeclareLaunchArgument("max_vel_xy_mps", default_value="0.6"),
             DeclareLaunchArgument("tracks_topic", default_value=""),

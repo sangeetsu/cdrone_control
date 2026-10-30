@@ -1,4 +1,4 @@
-"""Expose the existing start service for one-shot startup of independent stacks."""
+"""Expose shared start and abort services for otherwise independent stacks."""
 
 import json
 
@@ -31,7 +31,9 @@ class Milestone4StartDispatcher(Node):
         log(self.peer_launch["message"])
         self.create_service(Trigger, f"/cdrone/{drone_id}/demo/milestone3_start",
                             self.start, callback_group=ReentrantCallbackGroup())
-        self.get_logger().info("Paired start service ready; no ongoing communication with peer")
+        self.create_service(Trigger, f"/cdrone/{drone_id}/demo/milestone3_abort",
+                            self.abort, callback_group=ReentrantCallbackGroup())
+        self.get_logger().info("Paired start/abort services ready; no ongoing communication with peer")
 
     def start(self, request, response):
         del request
@@ -39,6 +41,13 @@ class Milestone4StartDispatcher(Node):
             result = dict(success=False, message="peer launch failed: " + self.peer_launch["message"])
         else:
             result = self.dispatcher.start()
+        response.success, response.message = result["success"], result["message"]
+        self.get_logger().info(response.message)
+        return response
+
+    def abort(self, request, response):
+        del request
+        result = self.dispatcher.abort()
         response.success, response.message = result["success"], result["message"]
         self.get_logger().info(response.message)
         return response

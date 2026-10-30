@@ -90,8 +90,9 @@ ZED vision profile still applies. The added profile is
 | `COM_OF_LOSS_T` | `1.0` | Retain the existing OFFBOARD-loss timeout |
 
 These are for PX4 1.16; see the [PX4 OFFBOARD documentation](https://docs.px4.io/v1.16/en/flight_modes/offboard).
-With stick input disabled, RC/joystick takeover is unavailable. Use each
-drone's abort service to request landing; loss of its onboard OFFBOARD stream
+With stick input disabled, RC/joystick takeover is unavailable. Use the
+paired abort service below to request landing on both drones (or use an
+individual abort endpoint); loss of an onboard OFFBOARD stream
 still invokes PX4's landing failsafe.
 
 Start a flight-disabled stack first. For both drones together, use the paired
@@ -382,7 +383,7 @@ range and motion gates.
 Use a physically clear area that accommodates a 20 m radius, the airframe,
 and stopping margin. The local limit measures odometric excursion from
 takeoff; it does not detect obstacles or establish a surveyed boundary.
-Recheck each mount, PX4 profile, vision fusion, and independent abort path.
+Recheck each mount, PX4 profile, vision fusion, and the shared and individual abort paths.
 QGroundControl and RC are not required with the companion-only profile.
 Stop both bench stacks before reconnecting flight hardware; stopping the local
 launch does not stop the detached peer (see the stop commands below).
@@ -464,8 +465,8 @@ ros2 topic echo /cdrone/cdrone3/engagement/state
 ```
 
 In `SEARCH`, the mission sends zero velocity and waits indefinitely for a
-confirmed target. If none appears, use that drone's abort service below to
-land; PX4 failsafes remain available. A new target needs three coherent
+confirmed target. If none appears, use the paired abort service below to
+land both drones; PX4 failsafes remain available. A new target needs three coherent
 3D observations spanning at least 0.2 s before pursuit starts. First follow a
 stationary target at the reduced 0.6 m/s cap. After takeoff,
 handoff, follow, return, landing, and disarm all complete cleanly, repeat
@@ -483,17 +484,52 @@ there. A persistent jump requests landing in place. A PX4 local
 pose jump, estimator failure, or sustained ZED pose loss requests landing
 immediately. Diagnose jumps with
 [Milestone 4 troubleshooting](milestone4_troubleshooting.md).
-An abort requested by the operator uses the same landing path:
+An abort requested by the operator uses the same landing path. With
+`launch_peer:=true`, run this **on cdrone3 to abort both drones**:
 
 ```bash
 ros2 service call /cdrone/cdrone3/demo/milestone3_abort std_srvs/srv/Trigger "{}"
 ```
 
-This abort affects **cdrone3 only**. To abort cdrone4 from cdrone3:
+The dispatcher sends both abort requests concurrently, without checking flight
+readiness or waiting for a pending start. It attempts the local abort even if
+SSH or the peer launch failed. The response reports cdrone3 and cdrone4
+separately; overall success means both acknowledged the abort, not that both
+have already landed. A failed or uncertain peer result must not be interpreted
+as a confirmed remote landing. SSH authentication/connectivity is still required
+to reach cdrone4; if SSH is unavailable, use a terminal already on that Jetson.
+
+The equivalent helper command, also run **on cdrone3**, is:
+
+```bash
+source /opt/ros/humble/setup.bash && source /home/jetson/cdrone_control/ros2/install/setup.bash && export ROS_DOMAIN_ID=3 ROS_LOCALHOST_ONLY=1 && ros2 run drone_control_pkg milestone4_session abort --drone-id cdrone3
+```
+
+An explicit operator abort is latched in both paired controllers, including
+while idle, so a delayed start request cannot launch a drone after its abort.
+After landing and disarming, stop and relaunch both stacks before another
+mission. Repeating an abort is allowed. Normal mission completion and local
+fault handling do not automatically abort the other drone; no ongoing
+inter-drone communication is introduced.
+
+For **cdrone3 only**, including if the dispatcher is unavailable, call its
+private local service in paired mode:
+
+```bash
+ros2 service call /cdrone/cdrone3/demo/milestone3_abort_local std_srvs/srv/Trigger "{}"
+```
+
+For **cdrone4 only**, run the following from cdrone3:
 
 ```bash
 ssh jetson@192.168.0.121 'source /opt/ros/humble/setup.bash && source /home/jetson/cdrone_control/ros2/install/setup.bash && export ROS_DOMAIN_ID=3 ROS_LOCALHOST_ONLY=1 && ros2 run drone_control_pkg milestone4_session abort --drone-id cdrone4'
 ```
+
+When already in a terminal on cdrone4, run the inner command directly. Its
+`--drone-id cdrone4` helper remains local to cdrone4. With
+`launch_peer:=false`, the original public abort service remains a single-drone
+abort. Pull/build the updated code and relaunch both stacks while disarmed to
+activate the shared abort; rebuilding does not update already-running nodes.
 
 After both vehicles have landed and disarmed, stop the local launch with
 Ctrl-C. Stop the detached peer separately:
@@ -525,6 +561,12 @@ remains fresh at its existing configured rate. A failed peer SSH connection,
 missing calibration, duplicate launch, or failed readiness must be visible.
 On a flight-disabled launch, disconnect the SSH session and confirm the remote
 stack stays running; stop it using its own stop command afterward.
+
+With both stacks still flight-disabled, call the public paired abort and
+require a separate acknowledgement from each drone. A subsequent shared start
+must report the operator-abort latch. Stop and relaunch both stacks after this
+check. Software tests also cover peer failures and aborts arriving during
+startup; verify the real SSH path before relying on the shared abort in flight.
 
 ## Live checks
 

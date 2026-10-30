@@ -102,6 +102,87 @@ def test_overlapping_start_requests_are_rejected():
         assert running.result()["success"]
 
 
+@pytest.mark.parametrize("failure", [None, "local", "peer", "exception"])
+def test_abort_attempts_both_concurrently_without_readiness_or_start_gate(failure):
+    calls = []
+    barrier = threading.Barrier(2)
+
+    def invoke(operation, payload, peer):
+        calls.append((operation, payload, peer))
+        assert operation == "abort"
+        barrier.wait(timeout=2)
+        if failure == "exception" and peer:
+            raise OSError("SSH unavailable")
+        failed = (failure == "local" and peer is None) or (failure == "peer" and peer is not None)
+        return dict(success=not failed, message="unreachable" if failed else "abort accepted")
+
+    dispatcher = session.StartDispatcher("cdrone3", "cdrone4", PEER, invoke)
+    dispatcher.uncertain = True  # Abort must work even after an uncertain start.
+    result = dispatcher.abort()
+    assert result["success"] is (failure is None)
+    assert len(calls) == 2
+    assert "cdrone3:" in result["message"] and "cdrone4:" in result["message"]
+    local = next(payload for _, payload, peer in calls if peer is None)
+    assert local["service"] == "/cdrone/cdrone3/demo/milestone3_abort_local"
+    assert local["response_timeout_s"] == 8.0
+    assert "service" not in next(payload for _, payload, peer in calls if peer is not None)
+    assert not dispatcher.start()["success"]
+    assert len(calls) == 2  # A subsequent start is inhibited without another RPC.
+
+
+def test_abort_interrupts_start_checks_without_waiting_or_sending_starts():
+    checking, release = threading.Event(), threading.Event()
+    calls = []
+
+    def invoke(operation, payload, peer):
+        calls.append(operation)
+        if operation == "check":
+            checking.set()
+            assert release.wait(3)
+        return dict(success=True, message="accepted")
+
+    dispatcher = session.StartDispatcher("cdrone3", "cdrone4", PEER, invoke)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        pending = executor.submit(dispatcher.start)
+        try:
+            assert checking.wait(2)
+            assert dispatcher.abort()["success"]
+            assert not pending.done()
+        finally:
+            release.set()
+        result = pending.result(timeout=3)
+    assert not result["success"]
+    assert "abort interrupted" in result["message"]
+    assert calls.count("abort") == 2 and "start" not in calls
+
+
+def test_abort_is_not_blocked_by_inflight_start_requests():
+    both_starting = threading.Barrier(3)
+    release = threading.Event()
+    aborted = set()
+
+    def invoke(operation, payload, peer):
+        drone_id = payload["drone_id"]
+        if operation == "start":
+            both_starting.wait(timeout=2)
+            assert release.wait(3)
+            return dict(success=drone_id not in aborted, message="controller rejected delayed start")
+        if operation == "abort":
+            aborted.add(drone_id)
+        return dict(success=True, message="accepted")
+
+    dispatcher = session.StartDispatcher("cdrone3", "cdrone4", PEER, invoke)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        pending = executor.submit(dispatcher.start)
+        try:
+            both_starting.wait(timeout=2)
+            assert dispatcher.abort()["success"]
+            assert aborted == {"cdrone3", "cdrone4"}
+        finally:
+            release.set()
+        assert not pending.result(timeout=3)["success"]
+
+
 def test_remote_command_is_quoted_noninteractive_and_localhost_only(monkeypatch):
     monkeypatch.setenv("ROS_DOMAIN_ID", "3")
     workspace = "/home/jetson/work space/$(touch should_not_exist)"
@@ -209,6 +290,17 @@ def test_existing_public_service_dispatches_both_starts(monkeypatch):
         assert [operation for operation, _ in calls] == ["launch", "check", "check", "start", "start"]
         assert {payload["drone_id"] for operation, payload in calls
                 if operation == "start"} == {"cdrone3", "cdrone4"}
+        # Even a remembered peer-launch failure must not gate an explicit abort.
+        node.peer_launch = dict(success=False, message="SSH authentication failed")
+        abort = client_node.create_client(Trigger, "/cdrone/cdrone3/demo/milestone3_abort")
+        assert abort.wait_for_service(timeout_sec=3.0)
+        future = abort.call_async(Trigger.Request())
+        executor.spin_until_future_complete(future, timeout_sec=5.0)
+        assert future.done() and future.result().success
+        assert [operation for operation, _ in calls][-2:] == ["abort", "abort"]
+        local = next(payload for operation, payload in calls
+                     if operation == "abort" and payload["drone_id"] == "cdrone3")
+        assert local["service"] == "/cdrone/cdrone3/demo/milestone3_abort_local"
     finally:
         executor.shutdown()
         client_node.destroy_node()

@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 import rclpy
 from rcl_interfaces.msg import ParameterType, ParameterValue
+from std_srvs.srv import Trigger
 
 from drone_control_pkg.follow_utils import TrackSnapshot
 from drone_control_pkg.milestone3_demo_sequence_node import Milestone3DemoSequenceNode
@@ -110,3 +111,29 @@ def test_hover_blocker_is_visible_in_existing_engagement_message(controller):
     node.publish_engagement_state(now_s=node.now_s(), target=None)
     assert "altitude error" in messages[0].blocked_reason
     assert not messages[0].autonomy_ready
+
+
+@pytest.mark.parametrize("state,armed", [
+    ("IDLE", False), ("COMPLETE", False), ("LOCAL_ARMING", False), ("FOLLOW", True),
+])
+def test_paired_abort_latches_before_delayed_start_can_arrive(controller, state, armed):
+    node = controller
+    node.latch_operator_abort = True
+    node.demo_state = state
+    node.latest_state.armed = armed
+    node.publish_zero_command = lambda: None  # No flight commands from this test.
+    response = node.handle_abort_request(Trigger.Request(), Trigger.Response())
+    assert response.success
+    assert node.operator_abort_latched
+    if state not in {"IDLE", "COMPLETE"}:
+        assert node.demo_state == "ABORT"
+    delayed = node.handle_start_request(Trigger.Request(), Trigger.Response())
+    assert not delayed.success and "abort latched" in delayed.message
+    repeated = node.handle_abort_request(Trigger.Request(), Trigger.Response())
+    assert repeated.success
+
+
+def test_standalone_abort_retains_original_inactive_behavior(controller):
+    response = controller.handle_abort_request(Trigger.Request(), Trigger.Response())
+    assert not response.success
+    assert not controller.operator_abort_latched

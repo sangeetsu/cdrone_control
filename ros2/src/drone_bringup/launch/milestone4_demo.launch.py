@@ -85,6 +85,8 @@ def launch_setup(context, *args, **kwargs):
             mocap_namespace=namespace + "/vrpn_mocap",
             engagement_state_topic=namespace + "/engagement/state",
             start_service=namespace + "/demo/milestone3_start_local",
+            abort_service=namespace + "/demo/milestone3_abort_local",
+            latch_operator_abort="true",
         )
         # Validate SSH arguments now; no connection or process is started here.
         ssh_command(*(LaunchConfiguration(name).perform(context) for name in
@@ -222,6 +224,8 @@ def launch_setup(context, *args, **kwargs):
             "companion_only": LaunchConfiguration("companion_only"),
             "altitude_tolerance_m": LaunchConfiguration("altitude_tolerance_m"),
             "start_service": LaunchConfiguration("start_service"),
+            "abort_service": LaunchConfiguration("abort_service"),
+            "latch_operator_abort": LaunchConfiguration("latch_operator_abort"),
             "max_local_excursion_m": LaunchConfiguration("max_local_excursion_m"),
             "max_vel_xy_mps": LaunchConfiguration("max_vel_xy_mps") if local_odom_mode else "0.6",
             "source_pose_topic": LaunchConfiguration("source_pose_topic"),
@@ -462,6 +466,8 @@ def generate_launch_description():
             DeclareLaunchArgument("companion_only", default_value="false"),
             DeclareLaunchArgument("altitude_tolerance_m", default_value="0.10"),
             DeclareLaunchArgument("start_service", default_value=""),
+            DeclareLaunchArgument("abort_service", default_value=""),
+            DeclareLaunchArgument("latch_operator_abort", default_value="false"),
             DeclareLaunchArgument("launch_peer", default_value="false", choices=["true", "false"]),
             DeclareLaunchArgument("peer_host", default_value="192.168.0.121"),
             DeclareLaunchArgument("peer_user", default_value="jetson"),

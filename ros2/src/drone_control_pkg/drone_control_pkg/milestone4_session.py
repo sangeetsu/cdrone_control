@@ -1,4 +1,4 @@
-"""One-shot SSH/ROS startup operations; never exchanges flight data between hosts."""
+"""One-shot SSH/ROS launch, start and abort; no exchange of flight data between hosts."""
 
 import argparse
 import base64
@@ -77,7 +77,7 @@ def peer_launch_arguments(arguments, peer_id, mount_config, workspace):
         launch_peer="false", drone_id=peer_id, drone_namespace=peer_ns,
         mavros_namespace=peer_ns + "/mavros", mocap_namespace=peer_ns + "/vrpn_mocap",
         engagement_state_topic=peer_ns + "/engagement/state",
-        zed_mount_config=mount_config, start_service="",
+        zed_mount_config=mount_config, start_service="", abort_service="",
     )
     if not result.get("model_path"):
         result["model_path"] = str(Path(workspace) / "models/best.engine")
@@ -110,10 +110,10 @@ def ssh_command(host, user, workspace, command):
 
 
 def invoke(operation, payload, peer=None):
-    command = helper_command(operation, payload)
-    if peer:
-        command = ssh_command(*peer, command)
     try:
+        command = helper_command(operation, payload)
+        if peer:
+            command = ssh_command(*peer, command)
         completed = subprocess.run(command, capture_output=True, text=True, timeout=20)
         for line in reversed(completed.stdout.splitlines()):
             if line.startswith(RESULT_PREFIX):
@@ -122,49 +122,71 @@ def invoke(operation, payload, peer=None):
                         and isinstance(result.get("message"), str)):
                     return result
         detail = completed.stderr.strip() or completed.stdout.strip() or f"exit {completed.returncode}"
-        return dict(success=False, message=detail[-2000:], uncertain=operation == "start")
+        return dict(success=False, message=detail[-2000:], uncertain=operation in {"start", "abort"})
     except (OSError, subprocess.TimeoutExpired, ValueError) as exc:
-        return dict(success=False, message=str(exc), uncertain=operation == "start")
+        return dict(success=False, message=str(exc), uncertain=operation in {"start", "abort"})
 
 
 class StartDispatcher:
-    """Serialize explicit start attempts; only contact peers inside this call."""
+    """Dispatch explicit start/abort requests without ongoing peer coordination."""
 
     def __init__(self, local_id, peer_id, peer, invoke_fn=invoke):
         self.local_id, self.peer_id, self.peer = local_id, peer_id, peer
         self.invoke = invoke_fn
         self.lock = threading.Lock()
         self.uncertain = False
+        self.abort_requested = threading.Event()
+
+    def run_endpoints(self, operation):
+        endpoints = [(self.local_id, None), (self.peer_id, self.peer)]
+
+        def call(drone_id, peer):
+            if operation == "start" and self.abort_requested.is_set():
+                return dict(success=False, message="operator abort cancelled paired start")
+            payload = {"drone_id": drone_id, "response_timeout_s": 8.0}
+            if operation in {"start", "abort"} and peer is None:
+                payload["service"] = f"/cdrone/{drone_id}/demo/milestone3_{operation}_local"
+            try:
+                return self.invoke(operation, payload, peer)
+            except Exception as exc:
+                return dict(success=False, message=str(exc), uncertain=operation in {"start", "abort"})
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            pending = [executor.submit(call, drone_id, peer) for drone_id, peer in endpoints]
+            return endpoints, [future.result() for future in pending]
 
     def start(self):
         if not self.lock.acquire(blocking=False):
             return dict(success=False, message="a paired start request is already in progress")
         try:
+            if self.abort_requested.is_set():
+                return dict(success=False, message="operator abort latched; restart both stacks before another mission")
             if self.uncertain:
                 return dict(success=False, message="previous start outcome uncertain; inspect both drones "
                             "before restarting the launcher; no start was retried")
-            endpoints = [(self.local_id, None), (self.peer_id, self.peer)]
-            with ThreadPoolExecutor(max_workers=2) as executor:
-                def run(operation):
-                    pending = []
-                    for drone_id, peer in endpoints:
-                        payload = {"drone_id": drone_id}
-                        if operation == "start" and peer is None:
-                            payload["service"] = f"/cdrone/{drone_id}/demo/milestone3_start_local"
-                        pending.append(executor.submit(self.invoke, operation, payload, peer))
-                    return [future.result() for future in pending]
-
-                checks = run("check")
-                if not all(result["success"] for result in checks):
-                    return dict(success=False, message="No start requests sent. " +
-                                self.describe(endpoints, checks))
-                starts = run("start")
-                self.uncertain = any(result.get("uncertain", False) for result in starts)
-                return dict(success=all(result["success"] for result in starts),
-                            message=self.describe(endpoints, starts) +
-                            "; accepted missions continue independently; no automatic retry or abort")
+            endpoints, checks = self.run_endpoints("check")
+            if not all(result["success"] for result in checks):
+                return dict(success=False, message="No start requests sent. " +
+                            self.describe(endpoints, checks))
+            endpoints, starts = self.run_endpoints("start")
+            self.uncertain = any(result.get("uncertain", False) for result in starts)
+            aborted = self.abort_requested.is_set()
+            return dict(success=not aborted and all(result["success"] for result in starts),
+                        message=self.describe(endpoints, starts) +
+                        ("; operator abort interrupted paired start; check the abort response"
+                         if aborted else
+                         "; accepted missions continue independently; no automatic retry or abort"))
         finally:
             self.lock.release()
+
+    def abort(self):
+        # Never wait for the start lock, readiness, or a successful peer launch.
+        # Each paired controller also latches this abort to reject late start RPCs.
+        self.abort_requested.set()
+        endpoints, results = self.run_endpoints("abort")
+        return dict(success=all(result["success"] for result in results),
+                    message=self.describe(endpoints, results) +
+                    "; abort requested independently on both drones; verify landing/disarm on each")
 
     @staticmethod
     def describe(endpoints, results):
@@ -192,14 +214,17 @@ def call_trigger(operation, payload):
             return dict(success=False, message=f"service unavailable: {service}")
         future = client.call_async(Trigger.Request())
         sent = True
-        rclpy.spin_until_future_complete(node, future, timeout_sec=8.0)
+        # A public paired abort waits for two bounded subprocess/SSH requests.
+        # Internal per-controller requests explicitly retain their 8-second timeout.
+        response_timeout = float(payload.get("response_timeout_s", 30.0 if operation == "abort" else 8.0))
+        rclpy.spin_until_future_complete(node, future, timeout_sec=response_timeout)
         if not future.done():
             return dict(success=False, message=f"response timed out: {service}",
-                        uncertain=operation == "start")
+                        uncertain=operation in {"start", "abort"})
         response = future.result()
         return dict(success=response.success, message=response.message)
     except Exception as exc:
-        return dict(success=False, message=str(exc), uncertain=sent and operation == "start")
+        return dict(success=False, message=str(exc), uncertain=sent and operation in {"start", "abort"})
     finally:
         node.destroy_node()
         rclpy.shutdown()

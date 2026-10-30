@@ -56,12 +56,15 @@ def test_pair_launch_isolated_identities_and_mission_arguments_reach_both_contro
     local_arguments = {key: perform_substitutions(context, normalize_to_list_of_substitutions(value))
                        for key, value in forwarded.items()}
     assert local_arguments["start_service"] == "/cdrone/cdrone3/demo/milestone3_start_local"
+    assert local_arguments["abort_service"] == "/cdrone/cdrone3/demo/milestone3_abort_local"
     dispatcher = actions[-1]
     assert executable(context, dispatcher) == "milestone4_start_dispatcher"
     parameters = evaluate_parameters(context, dispatcher._Node__parameters)[0]
     peer_arguments = json.loads(parameters["peer_arguments_json"])
     assert peer_arguments["launch_peer"] == "false"
     assert peer_arguments["start_service"] == ""
+    assert peer_arguments["abort_service"] == ""
+    assert peer_arguments["latch_operator_abort"] == "true"
     assert peer_arguments["drone_namespace"] == "/cdrone/cdrone4"
     assert peer_arguments["mavros_namespace"] == "/cdrone/cdrone4/mavros"
     assert peer_arguments["engagement_state_topic"] == "/cdrone/cdrone4/engagement/state"
@@ -78,6 +81,8 @@ def test_pair_launch_isolated_identities_and_mission_arguments_reach_both_contro
         assert params["required_completion_count"] == 3
         assert params["altitude_tolerance_m"] == 0.1
         assert params["companion_only"] is True
+        assert params["latch_operator_abort"] is True
+        assert params["abort_service"] == arguments["abort_service"]
         assert params["max_vel_xy_mps"] == 0.6
 
 
@@ -102,6 +107,8 @@ def test_single_drone_keeps_existing_start_service_and_correct_led_topic():
     actions = module.launch_setup(context)
     assert len(actions) == 2
     assert context.launch_configurations["start_service"] == ""
+    assert context.launch_configurations["abort_service"] == ""
+    assert context.launch_configurations["latch_operator_abort"] == "false"
     assert context.launch_configurations["engagement_state_topic"] == "/cdrone/cdrone4/engagement/state"
 
 

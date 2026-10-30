@@ -218,6 +218,7 @@ class Milestone3DemoSequenceNode(Node):
         self.declare_parameter("engagement_state_topic", "")
         self.declare_parameter("start_service", "")
         self.declare_parameter("abort_service", "")
+        self.declare_parameter("latch_operator_abort", False)
 
         self.scenario_id = str(self.get_parameter("scenario_id").value)
         self.publish_rate_hz = float(self.get_parameter("publish_rate_hz").value)
@@ -230,6 +231,8 @@ class Milestone3DemoSequenceNode(Node):
         )
         self.local_odom_mode = bool(self.get_parameter("local_odom_mode").value)
         self.enable_flight = bool(self.get_parameter("enable_flight").value)
+        self.latch_operator_abort = bool(self.get_parameter("latch_operator_abort").value)
+        self.operator_abort_latched = False
         self.companion_only = bool(self.get_parameter("companion_only").value)
         if self.companion_only and not self.local_odom_mode:
             raise ValueError("companion_only requires ZED local odometry")
@@ -1752,6 +1755,8 @@ class Milestone3DemoSequenceNode(Node):
         return chosen
 
     def startable(self, *, check_flight: bool = True) -> Tuple[bool, str]:
+        if self.operator_abort_latched:
+            return False, "operator abort latched; restart this controller before another mission"
         if self.demo_state not in {"IDLE", "COMPLETE", "ABORT"}:
             return False, f"demo already active in state {self.demo_state}"
         if (
@@ -1903,9 +1908,13 @@ class Milestone3DemoSequenceNode(Node):
         response: Trigger.Response,
     ) -> Trigger.Response:
         del request
-        if self.demo_state in {"IDLE", "COMPLETE"}:
-            response.success = False
-            response.message = "milestone3 demo is not active"
+        if self.latch_operator_abort:
+            self.operator_abort_latched = True
+        if self.demo_state in {"IDLE", "COMPLETE"} and (
+                not self.latch_operator_abort or not self.latest_state.armed):
+            response.success = self.latch_operator_abort
+            response.message = ("mission inactive; operator abort latched against delayed starts"
+                                if self.latch_operator_abort else "milestone3 demo is not active")
             return response
         self.enter_abort("operator abort")
         response.success = True
